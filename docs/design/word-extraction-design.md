@@ -185,6 +185,25 @@ default fails symmetrically (hides an inserted exclusion). Decided:
   of the implementation, and are never edited to match output. Adversarial
   fixtures label expected behavior (e.g. "must fail open with flag").
 
+### D12. Query API and LLM-facing tools (added after the Phase 1 review)
+- Retrieval for an LLM is a **query layer over the stored records**, not the
+  JSON files themselves. Plain functions in `query.py` (no MCP imports); a thin
+  `mcp/tools.py` + `server.py` wrap them, mirroring the sibling `code-mcp` /
+  `exec-mcp` split. `mcp` is an optional extra. Tools are **read-only**.
+- **Every result carries a citation** (document, chunk/node or `comment:<id>`,
+  `view_id`, offsets). Every tool names its view; none defaults silently to
+  accepted-only (D5).
+- Facts the deterministic layer owns (term hits, comment attribution, revision
+  facts, `pending_changes`) are returned from records, never from summary prose.
+- **Ranking (closes Open risk #4):** union of term hits, text match and summary
+  match, ordered by a **fixed source-priority tiering** (term hits, then text,
+  then summary), deterministic tie-breaks, one result per chunk with all its
+  sources listed. **No blended relevance score.** Embeddings, if ever added, are
+  a separately labeled fourth source (Phase 3).
+- Scale target is about 25 documents; correctness and reproducibility over
+  throughput. FTS5 is optional at this scale.
+- Detailed build order: `phase2-build-spec.md`.
+
 ## Phasing
 
 **Phase 0: contracts, core, fixtures, harness (no parser).**
