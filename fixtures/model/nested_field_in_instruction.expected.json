@@ -1,0 +1,47 @@
+{
+  "clauses": [
+    "E",
+    "8"
+  ],
+  "fixture": "nested_field_in_instruction.docx",
+  "known_gaps": [],
+  "labels_provenance": "spec",
+  "paragraphs": [
+    {
+      "accepted": "A OUTER-RESULT Z",
+      "clause": "E",
+      "index": 0,
+      "note": "a nested field's result inside the outer field's INSTRUCTION is instruction, not content",
+      "original": "A OUTER-RESULT Z",
+      "spans": [
+        {
+          "end": 16,
+          "stack": [],
+          "start": 0,
+          "text": "A OUTER-RESULT Z"
+        }
+      ],
+      "superseded": "",
+      "union": "A OUTER-RESULT Z"
+    },
+    {
+      "accepted": "outer inner tail",
+      "clause": "E",
+      "index": 1,
+      "note": "a nested field inside the outer field's RESULT is content",
+      "original": "outer inner tail",
+      "spans": [
+        {
+          "end": 16,
+          "stack": [],
+          "start": 0,
+          "text": "outer inner tail"
+        }
+      ],
+      "superseded": "",
+      "union": "outer inner tail"
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

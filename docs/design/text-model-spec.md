@@ -230,7 +230,10 @@ tag the section or example it encodes.
   documented). `w:noBreakHyphen` = `U+2011`, `w:softHyphen` = `U+00AD`, `w:sym`
   = its character. `w:instrText` is never content. `w:t` and `w:delText` are both
   content.
-- **Fields.** Excluded via a `fldChar` depth counter (nested fields); a
+- **Fields.** Excluded via a `fldChar` depth counter (nested fields): text is
+  content only when **every** open field has passed its `separate`, so a nested
+  field's result that sits inside an outer field's instruction is instruction, not
+  content (`{ IF { MERGEFIELD name } ... }` yields only the outer result); a
   `w:fldSimple`'s instruction is its attribute (§6 example E). Results carry
   whatever revision ancestry encloses them; no special masking.
 - **Comment ranges** clamp to exclude terminators. A multi-paragraph

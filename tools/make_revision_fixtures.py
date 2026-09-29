@@ -357,9 +357,11 @@ def _hyperlink_and_fields():
             _para(0, [("See the endorsement form", [])], accepted="See the endorsement form",
                   original="See the endorsement form", superseded="", clause="E",
                   note="w:hyperlink runs are ordinary content at their document position"),
-            _para(1, [("AcmeEndorsed", [])], accepted="AcmeEndorsed",
-                  original="AcmeEndorsed", superseded="", clause="E",
-                  note="complex field: instrText excluded, both results (nested and outer) included"),
+            _para(1, [("Endorsed", [])], accepted="Endorsed",
+                  original="Endorsed", superseded="", clause="E",
+                  note="complex field: the inner field's result 'Acme' lies between the outer "
+                       "begin and separate, so it is instruction (section 6E) and excluded; only "
+                       "the outer result is content"),
             _para(2, [("1/1/2026", [])], accepted="1/1/2026", original="1/1/2026", superseded="",
                   clause="E", note="w:fldSimple: w:instr excluded, child runs are the result"),
         ],
@@ -717,6 +719,125 @@ def _text_box():
     )
 
 
+def _fld(kind):
+    return f'<w:r><w:fldChar w:fldCharType="{kind}"/></w:r>'
+
+
+def _instr(text):
+    return f'<w:r><w:instrText xml:space="preserve">{text}</w:instrText></w:r>'
+
+
+def _nested_field_in_instruction():
+    """Spec 6E: text is content only when EVERY open field has passed its separate."""
+    body = (
+        _p(_r("A ") + _fld("begin") + _instr(" IF ") + _fld("begin") + _instr(" PAGE ")
+           + _fld("separate") + _r("INNER-RESULT-IN-OUTER-INSTRUCTION") + _fld("end")
+           + _instr(" > 1 ") + _fld("separate") + _r("OUTER-RESULT") + _fld("end") + _r(" Z"))
+        + _p(_fld("begin") + _instr(" REF a ") + _fld("separate") + _r("outer ")
+             + _fld("begin") + _instr(" REF b ") + _fld("separate") + _r("inner")
+             + _fld("end") + _r(" tail") + _fld("end"))
+    )
+    sidecar = {
+        "fixture": "nested_field_in_instruction.docx",
+        "labels_provenance": "spec",
+        "clauses": ["E", "8"],
+        "known_gaps": [],
+        "paragraphs": [
+            _para(0, [("A OUTER-RESULT Z", [])], accepted="A OUTER-RESULT Z",
+                  original="A OUTER-RESULT Z", superseded="", clause="E",
+                  note="a nested field's result inside the outer field's INSTRUCTION is "
+                       "instruction, not content"),
+            _para(1, [("outer inner tail", [])], accepted="outer inner tail",
+                  original="outer inner tail", superseded="", clause="E",
+                  note="a nested field inside the outer field's RESULT is content"),
+        ],
+    }
+    return package("nested_field_in_instruction.docx", body, sidecar=sidecar,
+                   title="Nested field in instruction")
+
+
+def _transparent_containers():
+    """customXml (inline and block), w:dir, w:bdo are transparent; w:ptab is a tab."""
+    body = (
+        _p(_r("before ") + '<w:customXml w:element="x">' + _r("inside-customXml") + "</w:customXml>"
+           + _r(" after"))
+        + '<w:customXml w:element="y">' + _p(_r("block customXml")) + "</w:customXml>"
+        + _p(_r("a ") + '<w:dir w:val="rtl">' + _r("in-dir") + "</w:dir>"
+             + '<w:bdo w:val="ltr">' + _r(" in-bdo") + "</w:bdo>" + _r(" b"))
+        + _p(_r("a") + '<w:r><w:ptab w:relativeTo="margin" w:alignment="right" w:leader="none"/></w:r>'
+             + _r("b"))
+    )
+    sidecar = {
+        "fixture": "transparent_containers.docx",
+        "labels_provenance": "spec",
+        "clauses": ["8"],
+        "known_gaps": [],
+        "paragraphs": [
+            _para(0, [("before inside-customXml after", [])],
+                  accepted="before inside-customXml after",
+                  original="before inside-customXml after", superseded="", clause="8",
+                  note="inline w:customXml is transparent"),
+            _para(1, [("block customXml", [])], accepted="block customXml",
+                  original="block customXml", superseded="", clause="8",
+                  note="block-level w:customXml is descended through"),
+            _para(2, [("a in-dir in-bdo b", [])], accepted="a in-dir in-bdo b",
+                  original="a in-dir in-bdo b", superseded="", clause="8",
+                  note="w:dir and w:bdo are transparent"),
+            _para(3, [("a\tb", [])], accepted="a\tb", original="a\tb", superseded="",
+                  clause="8", note="w:ptab is a tab"),
+        ],
+    }
+    return package("transparent_containers.docx", body, sidecar=sidecar,
+                   title="Transparent containers")
+
+
+def _unrecognized_container():
+    """A w: element the walker does not know is skipped -- and the loss is recorded."""
+    body = _p(_r("before ") + "<w:notARealContainer>" + _r("HIDDEN") + "</w:notARealContainer>"
+              + _r(" after"))
+    sidecar = {
+        "fixture": "unrecognized_container.docx",
+        "labels_provenance": "spec",
+        "clauses": ["8"],
+        "known_gaps": ["unrecognized_container"],
+        "paragraphs": [
+            _para(0, [("before  after", [])], accepted="before  after",
+                  original="before  after", superseded="", clause="8",
+                  note="unknown container is skipped (never guessed at); the text it held is "
+                       "lost and recorded as the unrecognized_container gap"),
+        ],
+    }
+    return package("unrecognized_container.docx", body, sidecar=sidecar,
+                   title="Unrecognized container")
+
+
+def _revision_missing_id():
+    """A revision with no w:id gets a deterministic <kind>:noid<n> id and a recorded gap."""
+    body = _p(
+        _r("x")
+        + f'<w:ins w:author="{AUTHOR}" w:date="{DATE}">{_r("y")}</w:ins>'
+        + f'<w:del w:author="{AUTHOR}" w:date="{DATE}">{_dr("z")}</w:del>'
+    )
+    sidecar = {
+        "fixture": "revision_missing_id.docx",
+        "labels_provenance": "spec",
+        "clauses": ["2"],
+        "known_gaps": ["revision_missing_id"],
+        "revisions": [
+            {"id": "ins:noid0", "kind": "ins", "author": AUTHOR, "date": DATE},
+            {"id": "del:noid1", "kind": "del", "author": AUTHOR, "date": DATE},
+        ],
+        "paragraphs": [
+            _para(0, [("x", []), ("y", ["ins:noid0"]), ("z", ["del:noid1"])],
+                  accepted="xy", original="xz", superseded="", clause="2",
+                  note="ids for id-less revisions are <kind>:noid<n>, n counting id-less "
+                       "revisions in per-part document order"),
+        ],
+    }
+    return package("revision_missing_id.docx", body, sidecar=sidecar,
+                   title="Revision missing id")
+
+
 BUILDERS = [
     _nested_revisions,
     _move,
@@ -730,6 +851,10 @@ BUILDERS = [
     _renamed_comments_extended,
     _empty_parts,
     _text_box,
+    _nested_field_in_instruction,
+    _transparent_containers,
+    _unrecognized_container,
+    _revision_missing_id,
 ]
 
 

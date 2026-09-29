@@ -1,0 +1,31 @@
+{
+  "clauses": [
+    "8"
+  ],
+  "fixture": "unrecognized_container.docx",
+  "known_gaps": [
+    "unrecognized_container"
+  ],
+  "labels_provenance": "spec",
+  "paragraphs": [
+    {
+      "accepted": "before  after",
+      "clause": "8",
+      "index": 0,
+      "note": "unknown container is skipped (never guessed at); the text it held is lost and recorded as the unrecognized_container gap",
+      "original": "before  after",
+      "spans": [
+        {
+          "end": 13,
+          "stack": [],
+          "start": 0,
+          "text": "before  after"
+        }
+      ],
+      "superseded": "",
+      "union": "before  after"
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

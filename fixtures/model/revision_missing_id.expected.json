@@ -1,0 +1,61 @@
+{
+  "clauses": [
+    "2"
+  ],
+  "fixture": "revision_missing_id.docx",
+  "known_gaps": [
+    "revision_missing_id"
+  ],
+  "labels_provenance": "spec",
+  "paragraphs": [
+    {
+      "accepted": "xy",
+      "clause": "2",
+      "index": 0,
+      "note": "ids for id-less revisions are <kind>:noid<n>, n counting id-less revisions in per-part document order",
+      "original": "xz",
+      "spans": [
+        {
+          "end": 1,
+          "stack": [],
+          "start": 0,
+          "text": "x"
+        },
+        {
+          "end": 2,
+          "stack": [
+            "ins:noid0"
+          ],
+          "start": 1,
+          "text": "y"
+        },
+        {
+          "end": 3,
+          "stack": [
+            "del:noid1"
+          ],
+          "start": 2,
+          "text": "z"
+        }
+      ],
+      "superseded": "",
+      "union": "xyz"
+    }
+  ],
+  "revisions": [
+    {
+      "author": "A. Ito",
+      "date": "2026-01-01T00:00:00Z",
+      "id": "ins:noid0",
+      "kind": "ins"
+    },
+    {
+      "author": "A. Ito",
+      "date": "2026-01-01T00:00:00Z",
+      "id": "del:noid1",
+      "kind": "del"
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

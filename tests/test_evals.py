@@ -78,7 +78,7 @@ def test_empty_table_passes_and_a_failed_gate_does_not():
 def test_run_reads_labels_but_reports_no_metrics():
     table = run(FIXTURES)
     # every committed sidecar, root and fixtures/model alike, is counted
-    assert table["labels"] == {"generator": 3, "spec": 13, "human": 0}
+    assert table["labels"] == {"generator": 3, "spec": 17, "human": 0}
     assert all(layer["rows"] == [] for layer in table["quality"])
     # no test is tagged @producer_verified yet, so the per-path tally is empty
     cov = table["producer_verified_coverage"]
@@ -122,6 +122,10 @@ MODEL_SIDECARS = {
     "renamed_comments_extended",
     "strict_namespaces",
     "text_box",
+    "nested_field_in_instruction",
+    "transparent_containers",
+    "unrecognized_container",
+    "revision_missing_id",
 }
 
 
@@ -220,4 +224,4 @@ def test_cli_emits_empty_metrics_table():
     table = json.loads(proc.stdout)
     assert [layer["layer"] for layer in table["quality"]] == ["L1", "L2", "L3"]
     assert all(layer["rows"] == [] for layer in table["quality"])
-    assert table["labels"]["spec"] == 13
+    assert table["labels"]["spec"] == 17

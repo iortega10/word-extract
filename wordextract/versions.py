@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass
 
 from docextract_core import sha256_json
 
-TEXTMODEL_VERSION = "1"
+TEXTMODEL_VERSION = "2"
 SPEC_PARSER_VERSION = "1"
 HEADING_RULESET_VERSION = "1"
 CHUNKER_VERSION = "1"

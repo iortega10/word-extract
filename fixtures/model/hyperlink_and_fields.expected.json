@@ -35,21 +35,21 @@
       "union": "See the endorsement form"
     },
     {
-      "accepted": "AcmeEndorsed",
+      "accepted": "Endorsed",
       "clause": "E",
       "index": 1,
-      "note": "complex field: instrText excluded, both results (nested and outer) included",
-      "original": "AcmeEndorsed",
+      "note": "complex field: the inner field's result 'Acme' lies between the outer begin and separate, so it is instruction (section 6E) and excluded; only the outer result is content",
+      "original": "Endorsed",
       "spans": [
         {
-          "end": 12,
+          "end": 8,
           "stack": [],
           "start": 0,
-          "text": "AcmeEndorsed"
+          "text": "Endorsed"
         }
       ],
       "superseded": "",
-      "union": "AcmeEndorsed"
+      "union": "Endorsed"
     },
     {
       "accepted": "1/1/2026",

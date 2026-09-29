@@ -1,0 +1,80 @@
+{
+  "clauses": [
+    "8"
+  ],
+  "fixture": "transparent_containers.docx",
+  "known_gaps": [],
+  "labels_provenance": "spec",
+  "paragraphs": [
+    {
+      "accepted": "before inside-customXml after",
+      "clause": "8",
+      "index": 0,
+      "note": "inline w:customXml is transparent",
+      "original": "before inside-customXml after",
+      "spans": [
+        {
+          "end": 29,
+          "stack": [],
+          "start": 0,
+          "text": "before inside-customXml after"
+        }
+      ],
+      "superseded": "",
+      "union": "before inside-customXml after"
+    },
+    {
+      "accepted": "block customXml",
+      "clause": "8",
+      "index": 1,
+      "note": "block-level w:customXml is descended through",
+      "original": "block customXml",
+      "spans": [
+        {
+          "end": 15,
+          "stack": [],
+          "start": 0,
+          "text": "block customXml"
+        }
+      ],
+      "superseded": "",
+      "union": "block customXml"
+    },
+    {
+      "accepted": "a in-dir in-bdo b",
+      "clause": "8",
+      "index": 2,
+      "note": "w:dir and w:bdo are transparent",
+      "original": "a in-dir in-bdo b",
+      "spans": [
+        {
+          "end": 17,
+          "stack": [],
+          "start": 0,
+          "text": "a in-dir in-bdo b"
+        }
+      ],
+      "superseded": "",
+      "union": "a in-dir in-bdo b"
+    },
+    {
+      "accepted": "a\tb",
+      "clause": "8",
+      "index": 3,
+      "note": "w:ptab is a tab",
+      "original": "a\tb",
+      "spans": [
+        {
+          "end": 3,
+          "stack": [],
+          "start": 0,
+          "text": "a\tb"
+        }
+      ],
+      "superseded": "",
+      "union": "a\tb"
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}
