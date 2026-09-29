@@ -1,0 +1,37 @@
+{
+  "comments": [
+    {
+      "anchor_text": "Alpha bravo charlie.",
+      "author": "A",
+      "id": "0",
+      "initials": "A",
+      "para_id": null,
+      "text": "Range comment spanning runs incl. a bold run in between."
+    },
+    {
+      "anchor_text": "cell with comment",
+      "author": "B",
+      "id": "1",
+      "initials": "B",
+      "para_id": null,
+      "text": "Comment inside a table cell."
+    }
+  ],
+  "fixture": "edge_cases.docx",
+  "labels_provenance": "generator",
+  "revisions": [],
+  "sections": [
+    {
+      "level": 1,
+      "order": 0,
+      "text": "Edge Cases"
+    }
+  ],
+  "tables": [
+    {
+      "columns": 2,
+      "merges": [],
+      "rows": 2
+    }
+  ]
+}

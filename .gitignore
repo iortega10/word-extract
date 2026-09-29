@@ -1,4 +1,6 @@
 .hearth/
+fixtures/real/*
+!fixtures/real/README.md
 __pycache__/
 *.pyc
 .venv/

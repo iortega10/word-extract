@@ -1,0 +1,47 @@
+{
+  "comments": [
+    {
+      "anchor_text": "The endorsement ",
+      "author": "D. Okafor",
+      "id": "1",
+      "initials": "DO",
+      "para_id": "00000001",
+      "text": "Does this include the tail after project completion?"
+    },
+    {
+      "anchor_text": "Post-completion tail",
+      "author": "S. Ruiz",
+      "id": "2",
+      "initials": "SR",
+      "para_id": "00000002",
+      "text": "Yes - three-year completed-ops tail, now confirmed resolved."
+    }
+  ],
+  "fixture": "spec_threaded.docx",
+  "labels_provenance": "spec",
+  "revisions": [
+    {
+      "author": "D. Okafor",
+      "kind": "del",
+      "text": "three years"
+    },
+    {
+      "author": "D. Okafor",
+      "kind": "ins",
+      "text": "thirty-six months"
+    }
+  ],
+  "sections": [
+    {
+      "level": 0,
+      "order": 0,
+      "text": "Spec-Annotated Threaded Comments"
+    },
+    {
+      "level": 1,
+      "order": 1,
+      "text": "Threaded Review"
+    }
+  ],
+  "tables": []
+}

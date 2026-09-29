@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "anchor_text": "Fees: policy fee 250; broker fee 10% of premium. Cancelation: 60 days written notice.",
+      "author": "M. Chen",
+      "id": "0",
+      "initials": "MC",
+      "para_id": null,
+      "text": "Cancelation period differs from program review (30 days)."
+    }
+  ],
+  "fixture": "binder_summary.docx",
+  "labels_provenance": "generator",
+  "revisions": [],
+  "sections": [
+    {
+      "level": 0,
+      "order": 0,
+      "text": "Binder Summary"
+    },
+    {
+      "level": 1,
+      "order": 1,
+      "text": "Insuring Agreement"
+    },
+    {
+      "level": 1,
+      "order": 2,
+      "text": "Conditions"
+    },
+    {
+      "level": 1,
+      "order": 3,
+      "text": "Not Covered"
+    }
+  ],
+  "tables": []
+}

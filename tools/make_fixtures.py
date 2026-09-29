@@ -1,14 +1,33 @@
 """Generate synthetic insurance-flavored .docx fixtures exercising the hard cases:
 comments (with replies + ranges spanning runs), tracked changes, merged-cell tables,
-multi-level numbering, headers/footers, content controls, and near-synonym term variants."""
+multi-level numbering, headers/footers, content controls, and near-synonym term variants.
+
+Also emits one ``<name>.expected.json`` sidecar per fixture (generator ground truth:
+comment ranges/authors, revision spans, section outline, table shapes). Sidecars are
+read straight from the OOXML with ``zipfile`` + ``lxml`` -- never python-docx, which
+drops text inside ``w:ins``.
+"""
 from pathlib import Path
-import copy, sys
+import argparse
+import json
+import sys
+import zipfile
 from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from lxml import etree
 
-OUT = Path(sys.argv[1] if len(sys.argv) > 1 else "fixtures")
-OUT.mkdir(exist_ok=True)
+OUT = Path("fixtures")
+
+W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+W14 = "http://schemas.microsoft.com/office/word/2010/wordml"
+
+FIXTURES = ["program_review_v3.docx", "binder_summary.docx", "edge_cases.docx"]
+
+# Regeneration is byte-reproducible: python-docx stamps comment dates and zip members
+# with "now", so both are pinned after build.
+FIXED_DATE = "2026-01-01T00:00:00Z"
+ZIP_WHEN = (2026, 1, 1, 0, 0, 0)
 
 
 def tracked(par, old, new, author, date="2026-09-01T10:00:00Z", rid=(900, 901)):
@@ -99,6 +118,213 @@ def build_torture():
     d.save(OUT / "edge_cases.docx")
 
 
-for f in (build_endorsement_review, build_variant, build_torture):
-    f()
-print(sorted(x.name for x in OUT.iterdir()))
+# --- sidecar extraction (zipfile + lxml; never python-docx) -------------------
+
+
+def _w(tag):
+    return f"{{{W}}}{tag}"
+
+
+def _w14(tag):
+    return f"{{{W14}}}{tag}"
+
+
+def _union_text(el):
+    """Text of an element's runs in document order, including w:delText (i.e. w:ins/w:del)."""
+    out = []
+    for node in el.iter():
+        if node.tag in (_w("t"), _w("delText")) and node.text:
+            out.append(node.text)
+    return "".join(out)
+
+
+def _sections(body):
+    out = []
+    for p in body.findall(_w("p")):
+        style = p.find(f"{_w('pPr')}/{_w('pStyle')}")
+        if style is None:
+            continue
+        val = style.get(_w("val"), "")
+        if val == "Title":
+            level = 0
+        elif val.startswith("Heading") and val[len("Heading"):].isdigit():
+            level = int(val[len("Heading"):])
+        else:
+            continue
+        out.append({"text": _union_text(p), "level": level, "order": len(out)})
+    return out
+
+
+def _revisions(body):
+    kinds = {"ins": "ins", "del": "del", "moveFrom": "moveFrom", "moveTo": "moveTo"}
+    out = []
+    for el in body.iter():
+        local = el.tag.split("}")[-1] if isinstance(el.tag, str) else ""
+        if local in kinds:
+            out.append({"kind": kinds[local], "author": el.get(_w("author"), ""), "text": _union_text(el)})
+    return out
+
+
+def _table_shape(tbl):
+    grid = tbl.find(_w("tblGrid"))
+    declared = len(grid.findall(_w("gridCol"))) if grid is not None else 0
+    trs = tbl.findall(_w("tr"))
+    rows = len(trs)
+    cellinfo = []
+    for tr in trs:
+        row = []
+        for tc in tr.findall(_w("tc")):
+            span, vmerge = 1, None
+            tcPr = tc.find(_w("tcPr"))
+            if tcPr is not None:
+                gs = tcPr.find(_w("gridSpan"))
+                if gs is not None and gs.get(_w("val")):
+                    span = int(gs.get(_w("val")))
+                vm = tcPr.find(_w("vMerge"))
+                if vm is not None:
+                    vmerge = vm.get(_w("val")) or "continue"
+            row.append((span, vmerge))
+        cellinfo.append(row)
+    cols = max([declared] + [sum(s for s, _ in r) for r in cellinfo])
+
+    gridc = [[None] * cols for _ in range(rows)]
+    rects: dict = {}
+    for r, row in enumerate(cellinfo):
+        c = 0
+        for span, vm in row:
+            key = (r, c)
+            rects[key] = [r, r, c, c + span - 1, vm]
+            for cc in range(c, min(c + span, cols)):
+                gridc[r][cc] = key
+            c += span
+    for r in range(rows):
+        for c in range(cols):
+            key = gridc[r][c]
+            if key is None or rects.get(key, [None, None, None, None, None])[4] != "continue" or r == 0:
+                continue
+            above = gridc[r - 1][c]
+            if above is None or above == key:
+                continue
+            ar0, ar1, ac0, ac1, avm = rects[above]
+            kr0, kr1, kc0, kc1, _ = rects[key]
+            rects[above] = [ar0, max(ar1, kr1), min(ac0, kc0), max(ac1, kc1), avm]
+            for rr in range(kr0, kr1 + 1):
+                for cc in range(kc0, kc1 + 1):
+                    if gridc[rr][cc] == key:
+                        gridc[rr][cc] = above
+            rects.pop(key, None)
+
+    merges = sorted(
+        [r0, c0, r1, c1] for r0, r1, c0, c1, _ in rects.values() if r1 > r0 or c1 > c0
+    )
+    return {"rows": rows, "columns": cols, "merges": merges}
+
+
+def _tables(body):
+    return [_table_shape(tbl) for tbl in body.findall(_w("tbl"))]
+
+
+def _comments(docx_path, body):
+    active: list = []
+    anchors: dict = {}
+    for node in body.iter():
+        if node.tag == _w("commentRangeStart"):
+            active.append({"id": node.get(_w("id")), "parts": []})
+        elif node.tag == _w("commentRangeEnd"):
+            cid = node.get(_w("id"))
+            for a in list(active):
+                if a["id"] == cid:
+                    anchors[cid] = "".join(a["parts"])
+                    active.remove(a)
+        elif node.tag in (_w("t"), _w("delText")) and node.text:
+            for a in active:
+                a["parts"].append(node.text)
+
+    with zipfile.ZipFile(docx_path) as z:
+        if "word/comments.xml" not in z.namelist():
+            return []
+        croot = etree.fromstring(z.read("word/comments.xml"))
+    out = []
+    for c in croot.findall(_w("comment")):
+        cid = c.get(_w("id"))
+        ps = c.findall(_w("p"))
+        out.append({
+            "id": cid,
+            "para_id": ps[-1].get(_w14("paraId")) if ps else None,
+            "author": c.get(_w("author"), ""),
+            "initials": c.get(_w("initials"), ""),
+            "text": _union_text(c),
+            "anchor_text": anchors.get(cid, ""),
+        })
+    return out
+
+
+def sidecar_for(docx_path, provenance="generator"):
+    with zipfile.ZipFile(docx_path) as z:
+        body = etree.fromstring(z.read("word/document.xml")).find(_w("body"))
+    return {
+        "fixture": Path(docx_path).name,
+        "labels_provenance": provenance,
+        "comments": _comments(docx_path, body),
+        "revisions": _revisions(body),
+        "sections": _sections(body),
+        "tables": _tables(body),
+    }
+
+
+def normalize_package(path):
+    """Pin comment dates and zip member timestamps so regeneration is byte-stable."""
+    with zipfile.ZipFile(path) as z:
+        names = z.namelist()
+        parts = {name: z.read(name) for name in names}
+    if "word/comments.xml" in parts:
+        root = etree.fromstring(parts["word/comments.xml"])
+        for comment in root.findall(_w("comment")):
+            comment.set(_w("date"), FIXED_DATE)
+        parts["word/comments.xml"] = etree.tostring(
+            root, xml_declaration=True, encoding="UTF-8", standalone=True
+        )
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        for name in names:
+            info = zipfile.ZipInfo(name, date_time=ZIP_WHEN)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            z.writestr(info, parts[name])
+
+
+def emit_sidecars(out, names, provenance="generator"):
+    out = Path(out)
+    written = []
+    for name in names:
+        docx = out / name
+        sidecar = sidecar_for(docx, provenance=provenance)
+        path = docx.with_suffix(".expected.json")
+        path.write_text(
+            json.dumps(sidecar, indent=2, sort_keys=True, ensure_ascii=False), encoding="utf-8"
+        )
+        written.append(path.name)
+    return written
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("out", nargs="?", default="fixtures", help="fixtures directory")
+    parser.add_argument("--sidecars-only", action="store_true", help="do not rebuild the .docx files")
+    args = parser.parse_args(argv)
+
+    global OUT
+    OUT = Path(args.out)
+    OUT.mkdir(exist_ok=True)
+
+    if not args.sidecars_only:
+        for f in (build_endorsement_review, build_variant, build_torture):
+            f()
+        for name in FIXTURES:
+            normalize_package(OUT / name)
+    written = emit_sidecars(OUT, FIXTURES)
+    print(sorted(x.name for x in OUT.iterdir()))
+    print("sidecars:", written)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
