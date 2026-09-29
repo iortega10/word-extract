@@ -160,7 +160,8 @@ Freeze these:
    `w:name` on the `moveFromRangeStart` / `moveToRangeStart` markers that wrap
    the move, not from the move element (needs a tracking stack).
 5. **Literal `
-` / `` inside `w:t`** map to `U+000B`, like `w:br` / `w:cr`.
+` / `
+` inside `w:t`** map to `U+000B`, like `w:br` / `w:cr`.
 
 Also carried forward:
 
@@ -270,6 +271,34 @@ new or changed record, plus a test that an old-version blob is rejected.
 
 Tests: all fixtures including the 0a package and the underwriting sample; a
 renamed `commentsExtended`; an absent part yields `None`, not an exception.
+
+## Carried follow-ups (from validating Turns 0.5 and 1; do these first in the next run)
+
+1. **Hardened XML parser (security).** Documents arrive from outside senders.
+   `opc.py` parses with a bare `etree.fromstring`; safety today comes from
+   lxml 6.1.3 / libxml2 2.11.9 defaults (external entities not resolved,
+   amplification capped), not from our code. Add **one shared parser** used by
+   every parse in the package: `resolve_entities=False`, `no_network=True`,
+   `huge_tree=False`, no DTD loading. Tests: an XXE fixture (external entity
+   pointing at a local file) must not leak its content, and an entity-expansion
+   fixture must be rejected. OOXML never legitimately uses a DTD.
+2. **Zip size cap.** `Package` reads every member into memory unbounded. Cap total
+   uncompressed size and per-member size (configurable, sensible default) and
+   raise `OpcError` past it; test with a small over-cap fixture.
+3. **Codec minimum version.** The codec accepts older-`schema_version` blobs, so
+   a v1 `Node`/`Comment` decodes with new fields silently defaulted
+   (`occurrence_index=0`, `id_stability=PATH`). Add `MIN_SUPPORTED_VERSION` in
+   `docextract-core`; persisted records must be at or above it; test rejection.
+4. **`TermHit` consistency.** `present_in` is derivable from `view_spans` and must
+   not disagree, but nothing enforces it. Validate at construction (or through a
+   validator the matcher must call) and test the disagreement case.
+5. **"Has content" vs "exists".** `Part.empty` does not flag separator-only
+   footnote/endnote stubs (they have child elements). The walker must treat
+   content and existence separately; add a helper and a test on the underwriting
+   sample.
+6. **`TEXTMODEL_VERSION`.** Bump to `"2"` when Turn 2a produces the first real
+   output, so the first data carries the amended semantics (span rule,
+   terminators, projection).
 
 ## Turn 2: walker (slices 2a to 2e)
 
