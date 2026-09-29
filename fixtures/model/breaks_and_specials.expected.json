@@ -1,0 +1,135 @@
+{
+  "assumptions": [
+    "w:cr is treated like w:br (U+000B); the spec names only w:br"
+  ],
+  "clauses": [
+    "8"
+  ],
+  "fixture": "breaks_and_specials.docx",
+  "known_gaps": [
+    "w_cr_unspecified"
+  ],
+  "labels_provenance": "spec",
+  "paragraphs": [
+    {
+      "accepted": "A\tB\u000bC",
+      "clause": "8",
+      "index": 0,
+      "note": "w:tab = '\\t'; every w:br type = U+000B; equal stacks coalesce, so the tab/br boundaries do not survive as span boundaries",
+      "original": "A\tB\u000bC",
+      "spans": [
+        {
+          "end": 5,
+          "stack": [],
+          "start": 0,
+          "text": "A\tB\u000bC"
+        }
+      ],
+      "superseded": "",
+      "union": "A\tB\u000bC"
+    },
+    {
+      "accepted": "D\u000bE\u000bF\u000bG",
+      "clause": "8",
+      "index": 1,
+      "note": "page, column and bare w:br all = U+000B",
+      "original": "D\u000bE\u000bF\u000bG",
+      "spans": [
+        {
+          "end": 7,
+          "stack": [],
+          "start": 0,
+          "text": "D\u000bE\u000bF\u000bG"
+        }
+      ],
+      "superseded": "",
+      "union": "D\u000bE\u000bF\u000bG"
+    },
+    {
+      "accepted": "soft­hyphen",
+      "clause": "8",
+      "index": 2,
+      "note": "w:softHyphen = U+00AD",
+      "original": "soft­hyphen",
+      "spans": [
+        {
+          "end": 11,
+          "stack": [],
+          "start": 0,
+          "text": "soft­hyphen"
+        }
+      ],
+      "superseded": "",
+      "union": "soft­hyphen"
+    },
+    {
+      "accepted": "no‑break",
+      "clause": "8",
+      "index": 3,
+      "note": "w:noBreakHyphen = U+2011",
+      "original": "no‑break",
+      "spans": [
+        {
+          "end": 8,
+          "stack": [],
+          "start": 0,
+          "text": "no‑break"
+        }
+      ],
+      "superseded": "",
+      "union": "no‑break"
+    },
+    {
+      "accepted": "",
+      "clause": "8",
+      "index": 4,
+      "note": "w:sym = its character (chr of the hex w:char)",
+      "original": "",
+      "spans": [
+        {
+          "end": 1,
+          "stack": [],
+          "start": 0,
+          "text": ""
+        }
+      ],
+      "superseded": "",
+      "union": ""
+    },
+    {
+      "accepted": "line1\u000bline2",
+      "clause": "8",
+      "index": 5,
+      "note": "a literal \\n inside w:t is content, mapped to U+000B",
+      "original": "line1\u000bline2",
+      "spans": [
+        {
+          "end": 11,
+          "stack": [],
+          "start": 0,
+          "text": "line1\u000bline2"
+        }
+      ],
+      "superseded": "",
+      "union": "line1\u000bline2"
+    },
+    {
+      "accepted": "carriage\u000breturn",
+      "clause": "8",
+      "index": 6,
+      "original": "carriage\u000breturn",
+      "spans": [
+        {
+          "end": 15,
+          "stack": [],
+          "start": 0,
+          "text": "carriage\u000breturn"
+        }
+      ],
+      "superseded": "",
+      "union": "carriage\u000breturn"
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

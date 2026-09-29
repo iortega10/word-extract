@@ -1,0 +1,54 @@
+{
+  "block_nodes": [
+    {
+      "child_paragraph": 1,
+      "kind": "sdt",
+      "note": "block sdt is a node with empty spans and child_ids"
+    }
+  ],
+  "clauses": [
+    "8"
+  ],
+  "fixture": "content_controls.docx",
+  "known_gaps": [
+    "inline_sdt_transparent"
+  ],
+  "labels_provenance": "spec",
+  "paragraphs": [
+    {
+      "accepted": "Before inline text after.",
+      "clause": "8",
+      "index": 0,
+      "note": "inline sdt is transparent: no node, no boundary, no ancestor",
+      "original": "Before inline text after.",
+      "spans": [
+        {
+          "end": 25,
+          "stack": [],
+          "start": 0,
+          "text": "Before inline text after."
+        }
+      ],
+      "superseded": "",
+      "union": "Before inline text after."
+    },
+    {
+      "accepted": "Inside the content control.",
+      "clause": "8",
+      "index": 1,
+      "original": "Inside the content control.",
+      "spans": [
+        {
+          "end": 27,
+          "stack": [],
+          "start": 0,
+          "text": "Inside the content control."
+        }
+      ],
+      "superseded": "",
+      "union": "Inside the content control."
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

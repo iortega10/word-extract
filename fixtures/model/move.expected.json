@@ -1,0 +1,80 @@
+{
+  "clauses": [
+    "3",
+    "5",
+    "C"
+  ],
+  "fixture": "move.docx",
+  "known_gaps": [],
+  "labels_provenance": "spec",
+  "move_groups": [
+    {
+      "dest_span": {
+        "end": 10,
+        "start": 0
+      },
+      "move_group_id": "mg1",
+      "source_span": {
+        "end": 10,
+        "start": 0
+      }
+    }
+  ],
+  "paragraphs": [
+    {
+      "accepted": "",
+      "clause": "C",
+      "index": 0,
+      "note": "move_group_id comes from the shared w:name on the range markers",
+      "original": "Section 4 ",
+      "spans": [
+        {
+          "end": 10,
+          "stack": [
+            "moveFrom:5"
+          ],
+          "start": 0,
+          "text": "Section 4 "
+        }
+      ],
+      "superseded": "",
+      "union": "Section 4 "
+    },
+    {
+      "accepted": "Section 4 ",
+      "clause": "C",
+      "index": 1,
+      "original": "",
+      "spans": [
+        {
+          "end": 10,
+          "stack": [
+            "moveTo:6"
+          ],
+          "start": 0,
+          "text": "Section 4 "
+        }
+      ],
+      "superseded": "",
+      "union": "Section 4 "
+    }
+  ],
+  "revisions": [
+    {
+      "author": "E. Nakamura",
+      "date": "2026-01-01T00:00:00Z",
+      "id": "moveFrom:5",
+      "kind": "moveFrom",
+      "move_group_id": "mg1"
+    },
+    {
+      "author": "E. Nakamura",
+      "date": "2026-01-01T00:00:00Z",
+      "id": "moveTo:6",
+      "kind": "moveTo",
+      "move_group_id": "mg1"
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

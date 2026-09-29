@@ -1,0 +1,81 @@
+{
+  "clauses": [
+    "8"
+  ],
+  "comments": [
+    {
+      "anchor_text": "The carve-out ",
+      "author": "R. Vega",
+      "id": "1",
+      "initials": "RV",
+      "para_id": "00000021",
+      "parent_id": null,
+      "resolved": false,
+      "threading_status": "verified"
+    },
+    {
+      "anchor_text": "This reply sits on the last paragraph.",
+      "author": "L. Duarte",
+      "id": "2",
+      "initials": "LD",
+      "para_id": "00000022",
+      "parent_id": "00000021",
+      "resolved": true,
+      "threading_status": "verified"
+    }
+  ],
+  "fixture": "renamed_comments_extended.docx",
+  "known_gaps": [
+    "renamed_part_unverified"
+  ],
+  "labels_provenance": "spec",
+  "paragraphs": [
+    {
+      "accepted": "The carve-out is narrow.",
+      "clause": "8",
+      "index": 0,
+      "original": "The carve-out is narrow.",
+      "spans": [
+        {
+          "end": 24,
+          "stack": [],
+          "start": 0,
+          "text": "The carve-out is narrow."
+        }
+      ],
+      "superseded": "",
+      "union": "The carve-out is narrow."
+    },
+    {
+      "accepted": "This reply sits on the last paragraph.",
+      "clause": "8",
+      "index": 1,
+      "original": "This reply sits on the last paragraph.",
+      "spans": [
+        {
+          "end": 38,
+          "stack": [],
+          "start": 0,
+          "text": "This reply sits on the last paragraph."
+        }
+      ],
+      "superseded": "",
+      "union": "This reply sits on the last paragraph."
+    }
+  ],
+  "parts": [
+    {
+      "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml",
+      "path": "word/comments.xml",
+      "rel_type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments"
+    },
+    {
+      "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml",
+      "note": "renamed part: resolved by relationship type, never by path",
+      "path": "word/ext/commentsExt.xml",
+      "rel_type": "http://schemas.microsoft.com/office/2011/relationships/commentsExtended"
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

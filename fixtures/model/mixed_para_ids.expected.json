@@ -1,0 +1,100 @@
+{
+  "clauses": [
+    "8"
+  ],
+  "fixture": "mixed_para_ids.docx",
+  "id_expectations": [
+    {
+      "fallback": "paraid",
+      "index": 0,
+      "para_id": "10000001"
+    },
+    {
+      "fallback": "content_hash",
+      "index": 1,
+      "para_id": null
+    },
+    {
+      "fallback": "paraid",
+      "index": 2,
+      "para_id": "10000003"
+    },
+    {
+      "fallback": "content_hash",
+      "index": 3,
+      "para_id": null
+    }
+  ],
+  "known_gaps": [
+    "duplicate_content_id_churn"
+  ],
+  "labels_provenance": "spec",
+  "paragraphs": [
+    {
+      "accepted": "Has a paraId.",
+      "clause": "8",
+      "index": 0,
+      "original": "Has a paraId.",
+      "spans": [
+        {
+          "end": 13,
+          "stack": [],
+          "start": 0,
+          "text": "Has a paraId."
+        }
+      ],
+      "superseded": "",
+      "union": "Has a paraId."
+    },
+    {
+      "accepted": "No paraId here.",
+      "clause": "8",
+      "index": 1,
+      "original": "No paraId here.",
+      "spans": [
+        {
+          "end": 15,
+          "stack": [],
+          "start": 0,
+          "text": "No paraId here."
+        }
+      ],
+      "superseded": "",
+      "union": "No paraId here."
+    },
+    {
+      "accepted": "Also has one.",
+      "clause": "8",
+      "index": 2,
+      "original": "Also has one.",
+      "spans": [
+        {
+          "end": 13,
+          "stack": [],
+          "start": 0,
+          "text": "Also has one."
+        }
+      ],
+      "superseded": "",
+      "union": "Also has one."
+    },
+    {
+      "accepted": "Neither does this one.",
+      "clause": "8",
+      "index": 3,
+      "original": "Neither does this one.",
+      "spans": [
+        {
+          "end": 22,
+          "stack": [],
+          "start": 0,
+          "text": "Neither does this one."
+        }
+      ],
+      "superseded": "",
+      "union": "Neither does this one."
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

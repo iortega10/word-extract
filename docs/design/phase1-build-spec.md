@@ -131,6 +131,53 @@ against repo-authored literals", never "validated".
 
 **Stop after 0b and report. Do not start 0.5 in the same run.** The user decides.
 
+## Spike findings (Turn 0b result; required inputs to Turn 0.5 and Turn 1)
+
+From `docs/design/opc-spike.md` (sized, validated only against repo-authored
+literals; 12 of 12 agree). Decision: **proceed**, not re-slice or descope.
+Estimate raised to roughly 2,900 production lines plus a vendored stemmer and
+tests; the spike's 402 lines exceeded the ~150 expectation because of the
+producer-variance sites below, each load-bearing.
+
+Freeze these:
+
+1. **Span rule.** A span is a **maximal run of equal ancestor stack**;
+   `w:tab`, `w:br` and `w:sym` do **not** split it. The spike derived this from
+   the literals; it is not yet in `text-model-spec.md`. Amend the spec in Turn
+   0.5 and keep the sidecars' `span_rule` in agreement.
+2. **Relationship canonicalization.** Strict OOXML writes relationship types
+   under `http://purl.oclc.org/ooxml/...` and strict namespaces differ from
+   transitional ones for elements **and attributes**. Canonicalize
+   relationship types at every comparison and match namespaces against a set,
+   reading attributes by local name. **A reader that skips this silently
+   returns an empty document**, so the strict fixture is a required test, and
+   an unresolvable officeDocument relationship must raise, never yield zero
+   paragraphs.
+3. **Relative-target normalization** for `.`, `..` and leading `/`.
+   `program_review_v3.docx` has a `../customXml/item1.xml` target; without
+   normalization the part is dropped with no diagnostic. Test it.
+4. **Revision ids** are `<kind>:<w:id>`; **move group ids** come from the
+   `w:name` on the `moveFromRangeStart` / `moveToRangeStart` markers that wrap
+   the move, not from the move element (needs a tracking stack).
+5. **Literal `
+` / `` inside `w:t`** map to `U+000B`, like `w:br` / `w:cr`.
+
+Also carried forward:
+
+- **paraId caveat.** Every non-authored package we have is generator output; the
+  spike shows generator documents lack `w14:paraId`, not that Word documents do.
+  Treat the content-hash id path as needed either way, but do **not** describe
+  paraId as "absent in the wild" anywhere. That claim is decided by a
+  Word-produced document.
+- "Part exists" must not mean "has content" (the sample's footnotes/endnotes
+  are separator-only stubs with their own `.rels`); text-box `Choice` is
+  preferred so boxes are not counted twice.
+- Cut order if size must come out of Phase 1: FTS5 and field-kind
+  classification and the 6e report first. **Never** cut the OPC reader's
+  strict handling or target normalization.
+- Turn 0.5 lands **on its own** (largest diff, schema hub) and is validated
+  before Turn 1 starts.
+
 ## Turn 0.5: contract revision (one SCHEMA_VERSION bump)
 
 Land together so the schema bumps once. Strict-codec round-trip tests for every

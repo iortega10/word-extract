@@ -1,0 +1,110 @@
+{
+  "clauses": [
+    "2",
+    "3",
+    "B"
+  ],
+  "fixture": "nested_revisions.docx",
+  "known_gaps": [],
+  "labels_provenance": "spec",
+  "paragraphs": [
+    {
+      "accepted": "Coverage applies worldwide.",
+      "clause": "B",
+      "index": 0,
+      "original": "",
+      "spans": [
+        {
+          "end": 9,
+          "stack": [
+            "ins:2"
+          ],
+          "start": 0,
+          "text": "Coverage "
+        },
+        {
+          "end": 20,
+          "stack": [
+            "ins:2",
+            "del:3"
+          ],
+          "start": 9,
+          "text": "is excluded"
+        },
+        {
+          "end": 38,
+          "stack": [
+            "ins:2"
+          ],
+          "start": 20,
+          "text": "applies worldwide."
+        }
+      ],
+      "superseded": "is excluded",
+      "union": "Coverage is excludedapplies worldwide."
+    },
+    {
+      "accepted": "",
+      "clause": "2",
+      "index": 1,
+      "original": "Draft clause  is void.",
+      "spans": [
+        {
+          "end": 13,
+          "stack": [
+            "del:4"
+          ],
+          "start": 0,
+          "text": "Draft clause "
+        },
+        {
+          "end": 25,
+          "stack": [
+            "del:4",
+            "ins:5"
+          ],
+          "start": 13,
+          "text": "Final clause"
+        },
+        {
+          "end": 34,
+          "stack": [
+            "del:4"
+          ],
+          "start": 25,
+          "text": " is void."
+        }
+      ],
+      "superseded": "Final clause",
+      "union": "Draft clause Final clause is void."
+    }
+  ],
+  "revisions": [
+    {
+      "author": "A. Ito",
+      "date": "2026-01-01T00:00:00Z",
+      "id": "ins:2",
+      "kind": "ins"
+    },
+    {
+      "author": "A. Ito",
+      "date": "2026-01-01T00:00:00Z",
+      "id": "del:3",
+      "kind": "del"
+    },
+    {
+      "author": "A. Ito",
+      "date": "2026-01-01T00:00:00Z",
+      "id": "del:4",
+      "kind": "del"
+    },
+    {
+      "author": "A. Ito",
+      "date": "2026-01-01T00:00:00Z",
+      "id": "ins:5",
+      "kind": "ins"
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

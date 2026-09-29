@@ -1,0 +1,44 @@
+{
+  "clauses": [
+    "1"
+  ],
+  "fixture": "empty_parts.docx",
+  "known_gaps": [
+    "empty_parts_unverified"
+  ],
+  "labels_provenance": "spec",
+  "paragraphs": [
+    {
+      "accepted": "A body with empty footnotes and endnotes parts.",
+      "clause": "1",
+      "index": 0,
+      "original": "A body with empty footnotes and endnotes parts.",
+      "spans": [
+        {
+          "end": 47,
+          "stack": [],
+          "start": 0,
+          "text": "A body with empty footnotes and endnotes parts."
+        }
+      ],
+      "superseded": "",
+      "union": "A body with empty footnotes and endnotes parts."
+    }
+  ],
+  "parts": [
+    {
+      "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml",
+      "empty": true,
+      "path": "word/footnotes.xml",
+      "rel_type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
+    },
+    {
+      "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml",
+      "empty": true,
+      "path": "word/endnotes.xml",
+      "rel_type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes"
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

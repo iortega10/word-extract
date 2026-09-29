@@ -1,0 +1,94 @@
+{
+  "clauses": [
+    "1",
+    "7"
+  ],
+  "fixture": "strict_namespaces.docx",
+  "known_gaps": [
+    "strict_namespaces_unverified"
+  ],
+  "labels_provenance": "spec",
+  "namespaces": {
+    "r": "http://purl.oclc.org/ooxml/officeDocument/relationships",
+    "w": "http://purl.oclc.org/ooxml/wordprocessingml/main"
+  },
+  "paragraphs": [
+    {
+      "accepted": "Strict Clause",
+      "clause": "1",
+      "index": 0,
+      "original": "Strict Clause",
+      "spans": [
+        {
+          "end": 13,
+          "stack": [],
+          "start": 0,
+          "text": "Strict Clause"
+        }
+      ],
+      "superseded": "",
+      "union": "Strict Clause"
+    },
+    {
+      "accepted": "The limit is ten million.",
+      "clause": "3",
+      "index": 1,
+      "original": "The limit is five million.",
+      "spans": [
+        {
+          "end": 13,
+          "stack": [],
+          "start": 0,
+          "text": "The limit is "
+        },
+        {
+          "end": 25,
+          "stack": [
+            "del:2"
+          ],
+          "start": 13,
+          "text": "five million"
+        },
+        {
+          "end": 36,
+          "stack": [
+            "ins:3"
+          ],
+          "start": 25,
+          "text": "ten million"
+        },
+        {
+          "end": 37,
+          "stack": [],
+          "start": 36,
+          "text": "."
+        }
+      ],
+      "superseded": "",
+      "union": "The limit is five millionten million."
+    }
+  ],
+  "parts": [
+    {
+      "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
+      "path": "word/document.xml",
+      "rel_type": "http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument"
+    }
+  ],
+  "revisions": [
+    {
+      "author": "A. Ito",
+      "date": "2026-01-01T00:00:00Z",
+      "id": "del:2",
+      "kind": "del"
+    },
+    {
+      "author": "A. Ito",
+      "date": "2026-01-01T00:00:00Z",
+      "id": "ins:3",
+      "kind": "ins"
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

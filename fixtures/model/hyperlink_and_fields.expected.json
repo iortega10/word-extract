@@ -1,0 +1,74 @@
+{
+  "clauses": [
+    "E",
+    "8"
+  ],
+  "doc_rels": [
+    {
+      "id": "rId10",
+      "mode": "External",
+      "target": "https://example.test/form",
+      "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
+    }
+  ],
+  "fixture": "hyperlink_and_fields.docx",
+  "known_gaps": [
+    "field_result_view_ancestry"
+  ],
+  "labels_provenance": "spec",
+  "paragraphs": [
+    {
+      "accepted": "See the endorsement form",
+      "clause": "E",
+      "index": 0,
+      "note": "w:hyperlink runs are ordinary content at their document position",
+      "original": "See the endorsement form",
+      "spans": [
+        {
+          "end": 24,
+          "stack": [],
+          "start": 0,
+          "text": "See the endorsement form"
+        }
+      ],
+      "superseded": "",
+      "union": "See the endorsement form"
+    },
+    {
+      "accepted": "AcmeEndorsed",
+      "clause": "E",
+      "index": 1,
+      "note": "complex field: instrText excluded, both results (nested and outer) included",
+      "original": "AcmeEndorsed",
+      "spans": [
+        {
+          "end": 12,
+          "stack": [],
+          "start": 0,
+          "text": "AcmeEndorsed"
+        }
+      ],
+      "superseded": "",
+      "union": "AcmeEndorsed"
+    },
+    {
+      "accepted": "1/1/2026",
+      "clause": "E",
+      "index": 2,
+      "note": "w:fldSimple: w:instr excluded, child runs are the result",
+      "original": "1/1/2026",
+      "spans": [
+        {
+          "end": 8,
+          "stack": [],
+          "start": 0,
+          "text": "1/1/2026"
+        }
+      ],
+      "superseded": "",
+      "union": "1/1/2026"
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

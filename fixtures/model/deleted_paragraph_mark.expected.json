@@ -1,0 +1,56 @@
+{
+  "clauses": [
+    "8"
+  ],
+  "fixture": "deleted_paragraph_mark.docx",
+  "known_gaps": [
+    "paragraph_mark_revision"
+  ],
+  "labels_provenance": "spec",
+  "paragraphs": [
+    {
+      "accepted": "First half,",
+      "clause": "8",
+      "index": 0,
+      "note": "the deleted paragraph mark is NOT honored: the break is retained in both views",
+      "original": "First half,",
+      "spans": [
+        {
+          "end": 11,
+          "stack": [],
+          "start": 0,
+          "text": "First half,"
+        }
+      ],
+      "superseded": "",
+      "union": "First half,"
+    },
+    {
+      "accepted": "second half.",
+      "clause": "8",
+      "index": 1,
+      "original": "second half.",
+      "spans": [
+        {
+          "end": 12,
+          "stack": [],
+          "start": 0,
+          "text": "second half."
+        }
+      ],
+      "superseded": "",
+      "union": "second half."
+    }
+  ],
+  "revisions": [
+    {
+      "author": "A. Ito",
+      "date": "2026-01-01T00:00:00Z",
+      "id": "del:9",
+      "kind": "del",
+      "note": "marks the paragraph mark deleted; not honored in Phase 1"
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

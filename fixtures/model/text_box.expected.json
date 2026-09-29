@@ -1,0 +1,40 @@
+{
+  "clauses": [
+    "8"
+  ],
+  "fixture": "text_box.docx",
+  "fragments": [
+    {
+      "host_paragraph": 0,
+      "note": "exactly one body per drawing: mc:Choice > mc:Fallback > bare w:txbxContent",
+      "ordinal": 0,
+      "preferred": "mc:Choice",
+      "union": "Choice box text"
+    }
+  ],
+  "known_gaps": [
+    "textbox"
+  ],
+  "labels_provenance": "spec",
+  "paragraphs": [
+    {
+      "accepted": "Before box.After box.",
+      "clause": "8",
+      "index": 0,
+      "note": "box text lives in its own fragment, so host document order is undisturbed",
+      "original": "Before box.After box.",
+      "spans": [
+        {
+          "end": 21,
+          "stack": [],
+          "start": 0,
+          "text": "Before box.After box."
+        }
+      ],
+      "superseded": "",
+      "union": "Before box.After box."
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

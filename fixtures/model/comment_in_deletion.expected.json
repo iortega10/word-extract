@@ -1,0 +1,67 @@
+{
+  "clauses": [
+    "D"
+  ],
+  "comments": [
+    {
+      "anchor": {
+        "end": 38,
+        "start": 17
+      },
+      "anchor_text": "excluded in all cases",
+      "author": "D. Okafor",
+      "clauses": [
+        "D"
+      ],
+      "id": "7",
+      "initials": "DO",
+      "note": "the range starts inside a deleted run: the union anchor is non-empty even though the accepted view of that span is empty",
+      "para_id": "0000001A"
+    }
+  ],
+  "fixture": "comment_in_deletion.docx",
+  "known_gaps": [],
+  "labels_provenance": "spec",
+  "paragraphs": [
+    {
+      "accepted": "The exclusion is .",
+      "clause": "D",
+      "index": 0,
+      "original": "The exclusion is excluded in all cases.",
+      "spans": [
+        {
+          "end": 17,
+          "stack": [],
+          "start": 0,
+          "text": "The exclusion is "
+        },
+        {
+          "end": 38,
+          "stack": [
+            "del:3"
+          ],
+          "start": 17,
+          "text": "excluded in all cases"
+        },
+        {
+          "end": 39,
+          "stack": [],
+          "start": 38,
+          "text": "."
+        }
+      ],
+      "superseded": "",
+      "union": "The exclusion is excluded in all cases."
+    }
+  ],
+  "revisions": [
+    {
+      "author": "A. Ito",
+      "date": "2026-01-01T00:00:00Z",
+      "id": "del:3",
+      "kind": "del"
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}
