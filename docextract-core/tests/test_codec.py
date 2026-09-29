@@ -7,7 +7,7 @@ from enum import Enum
 
 import pytest
 
-from docextract_core.codec import SCHEMA_VERSION, CodecError, from_json, to_json
+from docextract_core.codec import MIN_SUPPORTED_VERSION, SCHEMA_VERSION, CodecError, from_json, to_json
 
 
 class Kind(str, Enum):
@@ -83,8 +83,21 @@ def test_newer_schema_version_raises():
         from_json(Outer, blob)
 
 
-def test_same_or_older_schema_version_is_accepted():
-    assert from_json(Outer, to_json(_sample(), schema_version="1")) == _sample()
+def test_current_schema_version_is_accepted():
+    assert from_json(Outer, to_json(_sample(), schema_version=MIN_SUPPORTED_VERSION)) == _sample()
+
+
+def test_older_than_minimum_schema_version_raises():
+    """An old blob must not decode with new fields silently defaulted (Open risk #1)."""
+    blob = to_json(_sample(), schema_version="1")
+    assert MIN_SUPPORTED_VERSION > "1"
+    with pytest.raises(CodecError, match="older"):
+        from_json(Outer, blob)
+
+
+def test_min_version_can_be_lowered_explicitly():
+    blob = to_json(_sample(), schema_version="1")
+    assert from_json(Outer, blob, min_version="1") == _sample()
 
 
 def test_missing_envelope_raises():
@@ -94,4 +107,4 @@ def test_missing_envelope_raises():
 
 def test_non_object_payload_raises():
     with pytest.raises(CodecError):
-        from_json(Outer, json.dumps({"schema_version": "1", "record": ["not", "an", "object"]}))
+        from_json(Outer, json.dumps({"schema_version": SCHEMA_VERSION, "record": ["not", "an", "object"]}))

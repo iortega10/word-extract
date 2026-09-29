@@ -281,6 +281,16 @@ class TermHit:
     move_group_id: str | None = None
     context_node_id: str | None = None
 
+    def __post_init__(self) -> None:
+        views = [vs.view for vs in self.view_spans]
+        if set(views) != set(self.present_in):
+            raise ValueError(
+                f"present_in {sorted(v.value for v in self.present_in)} disagrees with "
+                f"view_spans views {sorted(v.value for v in set(views))}"
+            )
+        if len(views) != len(set(views)) or [v.value for v in views] != sorted(v.value for v in views):
+            raise ValueError("view_spans must hold one entry per view, sorted by view")
+
 
 @dataclass(frozen=True)
 class ArtifactCache:

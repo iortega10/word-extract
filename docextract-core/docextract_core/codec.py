@@ -6,7 +6,8 @@ Two deliberate departures from the form-extract reference (model.py:383-431):
   which is what let a record from a newer core read by an older one lose fields
   and produce a false cache hit (design Open risk #1).
 - **Versioned envelope.** Every top-level blob carries ``schema_version``;
-  decoding a blob newer than the reader supports raises.
+  decoding a blob newer than the reader supports, or older than
+  ``MIN_SUPPORTED_VERSION``, raises.
 """
 from __future__ import annotations
 
@@ -17,6 +18,10 @@ from enum import Enum
 from typing import Any, TypeVar, Union, get_args, get_origin, get_type_hints
 
 SCHEMA_VERSION = "2"
+#: Oldest schema a persisted record may carry. Older blobs are rejected, not decoded
+#: with new fields silently defaulted (design Open risk #1: version skew that
+#: produces a wrong identity or a false cache hit).
+MIN_SUPPORTED_VERSION = "2"
 
 T = TypeVar("T")
 
@@ -85,6 +90,7 @@ def from_json(
     *,
     strict: bool = True,
     schema_version: str = SCHEMA_VERSION,
+    min_version: str = MIN_SUPPORTED_VERSION,
 ) -> T:
     data = json.loads(text)
     if not isinstance(data, dict) or _VERSION_KEY not in data or _RECORD_KEY not in data:
@@ -92,6 +98,10 @@ def from_json(
     if _is_newer(data[_VERSION_KEY], schema_version):
         raise CodecError(
             f"blob schema_version {data[_VERSION_KEY]!r} is newer than supported {schema_version!r}"
+        )
+    if _is_newer(min_version, data[_VERSION_KEY]):
+        raise CodecError(
+            f"blob schema_version {data[_VERSION_KEY]!r} is older than the minimum supported {min_version!r}"
         )
     return decode(cls, data[_RECORD_KEY], strict=strict)
 

@@ -354,3 +354,117 @@ def test_local_name_and_is_w_consume_the_canonical_map():
     assert opc.local_name(body) == "body"
     assert opc.is_w(body, "body")
     assert not opc.is_w(body, "notBody")
+
+
+# --- untrusted-input hardening ------------------------------------------------
+
+
+def _with_document(tmp_path, document_xml: bytes, name="evil.docx"):
+    src = FIXTURES / "spec_threaded.docx"
+    members = {n: _member(src, n) for n in zipfile.ZipFile(src).namelist()}
+    members["word/document.xml"] = document_xml
+    return _write_zip(tmp_path / name, members)
+
+
+_W = b'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+
+
+def test_external_entity_does_not_leak_a_local_file(tmp_path):
+    secret = tmp_path / "secret.txt"
+    secret.write_text("TOPSECRET-LOCAL-FILE", encoding="utf-8")
+    doc = (
+        f'<?xml version="1.0"?><!DOCTYPE d [<!ENTITY xxe SYSTEM "{secret.as_uri()}">]>'
+        f"<w:document {_W.decode()}><w:body><w:p><w:r><w:t>&xxe;</w:t></w:r></w:p></w:body></w:document>"
+    ).encode()
+    with pytest.raises(OpcError, match="DOCTYPE"):
+        Package(_with_document(tmp_path, doc))
+
+
+def test_entity_expansion_bomb_is_rejected(tmp_path):
+    ents = '<!ENTITY a0 "aaaaaaaaaa">' + "".join(
+        f'<!ENTITY a{i} "' + f"&a{i - 1};" * 10 + '">' for i in range(1, 8)
+    )
+    doc = (
+        f"<?xml version=\"1.0\"?><!DOCTYPE d [{ents}]>"
+        f"<w:document {_W.decode()}><w:body><w:p><w:r><w:t>&a7;</w:t></w:r></w:p></w:body></w:document>"
+    ).encode()
+    with pytest.raises(OpcError):
+        Package(_with_document(tmp_path, doc))
+
+
+def test_doctype_is_rejected_in_any_part(tmp_path):
+    src = FIXTURES / "spec_threaded.docx"
+    members = {n: _member(src, n) for n in zipfile.ZipFile(src).namelist()}
+    members["[Content_Types].xml"] = b"<!DOCTYPE x []>" + members["[Content_Types].xml"]
+    with pytest.raises(OpcError, match="DOCTYPE"):
+        Package(_write_zip(tmp_path / "ct.docx", members))
+
+
+def test_malformed_xml_is_an_opc_error_not_a_raw_lxml_error(tmp_path):
+    with pytest.raises(OpcError, match="not well-formed"):
+        Package(_with_document(tmp_path, b"<w:document"))
+
+
+def test_not_a_zip_is_an_opc_error(tmp_path):
+    bogus = tmp_path / "bogus.docx"
+    bogus.write_bytes(b"this is not a zip")
+    with pytest.raises(OpcError, match="not a zip"):
+        Package(bogus)
+
+
+def test_parse_xml_uses_one_hardened_parser():
+    tree = opc.parse_xml(b"<a><b/></a>")
+    assert tree.tag == "a"
+    with pytest.raises(OpcError):
+        opc.parse_xml(b'<!DOCTYPE a [<!ENTITY e "x">]><a>&e;</a>')
+
+
+def test_oversized_package_is_refused(tmp_path):
+    src = FIXTURES / "spec_threaded.docx"
+    with pytest.raises(OpcError, match="expands past"):
+        Package(src, max_total_bytes=100)
+
+
+def test_oversized_member_is_refused(tmp_path):
+    src = FIXTURES / "spec_threaded.docx"
+    with pytest.raises(OpcError, match="exceeds"):
+        Package(src, max_member_bytes=100)
+
+
+def test_corrupt_member_is_an_opc_error(tmp_path):
+    """A header that lies about the uncompressed size makes the member unreadable;
+    that is an OpcError, never a raw zipfile exception."""
+    payload = b"<a>" + b"x" * 5000 + b"</a>"
+    path = tmp_path / "lie.zip"
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("big.xml", payload)
+    raw = bytearray(path.read_bytes())
+    # patch the declared uncompressed size (central directory + local header) to 10
+    import struct
+
+    size = struct.pack("<I", len(payload))
+    fake = struct.pack("<I", 10)
+    while size in raw:
+        raw[raw.index(size) : raw.index(size) + 4] = fake
+    path.write_bytes(bytes(raw))
+    with pytest.raises(OpcError, match="cannot read member"):
+        Package(path, max_member_bytes=1000, max_total_bytes=10_000)
+
+
+# --- has_text vs exists --------------------------------------------------------
+
+
+def test_separator_only_note_parts_have_no_text():
+    package = Package(FIXTURES / "samples" / "review_sample.docx")
+    assert package.footnotes is not None and not package.footnotes.empty
+    assert package.footnotes.has_text is False
+    assert package.endnotes is not None and package.endnotes.has_text is False
+    assert package.comments is not None and package.comments.has_text is True
+    assert package.document.has_text is True
+
+
+def test_binary_part_has_no_text():
+    package = Package(FIXTURES / "program_review_v3.docx")
+    binaries = [p for p in package.parts.values() if not p.is_xml]
+    for part in binaries:
+        assert part.has_text is False

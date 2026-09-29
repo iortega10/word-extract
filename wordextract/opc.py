@@ -109,6 +109,36 @@ class OpcError(Exception):
     """A package that cannot be read as OPC. Never a silently empty document."""
 
 
+# --- untrusted-input hardening -------------------------------------------------
+# Documents arrive from outside senders. OOXML never legitimately uses a DTD, so a
+# ``<!DOCTYPE`` is rejected outright, and the one parser below is used for every
+# parse in the package. Safety must not depend on library defaults.
+
+#: Ceilings on what one package may expand to. Generous for real Word documents,
+#: small enough that a zip bomb is refused before it is read into memory.
+MAX_TOTAL_BYTES = 256 * 1024 * 1024
+MAX_MEMBER_BYTES = 64 * 1024 * 1024
+
+_SAFE_PARSER = etree.XMLParser(
+    resolve_entities=False,
+    no_network=True,
+    huge_tree=False,
+    load_dtd=False,
+    dtd_validation=False,
+    remove_comments=False,
+)
+
+
+def parse_xml(data: bytes, *, name: str = "<xml>") -> etree._Element:
+    """Parse one XML part with the hardened parser; malformed or DTD input is an OpcError."""
+    if b"<!DOCTYPE" in data or b"<!ENTITY" in data:
+        raise OpcError(f"{name}: a DOCTYPE/ENTITY declaration is not allowed in an OOXML part")
+    try:
+        return etree.fromstring(data, parser=_SAFE_PARSER)
+    except etree.XMLSyntaxError as exc:
+        raise OpcError(f"{name}: not well-formed XML ({exc})") from exc
+
+
 # --- namespace helpers -------------------------------------------------------
 
 
@@ -207,6 +237,15 @@ class Part:
         return self.tree is not None and len(self.tree) == 0
 
     @property
+    def has_text(self) -> bool:
+        """True when the part carries any non-whitespace text.
+
+        "Exists" and "has content" are different: a separator-only footnotes part is
+        present, non-``empty`` (it has child elements) and has no text.
+        """
+        return self.tree is not None and bool("".join(self.tree.itertext()).strip())
+
+    @property
     def nsmap(self) -> dict[str, str]:
         return normalize_nsmap(self.tree) if self.tree is not None else {}
 
@@ -258,12 +297,38 @@ class Package:
     caller can tell "not part of the graph" from "absent".
     """
 
-    def __init__(self, path: str | Path):
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        max_total_bytes: int = MAX_TOTAL_BYTES,
+        max_member_bytes: int = MAX_MEMBER_BYTES,
+    ):
         self.path = Path(path)
-        with zipfile.ZipFile(self.path) as archive:
-            names = archive.namelist()
-            self.names: tuple[str, ...] = tuple(n for n in names if not n.endswith("/"))
-            self._members: dict[str, bytes] = {n: archive.read(n) for n in self.names}
+        try:
+            archive = zipfile.ZipFile(self.path)
+        except zipfile.BadZipFile as exc:
+            raise OpcError(f"{self.path}: not a zip package ({exc})") from exc
+        with archive:
+            infos = [i for i in archive.infolist() if not i.filename.endswith("/")]
+            self.names: tuple[str, ...] = tuple(i.filename for i in infos)
+            if sum(i.file_size for i in infos) > max_total_bytes:
+                raise OpcError(f"{self.path}: package expands past {max_total_bytes} bytes")
+            self._members: dict[str, bytes] = {}
+            total = 0
+            for info in infos:
+                # read with a hard limit, and surface a corrupt member as an OpcError
+                try:
+                    with archive.open(info) as handle:
+                        data = handle.read(max_member_bytes + 1)
+                except (zipfile.BadZipFile, NotImplementedError, RuntimeError) as exc:
+                    raise OpcError(f"{self.path}: cannot read member {info.filename} ({exc})") from exc
+                if len(data) > max_member_bytes:
+                    raise OpcError(f"{self.path}: member {info.filename} exceeds {max_member_bytes} bytes")
+                total += len(data)
+                if total > max_total_bytes:
+                    raise OpcError(f"{self.path}: package expands past {max_total_bytes} bytes")
+                self._members[info.filename] = data
         self.content_types = self._read_content_types()
         self._rels: dict[str | None, tuple[Relationship, ...]] = {}
         self.parts: dict[str, Part] = {}
@@ -276,7 +341,7 @@ class Package:
         raw = self._members.get(CONTENT_TYPES_PART)
         if raw is None:
             raise OpcError(f"{self.path}: no {CONTENT_TYPES_PART}")
-        root = etree.fromstring(raw)
+        root = parse_xml(raw, name=CONTENT_TYPES_PART)
         defaults: dict[str, str] = {}
         overrides: dict[str, str] = {}
         for element in root.iter():
@@ -298,7 +363,7 @@ class Package:
         return self._rels[source]
 
     def _parse_rels(self, source: str | None, raw: bytes) -> tuple[Relationship, ...]:
-        root = etree.fromstring(raw)
+        root = parse_xml(raw, name=f"rels of {source or 'package'}")
         out: list[Relationship] = []
         for element in root.iter():
             if not isinstance(element.tag, str):
@@ -352,7 +417,7 @@ class Package:
 
         for name, part_id in part_id_of.items():
             data = self._members[name]
-            tree = etree.fromstring(data) if self._is_xml_name(name) else None
+            tree = parse_xml(data, name=name) if self._is_xml_name(name) else None
             self.parts[name] = Part(
                 part_id=part_id,
                 name=name,

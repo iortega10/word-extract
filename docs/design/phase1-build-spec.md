@@ -272,7 +272,9 @@ new or changed record, plus a test that an old-version blob is rejected.
 Tests: all fixtures including the 0a package and the underwriting sample; a
 renamed `commentsExtended`; an absent part yields `None`, not an exception.
 
-## Carried follow-ups (from validating Turns 0.5 and 1; do these first in the next run)
+## Carried follow-ups (from validating Turns 0.5 and 1)
+
+**Status: items 1-5 fixed and committed (hardened parser with DOCTYPE rejection, zip size caps, codec `MIN_SUPPORTED_VERSION`, `TermHit` consistency check, `Part.has_text`). Only item 6 remains, for Turn 2a.** The original text is kept below for the reasoning.
 
 1. **Hardened XML parser (security).** Documents arrive from outside senders.
    `opc.py` parses with a bare `etree.fromstring`; safety today comes from

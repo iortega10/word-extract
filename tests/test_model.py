@@ -251,13 +251,49 @@ def test_term_hit_view_spans_are_the_views_the_hit_is_present_in():
 
 
 def test_a_pre_half_blob_with_the_removed_view_span_key_is_rejected():
-    """Pre-0.5 blobs carried one ``view_span``. The envelope rule accepts an older
-    version; it is strict decoding that rejects the removed shape -- and lenient
-    decoding loses the hit's views, which is why strict is the default."""
+    """Pre-0.5 blobs carried one ``view_span``. Version 1 is now rejected outright;
+    at the current version the removed key is still rejected by strict decoding, and
+    lenient decoding would lose the hit's views, which is why strict is the default."""
     hit = next(s for s in SAMPLES if isinstance(s, TermHit))
-    blob = json.loads(to_json(hit, schema_version="1"))
-    assert blob["schema_version"] == "1"
+    with pytest.raises(CodecError, match="older"):
+        from_json(TermHit, to_json(hit, schema_version="1"))
+    blob = json.loads(to_json(hit))
     blob["record"]["view_span"] = blob["record"].pop("view_spans")[0]
     with pytest.raises(CodecError):
         from_json(TermHit, json.dumps(blob))
-    assert from_json(TermHit, json.dumps(blob), strict=False).view_spans == []
+
+
+def test_term_hit_rejects_present_in_that_disagrees_with_view_spans():
+    with pytest.raises(ValueError, match="disagrees"):
+        TermHit(group="g", present_in={View.ACCEPTED}, view_spans=[ViewSpan(View.ORIGINAL, 0, 3)])
+    with pytest.raises(ValueError, match="disagrees"):
+        TermHit(group="g", present_in={View.ACCEPTED, View.ORIGINAL}, view_spans=[ViewSpan(View.ACCEPTED, 0, 3)])
+
+
+def test_term_hit_requires_view_spans_sorted_and_unique_per_view():
+    with pytest.raises(ValueError, match="sorted"):
+        TermHit(
+            group="g",
+            present_in={View.ACCEPTED, View.ORIGINAL},
+            view_spans=[ViewSpan(View.ORIGINAL, 0, 3), ViewSpan(View.ACCEPTED, 0, 3)],
+        )
+    with pytest.raises(ValueError, match="one entry per view"):
+        TermHit(
+            group="g",
+            present_in={View.ACCEPTED},
+            view_spans=[ViewSpan(View.ACCEPTED, 0, 3), ViewSpan(View.ACCEPTED, 5, 8)],
+        )
+
+
+def test_comment_hit_has_no_views():
+    """A comment hit resolves via the Comment record: no present_in, no view_spans."""
+    hit = TermHit(group="g", location=LocationKind.COMMENT, node_id="comment:x")
+    assert hit.present_in == set() and hit.view_spans == []
+
+
+def test_decoding_a_disagreeing_hit_raises():
+    hit = next(s for s in SAMPLES if isinstance(s, TermHit))
+    blob = json.loads(to_json(hit))
+    blob["record"]["present_in"] = ["superseded"]
+    with pytest.raises(ValueError, match="disagrees"):
+        from_json(TermHit, json.dumps(blob))
