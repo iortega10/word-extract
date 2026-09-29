@@ -16,7 +16,7 @@ from dataclasses import fields, is_dataclass
 from enum import Enum
 from typing import Any, TypeVar, Union, get_args, get_origin, get_type_hints
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 T = TypeVar("T")
 

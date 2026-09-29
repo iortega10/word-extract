@@ -69,6 +69,9 @@ class LocationKind(str, Enum):
     HEADER = "header"
     FOOTER = "footer"
     FOOTNOTE = "footnote"
+    ENDNOTE = "endnote"
+    TEXTBOX = "textbox"
+    COMMENT = "comment"
 
 
 class HeadingDetection(str, Enum):
@@ -91,11 +94,43 @@ class LabelsProvenance(str, Enum):
 
 @dataclass(frozen=True)
 class Span:
-    """A half-open range of a part's union stream. ``part_id`` lives here (D2)."""
+    """A half-open range of a part's union stream. ``part_id`` lives here (D2).
+
+    ``fragment_id`` is set only for text-box content, which lives in its own
+    fragment (host node id + ordinal) so host document order is undisturbed.
+    """
 
     part_id: str
     start: int
     end: int
+    fragment_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ElementarySpan:
+    """One tiling piece of a part's union stream: an offset range plus the
+    ancestor stack of the text it covers, outermost first (D2)."""
+
+    start: int
+    end: int
+    stack: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class UnionStream:
+    """A part's union stream (D2): the literal union text plus the elementary
+    spans that tile it exactly.
+
+    A paragraph terminator is an elementary span whose text is a single newline
+    character and whose stack is empty, so the spans tile the union exactly while
+    ``Node.spans`` excludes a paragraph's own terminator. View text and
+    view/union offset maps are **derived on demand** from this record -- there is
+    no stored ``ViewText`` record.
+    """
+
+    part_id: str
+    text: str
+    spans: list[ElementarySpan] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -110,6 +145,8 @@ class Node:
     numbering_label: str | None = None
     child_ids: list[str] = field(default_factory=list)
     id_stability: IdStability = IdStability.PATH
+    occurrence_index: int = 0
+    host_node_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -125,11 +162,22 @@ class Revision:
 
 @dataclass(frozen=True)
 class Comment:
-    """Keyed on the ``w14:paraId`` of the comment's last paragraph, not ``w:id`` (D4)."""
+    """Identity is the ``w14:paraId`` of the comment's last paragraph, never
+    ``w:id`` (D4).
+
+    ``para_id`` carries that identity. When the last paragraph has no
+    ``w14:paraId`` it carries a ``hash:`` fallback over canonical (author, date,
+    text, ordinal among equal hashes in document order); ``id_stability`` says
+    which kind it is, and the parser always writes ``PARAID`` or
+    ``CONTENT_HASH`` here (``PATH`` is only the dataclass default). The anchor
+    start is deliberately **not** folded into the id: it is a union offset, so it
+    would churn with ``textmodel_version``.
+    """
 
     para_id: str
     author: str
     initials: str
+    id_stability: IdStability = IdStability.PATH
     resolved_identity: str | None = None
     date: str | None = None
     anchor: Span | None = None
@@ -142,8 +190,19 @@ class Comment:
 
 @dataclass(frozen=True)
 class Chunk:
+    """``content_hash`` is the hash of the chunk's own view text plus the
+    ``textmodel_version``/``view_id`` that produced it; ``id`` is the hash of the
+    canonical ``(content_hash, occurrence_index)`` pair, computed by the chunker.
+
+    ``section_path`` is a field, **never** part of any key. The store key is
+    ``(source_content_hash, chunk_id)``. ``context_hash`` (content + comment
+    texts) is a summary-key input only.
+    """
+
     id: str
+    content_hash: str
     context_hash: str
+    occurrence_index: int = 0
     section_path: list[str] = field(default_factory=list)
     node_ids: list[str] = field(default_factory=list)
     view_id: str = ""
@@ -152,6 +211,44 @@ class Chunk:
     heading_detection: HeadingDetection = HeadingDetection.NORMAL
     fired_rules: list[str] = field(default_factory=list)
     disputed_rules: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class HeadingDecision:
+    """Per-node heading decision: every rule that fired, the winner, and the
+    rules that disagreed. ``Chunk`` carries the aggregate, this carries the node
+    the aggregate is made of (D3: no confidence scalar)."""
+
+    node_id: str
+    fired_rules: list[str] = field(default_factory=list)
+    winner: str | None = None
+    disputed_rules: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ViewSpan:
+    """A hit's range in one view's text, in the **whole-part** view projection
+    with terminators kept (D6). Not a union address."""
+
+    view: View
+    start: int
+    end: int
+
+
+@dataclass(frozen=True)
+class ParseResult:
+    """Everything the deterministic walker produces for one document: the union
+    streams (the address space), the resolved node tree, raw revision and comment
+    facts, the heading decisions, and ``known_gaps`` as **ids only** (the prose
+    lives in ``docs/design/phase1-gaps.md``)."""
+
+    union_streams: list[UnionStream] = field(default_factory=list)
+    nodes: list[Node] = field(default_factory=list)
+    revisions: list[Revision] = field(default_factory=list)
+    comments: list[Comment] = field(default_factory=list)
+    heading_decisions: list[HeadingDecision] = field(default_factory=list)
+    heading_detection: HeadingDetection = HeadingDetection.NORMAL
+    known_gaps: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -165,13 +262,24 @@ class TermGroup:
 
 @dataclass(frozen=True)
 class TermHit:
+    """One hit of one term group in one location (D6).
+
+    ``spans`` are union addresses; ``view_spans`` are the same hit's ranges in
+    each view it occurs in, **sorted by view**, in the whole-part view projection
+    (terminators kept). ``present_in`` is derivable from ``view_spans`` and must
+    not disagree with it. A move yields one hit per location, both sharing
+    ``move_group_id``; "one hit" is realized by query-time dedupe.
+    """
+
     group: str
     present_in: set[View] = field(default_factory=set)
     spans: list[Span] = field(default_factory=list)
-    view_span: Span | None = None
+    view_spans: list[ViewSpan] = field(default_factory=list)
     node_id: str = ""
     location: LocationKind = LocationKind.BODY
     match_type: MatchType = MatchType.EXACT
+    move_group_id: str | None = None
+    context_node_id: str | None = None
 
 
 @dataclass(frozen=True)

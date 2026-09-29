@@ -1,15 +1,19 @@
 """Every frozen contract round-trips through the strict codec."""
 from __future__ import annotations
 
+import json
+
 import pytest
 
-from docextract_core import from_json, to_json
+from docextract_core import CodecError, from_json, to_json
 from wordextract import (
     ArtifactCache,
     CacheStatus,
     Chunk,
     Comment,
+    ElementarySpan,
     HashedInputs,
+    HeadingDecision,
     HeadingDetection,
     IdStability,
     LabelsProvenance,
@@ -17,6 +21,7 @@ from wordextract import (
     MatchType,
     Node,
     NodeKind,
+    ParseResult,
     Revision,
     RevisionKind,
     RunRecord,
@@ -24,7 +29,9 @@ from wordextract import (
     TermGroup,
     TermHit,
     ThreadingStatus,
+    UnionStream,
     View,
+    ViewSpan,
 )
 
 HASHED = HashedInputs(
@@ -71,6 +78,7 @@ SAMPLES = [
         para_id="1A2B3C4D",
         author="M. Chen",
         initials="MC",
+        id_stability=IdStability.PARAID,
         resolved_identity="mchen",
         date="2026-09-01T10:00:00Z",
         anchor=Span("word/document.xml", 5, 20),
@@ -82,7 +90,9 @@ SAMPLES = [
     ),
     Chunk(
         id="c1",
+        content_hash="ch1",
         context_hash="ctx",
+        occurrence_index=1,
         section_path=["Program Review", "Coverage Terms"],
         node_ids=["n1", "n2"],
         view_id="accepted",
@@ -103,10 +113,15 @@ SAMPLES = [
         group="subrogation",
         present_in={View.ACCEPTED, View.ORIGINAL},
         spans=[Span("word/document.xml", 30, 46)],
-        view_span=Span("word/document.xml", 30, 46),
+        view_spans=[
+            ViewSpan(view=View.ACCEPTED, start=30, end=46),
+            ViewSpan(view=View.ORIGINAL, start=30, end=44),
+        ],
         node_id="n2",
         location=LocationKind.TABLE_CELL,
         match_type=MatchType.SYNONYM,
+        move_group_id="mg1",
+        context_node_id="n1",
     ),
     RunRecord(
         run_id="run1",
@@ -116,6 +131,70 @@ SAMPLES = [
             ArtifactCache(artifact_id="c1", status=CacheStatus.HIT, recomputed_key="k"),
             ArtifactCache(artifact_id="c2", status=CacheStatus.MISS, recomputed_key="k2"),
         ],
+    ),
+    Span(part_id="word/document.xml", start=10, end=16, fragment_id="n1/0"),
+    Node(
+        id="n4",
+        kind=NodeKind.PARA,
+        part_id="word/document.xml",
+        source_ref="s3/p1",
+        spans=[Span("word/document.xml", 10, 16, "n1/0")],
+        id_stability=IdStability.CONTENT_HASH,
+        occurrence_index=2,
+        host_node_id="n1",
+    ),
+    Comment(
+        para_id="hash:9f2c1b",
+        author="L. Duarte",
+        initials="LD",
+        id_stability=IdStability.CONTENT_HASH,
+    ),
+    UnionStream(
+        part_id="word/document.xml",
+        text="right of recoverysubrogation\n",
+        spans=[
+            ElementarySpan(start=0, end=9),
+            ElementarySpan(start=9, end=17, stack=["r1"]),
+            ElementarySpan(start=17, end=28, stack=["r2"]),
+            ElementarySpan(start=28, end=29),
+        ],
+    ),
+    HeadingDecision(
+        node_id="n1",
+        fired_rules=["style", "outlineLvl"],
+        winner="style",
+        disputed_rules=["outlineLvl"],
+    ),
+    ParseResult(
+        union_streams=[
+            UnionStream(
+                part_id="word/document.xml",
+                text="Coverage applies worldwide.\n",
+                spans=[ElementarySpan(start=0, end=28)],
+            )
+        ],
+        nodes=[
+            Node(
+                id="n1",
+                kind=NodeKind.PARA,
+                part_id="word/document.xml",
+                source_ref="s1/p1",
+                spans=[Span("word/document.xml", 0, 27)],
+            )
+        ],
+        revisions=[Revision(id="r1", kind=RevisionKind.DEL, author="A. Ito")],
+        comments=[
+            Comment(
+                para_id="0000001A",
+                author="D. Okafor",
+                initials="DO",
+                anchor=Span("word/document.xml", 17, 38),
+                anchor_text="excluded in all cases",
+            )
+        ],
+        heading_decisions=[HeadingDecision(node_id="n1")],
+        heading_detection=HeadingDetection.DEGRADED,
+        known_gaps=["paragraph_mark_revision", "textbox"],
     ),
 ]
 
@@ -139,3 +218,46 @@ def test_explicit_none_dates_survive_round_trip():
     revision = from_json(Revision, to_json(SAMPLES[2]))
     assert revision.date is None
     assert revision.ancestors == ["r0", "r9"]
+
+
+def test_location_kinds_cover_every_hit_location():
+    assert {k.value for k in LocationKind} == {
+        "body",
+        "table_cell",
+        "header",
+        "footer",
+        "footnote",
+        "endnote",
+        "textbox",
+        "comment",
+    }
+
+
+def test_paragraph_terminator_is_an_elementary_span_with_an_empty_stack():
+    stream = next(s for s in SAMPLES if isinstance(s, UnionStream))
+    assert [s.start for s in stream.spans] == sorted(s.start for s in stream.spans)
+    assert all(a.end == b.start for a, b in zip(stream.spans, stream.spans[1:])), "spans must tile"
+    assert stream.spans[0].start == 0 and stream.spans[-1].end == len(stream.text)
+    terminator = stream.spans[-1]
+    assert terminator.stack == [] and terminator.end - terminator.start == 1
+    assert stream.text[terminator.start : terminator.end] == "\n"
+
+
+def test_term_hit_view_spans_are_the_views_the_hit_is_present_in():
+    hit = next(s for s in SAMPLES if isinstance(s, TermHit))
+    assert {vs.view for vs in hit.view_spans} == hit.present_in
+    assert [vs.view.value for vs in hit.view_spans] == sorted(vs.view.value for vs in hit.view_spans)
+    assert all(vs.start < vs.end for vs in hit.view_spans)
+
+
+def test_a_pre_half_blob_with_the_removed_view_span_key_is_rejected():
+    """Pre-0.5 blobs carried one ``view_span``. The envelope rule accepts an older
+    version; it is strict decoding that rejects the removed shape -- and lenient
+    decoding loses the hit's views, which is why strict is the default."""
+    hit = next(s for s in SAMPLES if isinstance(s, TermHit))
+    blob = json.loads(to_json(hit, schema_version="1"))
+    assert blob["schema_version"] == "1"
+    blob["record"]["view_span"] = blob["record"].pop("view_spans")[0]
+    with pytest.raises(CodecError):
+        from_json(TermHit, json.dumps(blob))
+    assert from_json(TermHit, json.dumps(blob), strict=False).view_spans == []

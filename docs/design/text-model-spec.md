@@ -1,6 +1,9 @@
 # Text model spec (design D2): union stream, views, revisions
 
-Status: Phase 0 deliverable. Precise enough to implement the Phase 1 walker from.
+Status: Phase 0 deliverable, amended in Turn 0.5 (§1 span rule, terminators and
+fragments; §5 two hits plus query-time dedupe; §6 example A offsets; §7 view
+projection and gap-closing in the `textmodel_version` bundle plus paragraph-mark
+revisions not honored; §8 the Phase 1 decisions merged in).
 Source of truth is `word-extraction-design.md` D2 (with D3/D4/D5/D6 for the
 consequences). Where this document is silent, it is silent **on purpose**: the
 unspecified list at the end is the gap, made visible rather than guessed.
@@ -18,14 +21,32 @@ elementary spans, in document order, containing inserted **and** deleted text.
 Every elementary span has:
 
 - an offset range `[start, end)` in the part's union coordinate space;
-- its literal text;
+- its literal text — written once on the stream (`UnionStream.text[start:end]`),
+  never duplicated per span;
 - an **ancestor stack**: `[revision_id, ...]`, outer to inner.
+
+**Span rule.** A span is a **maximal run of equal ancestor stack**. Nothing else
+splits one: `w:tab`, `w:br` (every type), `w:sym`, and a literal `\n` / `\r`
+inside a `w:t` are content *inside* their span, never boundaries.
+
+**Terminators.** Each paragraph contributes exactly one `"\n"` elementary span
+(empty stack) at the end of its content, so the part's spans tile the part's
+union exactly — every offset belongs to exactly one span (§6 fixes the offsets
+accordingly). The terminator belongs to the union and to the whole-part view
+projection (§7), but a paragraph `Node`'s `spans` and the per-paragraph literals
+in the fixture sidecars **exclude the paragraph's own terminator**, and comment
+anchor ranges clamp to exclude terminators.
 
 An address is `Span(part_id, start, end)`. `source_ref` names the originating
 OPC/XML location; offsets are the union coordinate.
 
 The union is **only an address space**, not content. Offsets are stable across
 all views within one `textmodel_version` (§7).
+
+**Fragments.** Text that is not in host document order (a text-box body) lives in
+its own fragment: `Span.fragment_id` is the owning fragment (host node id +
+ordinal) and the host node carries `host_node_id`, so host document order is
+undisturbed and a box is never counted twice (known gap, §8).
 
 ## 2. Ancestor stacks
 
@@ -80,8 +101,10 @@ Same-family treatment as revisions:
 - both members of one move share a `move_group_id`;
 - therefore a moved run is excluded from `accepted` at its source and included
   at its destination, and vice versa for `original`;
-- a move renders as **one hit with two locations**, deduped in the term index
-  (D4). OOXML never pairs an individual `w:del` with its `w:ins`; no "net
+- a move renders as **two hits, one per location**, each carrying the shared
+  `move_group_id` and its own `present_in`, and the term index dedupes the pair
+  **at query time** (D4); the two hits are one *group*, never one hit with two
+  locations. OOXML never pairs an individual `w:del` with its `w:ins`; no "net
   change" is synthesized (D4).
 
 ## 6. Worked examples
@@ -95,12 +118,14 @@ Union stream (one paragraph):
 
 | offsets  | text          | stack        |
 |----------|---------------|--------------|
-| `0–8`    | `right of `   | `[]`         |
-| `8–16`   | `recovery`    | `[r1:del]`   |
-| `16–27`  | `subrogation` | `[r2:ins]`   |
+| `0–9`    | `right of `   | `[]`         |
+| `9–17`   | `recovery`    | `[r1:del]`   |
+| `17–28`  | `subrogation` | `[r2:ins]`   |
 
 Union text = `right of recoverysubrogation` (no separator between the two
-revision runs; the false adjacency below is `recoverysubrogation`).
+revision runs; the false adjacency below is `recoverysubrogation`). The
+paragraph's `"\n"` terminator would follow at `28–29`: it is elementary span
+content in the union, but never part of `Node.spans` (§1).
 
 - `accepted` = `right of ` + `subrogation` → gap closed → `right of subrogation`.
 - `original` = `right of ` + `recovery` → `right of recovery`.
@@ -137,7 +162,7 @@ group**: `right of recovery` (`present_in={original}`) and
 
 - `accepted`: source excluded (del-family), destination included.
 - `original`: source included, destination excluded.
-- One hit, two locations, joined by `mg1`, deduped at rank time.
+- Two hits, one per location, joined by `mg1`, deduped at query time.
 
 ### D. A comment range that starts in a deleted run
 
@@ -166,36 +191,78 @@ view; any view-specific rendering is a separate projection of the same span.
 - **`w:fldSimple`**: its `w:instr` attribute is the instruction (excluded); its
   child runs are the result (included).
 
-How field results interact with **views** (e.g. whether a result ever carries
-ins-family ancestry, or whether a "locked/dirty" field is masked) is
-**unspecified** — see §8.
+How field results interact with **views**: a result carries whatever revision
+ancestry encloses it, no special masking (§8). Whether a "locked/dirty" field is
+masked at all stays **unspecified** — see §8.
 
 ## 7. Versions
 
-`textmodel_version` bundles: the union/ancestor semantics above, the
-del-family/ins-family membership, and the revision-application order that fixes
-ancestor-stack ordering. Offsets are stable across views **within** one
+`textmodel_version` bundles: the union/ancestor semantics above (**the span rule**
+and the one-`"\n"`-per-paragraph terminators included), the del-family /
+ins-family membership, the revision-application order that fixes ancestor-stack
+ordering, **the view projection** (applying the §3 mask to the union, terminators
+kept, whole part, to produce each view string and its offset map), and **the
+gap-closing rule** (§4: retained spans concatenated in paragraph order, elided
+spans removed entirely, never across a paragraph boundary). Any change to span
+splitting, terminators, projection or gap-closing moves every offset and every
+view string, so it is a `textmodel_version` bump, not a silent edit.
+
+**Not honored: paragraph-mark revisions.** `w:pPr/w:rPr/w:del|ins` neither adds,
+removes nor merges a terminator: the break is retained in both views, the
+affected nodes are flagged, and a loud `known_gap: paragraph_mark_revision` is
+recorded (§8). Offsets are stable across views **within** one
 `textmodel_version`; the union is **not** the cross-version diff mechanism —
 that is what `Node.id` identity (D3) is for.
 
 Matching unit (D6): the paragraph, per view. `superseded` is a mask only in
 Phase 1.
 
-## 8. Explicitly unspecified
+## 8. Decisions (frozen) and what is still unspecified
 
-These are **not** defined here and must not be inferred. They are gated by
-nothing today (design Open risk #2) and are called out so the gap is visible:
+Phase 0 left these open on purpose. They are now **decided** for Phase 1 and must
+not be improvised by a small-context builder; each is asserted by fixture
+(`fixtures/model/*.expected.json`, `labels_provenance: "spec"`) whose `clauses`
+tag the section or example it encodes.
 
-- **Table cells** — is a cell boundary a gap-closing boundary like a paragraph
-  boundary? Does a match cross a `w:tc` boundary? Ordering of cell streams
-  within a row/table.
-- **Footnotes / endnotes** — they live in separate parts; how their streams
-  order relative to the body for matching, and whether any view spans parts.
-- **Fields** — whether field-instruction text can ever enter the union, and
-  whether field results carry ins-family ancestry or are masked.
-- **Structured document tags (`w:sdt`)** — whether the sdt wrapper contributes
-  ancestors, and what boundary (if any) it creates.
+- **Union text.** One `"\n"` terminator span per paragraph (§1). `w:tab` =
+  `"\t"`. Every `w:br` type and any literal `\n` / `\r` inside a `w:t` =
+  `U+000B` (content inside the paragraph; a phrase can cross a page break,
+  documented). `w:noBreakHyphen` = `U+2011`, `w:softHyphen` = `U+00AD`, `w:sym`
+  = its character. `w:instrText` is never content. `w:t` and `w:delText` are both
+  content.
+- **Fields.** Excluded via a `fldChar` depth counter (nested fields); a
+  `w:fldSimple`'s instruction is its attribute (§6 example E). Results carry
+  whatever revision ancestry encloses them; no special masking.
+- **Comment ranges** clamp to exclude terminators. A multi-paragraph
+  `anchor_text` contains `"\n"` (tests expect it). A `commentReference` with no
+  matching range yields `anchor = None`, recorded in `known_gaps`, never silent.
+- **Per-kind span rule** (asserted by test): paragraph, heading, list_item, cell
+  = exactly one contiguous span; table, row, block-sdt = empty spans with
+  `child_ids`. `NodeKind.SDT` is block-level only; inline sdt is transparent (no
+  node, no boundary, no ancestor).
+- **Matching unit** is always a `w:p`. Table cells never fuse; each cell
+  paragraph is an ordinary paragraph; cell/row/table order is document order.
+  Footnotes, endnotes, headers and footers are separate parts and **no view spans
+  parts**; read every part reachable via `headerReference`, deduplicated by part.
+- **Deleted/inserted paragraph mark** (`w:pPr/w:rPr/w:del|ins`): **not honored**
+  (§7) — the break is retained in both views, the affected nodes are flagged, and
+  a loud `known_gap: paragraph_mark_revision` is recorded. Fixture included.
+- **Text boxes**: exactly one body per anchored drawing, preferring `mc:Choice`,
+  then `mc:Fallback`, then a bare `w:txbxContent`. Content lives in its own
+  fragment (`Span.fragment_id` = host node id + ordinal), so host document order
+  is undisturbed. Recorded as a known gap.
+- **Gap-closing keeps no placeholder** (§4). Word itself renders `right of ` +
+  accepted `subrogation` as `right ofsubrogation` when the space sat inside the
+  deleted run; tests document that miss, and a `w:br` inside a deleted run.
+- **Offline-reproduction closure** (Turn 7) is `UnionStream` + the pinned views
+  projection + the term registry. "From the stored node tree alone" is wrong.
+
+Still **unspecified** — do not infer, and do not let a fixture or a test pretend
+otherwise:
+
 - **Moves across paragraph boundaries** — how source and destination paragraphs
-  interact with the within-paragraph gap rule.
+  interact with the within-paragraph gap rule (§4).
+- **Locked/dirty fields** — whether such a field result is masked at all (§6
+  example E).
 
 Anything unspecified in D2 stays unspecified here.

@@ -7,6 +7,7 @@ no implementation code).
 """
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 from ..versions import OUTPUT_SCHEMA_VERSION
@@ -33,15 +34,41 @@ LAYERS = {
 }
 
 
+def _producer_verified_tally(producer_verified) -> dict[str, bool]:
+    """Normalize the per-code-path producer-verified tally.
+
+    A mapping maps a code path to truthy (a count of documents that exercise it,
+    or a plain flag); an iterable names the verified paths. Always sorted, so the
+    emitted table is stable.
+    """
+    if producer_verified is None:
+        return {}
+    if isinstance(producer_verified, Mapping):
+        return {str(path): bool(verified) for path, verified in sorted(producer_verified.items())}
+    return {str(path): True for path in sorted(producer_verified)}
+
+
 def build_metrics_table(
-    *, documents: int = 0, producer_verified: int = 0, labels: dict | None = None
+    *,
+    documents: int = 0,
+    producer_verified: Mapping[str, object] | Iterable[str] | None = None,
+    labels: dict | None = None,
 ) -> dict:
-    """A complete, JSON-serializable metrics table with empty metric rows."""
+    """A complete, JSON-serializable metrics table with empty metric rows.
+
+    ``producer_verified`` is a per-code-path tally (design D3: a producer-verified
+    path is one exercised by a Microsoft-Word-produced document), never a scalar.
+    ``documents`` stays the `fixtures/real` count the tally is reported against,
+    and ``coverage`` is the verified fraction of the tally -- over an empty tally
+    it is a defined 0.0, not a ZeroDivisionError / NaN.
+    """
     quality = [
         {**LAYERS[key], "layer": key, "n": 0, "rows": [], "result": None}
         for key in ("L1", "L2", "L3")
     ]
-    coverage = (producer_verified / documents) if documents else 0.0
+    tally = _producer_verified_tally(producer_verified)
+    verified = sum(1 for ok in tally.values() if ok)
+    coverage = (verified / len(tally)) if tally else 0.0
     return {
         "output_schema_version": OUTPUT_SCHEMA_VERSION,
         "quality": quality,
@@ -52,7 +79,9 @@ def build_metrics_table(
         },
         "producer_verified_coverage": {
             "documents": documents,
-            "producer_verified": producer_verified,
+            "producer_verified": tally,
+            "verified_paths": verified,
+            "total_paths": len(tally),
             "coverage": coverage,
         },
         "labels": labels or {"generator": 0, "spec": 0, "human": 0},
@@ -69,9 +98,13 @@ def gate_failures(table: dict) -> list[str]:
 
 
 def run(fixtures_dir: str | Path | None = "fixtures") -> dict:
-    """Build the metrics table from the labels available on disk (metrics stay empty)."""
+    """Build the metrics table from the labels available on disk (metrics stay empty).
+
+    The producer-verified tally stays empty until a Microsoft-Word-produced document
+    lands in `fixtures/real` and a test is tagged `@producer_verified`.
+    """
     labels = {"generator": 0, "spec": 0, "human": 0}
-    documents = producer_verified = 0
+    documents = 0
     if fixtures_dir is not None:
         fixtures_dir = Path(fixtures_dir)
         for sidecar in iter_sidecars(fixtures_dir).values():
@@ -79,6 +112,4 @@ def run(fixtures_dir: str | Path | None = "fixtures") -> dict:
         real_dir = fixtures_dir / "real"
         if real_dir.is_dir():
             documents = len(list(real_dir.glob("*.docx")))
-    return build_metrics_table(
-        documents=documents, producer_verified=producer_verified, labels=labels
-    )
+    return build_metrics_table(documents=documents, labels=labels)

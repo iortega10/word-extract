@@ -14,6 +14,8 @@ from pathlib import Path
 import pytest
 from lxml import etree
 
+from wordextract.evals import labels
+
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
@@ -70,6 +72,39 @@ def test_sidecar_schema_and_provenance(name):
     }
     assert sc["fixture"] == f"{name}.docx"
     assert sc["labels_provenance"] in {"generator", "spec"}
+
+
+MODEL = FIXTURES / "model"
+MODEL_NAMES = sorted(p.name[: -len(".expected.json")] for p in MODEL.glob("*.expected.json"))
+MODEL_KEYS = {
+    "fixture",
+    "labels_provenance",
+    "clauses",
+    "span_rule",
+    "terminator",
+    "known_gaps",
+    "paragraphs",
+    "comments",
+    "revisions",
+}
+
+
+@pytest.mark.spec_derived
+@pytest.mark.parametrize("name", MODEL_NAMES)
+def test_model_sidecar_schema_and_provenance(name):
+    """The hand-typed fixtures/model sidecars: schema, provenance, strict loading."""
+    path = MODEL / f"{name}.expected.json"
+    assert (MODEL / f"{name}.docx").exists(), f"missing fixture {name}.docx"
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    sidecar = labels.load_sidecar(path)
+    assert sidecar.fixture == f"{name}.docx"
+    assert sidecar.labels_provenance == "spec"
+    # every key is either modelled or a declared annotation
+    assert set(raw) <= MODEL_KEYS | set(labels.ANNOTATION_KEYS), name
+    assert sidecar.paragraphs and all(p.spans and p.union for p in sidecar.paragraphs), name
+    # strict: an unknown key is an error, never silently dropped
+    with pytest.raises(ValueError):
+        labels.sidecar_from_dict({**raw, "not_a_key": 1})
 
 
 @pytest.mark.parametrize("name", SYNTHETIC)

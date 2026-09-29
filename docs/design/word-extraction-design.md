@@ -93,8 +93,9 @@ chunk hash, hit and cache key names the projection and the inputs it depends on.
   Tests are tagged `@spec_derived` / `@producer_verified`; CI reports
   producer-verified coverage per code path.
 - Revisions: store raw ins/del/move facts with author/date; **no synthesized
-  "net change"** (OOXML does not pair a del with its ins). Moves render as one
-  hit with two locations, deduped in the term index.
+  "net change"** (OOXML does not pair a del with its ins). Moves render as
+  **two hits, one per location**, each carrying the shared `move_group_id`, and
+  are deduped in the term index **at query time**.
 
 ### D5. Revision default policy (changed from the proposal)
 "Accepted default, deleted searchable" is rejected: a pending deletion of an
@@ -118,8 +119,9 @@ default fails symmetrically (hides an inserted exclusion). Decided:
   into the registry only by recorded human approval.
 - Matching unit = paragraph per view. `TermHit.present_in` is a set of
   `{accepted, original, superseded}`; hits carry `spans: list` in union coords
-  plus a contiguous `view_span`. `right of recovery` (original) and
-  `right of subrogation` (accepted) are two hits in one group.
+  plus `view_spans: list[ViewSpan(view, start, end)]` (sorted by view, offsets in
+  the whole-part view projection with terminators kept). `right of recovery`
+  (original) and `right of subrogation` (accepted) are two hits in one group.
 - Cross-paragraph phrases: deferred, with the miss **measured** (a permissive
   cross-paragraph matcher run offline on the golden set only; non-zero finds
   promote it). `superseded`: mask + fixture only in Phase 1, not a matcher target.
