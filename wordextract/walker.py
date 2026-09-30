@@ -190,6 +190,7 @@ GAP_INLINE_SDT_TRANSPARENT = "inline_sdt_transparent"
 GAP_DUPLICATE_CONTENT_ID = "duplicate_content_id_churn"
 GAP_STYLE_CHAIN_CYCLE = "style_chain_cycle"
 GAP_UNANCHORED_COMMENT = "unanchored_comment"
+GAP_DANGLING_COMMENT_PARENT = "dangling_comment_parent"
 
 #: A paragraph's own ``w:pStyle`` is a heading style when it is ``heading`` plus one
 #: level 1-9; the style name is matched, never a resolved style definition.
@@ -787,11 +788,25 @@ def _comment_identity(body: _CommentBody, hashes: dict[str, int]) -> tuple[str, 
     return f"hash:{digest}:{occurrence}", IdStability.CONTENT_HASH
 
 
+_ON_VALUES = frozenset({"1", "true", "on"})
+_OFF_VALUES = frozenset({"0", "false", "off"})
+
+
 def _on_off(value: str | None) -> bool | None:
-    """An ``ST_OnOff`` attribute as a tri-state: ``None`` when it is not stated (2e)."""
+    """An ``ST_OnOff`` attribute as a tri-state (2e).
+
+    Only ``true`` / ``false`` / ``on`` / ``off`` / ``1`` / ``0`` are valid. Anything else
+    -- a malformed ``done="yes"`` -- is **not stated** (``None``), never a guess at what
+    the producer meant.
+    """
     if value is None:
         return None
-    return value.strip().lower() not in ("0", "false", "off")
+    lowered = value.strip().lower()
+    if lowered in _ON_VALUES:
+        return True
+    if lowered in _OFF_VALUES:
+        return False
+    return None
 
 
 def _read_comments_extended(part: Part | None) -> dict[str, _CommentEx] | None:
@@ -887,6 +902,11 @@ def _assemble_comments(
                 resolved=resolved,
             )
         )
+    # A reply whose parent names no comment in this document is a broken thread. The
+    # parent id is still the fact the part states, so it is kept; the gap says it dangles.
+    known = {record.para_id for record in records}
+    if any(r.parent_id is not None and r.parent_id not in known for r in records):
+        gaps.add(GAP_DANGLING_COMMENT_PARENT)
     return records, gaps
 
 

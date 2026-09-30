@@ -1,0 +1,108 @@
+{
+  "clauses": [
+    "8"
+  ],
+  "comments": [
+    {
+      "anchor_text": "Root comment text.",
+      "author": "T. Okoye",
+      "id": "1",
+      "initials": "TO",
+      "para_id": "00000031",
+      "parent_id": null,
+      "resolved": true,
+      "threading_status": "verified"
+    },
+    {
+      "anchor_text": "Reply with a malformed done.",
+      "author": "T. Okoye",
+      "id": "2",
+      "initials": "TO",
+      "note": "done=\"yes\" is not a valid ST_OnOff: resolved is None (not stated), never a guess",
+      "para_id": "00000032",
+      "parent_id": "00000031",
+      "resolved": null,
+      "threading_status": "verified"
+    },
+    {
+      "anchor_text": "Reply to a parent that is gone.",
+      "author": "T. Okoye",
+      "id": "3",
+      "initials": "TO",
+      "note": "the parent id is the fact the part states and is kept; that no comment carries it is the dangling_comment_parent gap",
+      "para_id": "00000033",
+      "parent_id": "0000DEAD",
+      "resolved": false,
+      "threading_status": "verified"
+    }
+  ],
+  "fixture": "threading_edge_cases.docx",
+  "known_gaps": [
+    "dangling_comment_parent"
+  ],
+  "labels_provenance": "spec",
+  "paragraphs": [
+    {
+      "accepted": "Root comment text.",
+      "clause": "8",
+      "index": 0,
+      "original": "Root comment text.",
+      "spans": [
+        {
+          "end": 18,
+          "stack": [],
+          "start": 0,
+          "text": "Root comment text."
+        }
+      ],
+      "superseded": "",
+      "union": "Root comment text."
+    },
+    {
+      "accepted": "Reply with a malformed done.",
+      "clause": "8",
+      "index": 1,
+      "original": "Reply with a malformed done.",
+      "spans": [
+        {
+          "end": 28,
+          "stack": [],
+          "start": 0,
+          "text": "Reply with a malformed done."
+        }
+      ],
+      "superseded": "",
+      "union": "Reply with a malformed done."
+    },
+    {
+      "accepted": "Reply to a parent that is gone.",
+      "clause": "8",
+      "index": 2,
+      "original": "Reply to a parent that is gone.",
+      "spans": [
+        {
+          "end": 31,
+          "stack": [],
+          "start": 0,
+          "text": "Reply to a parent that is gone."
+        }
+      ],
+      "superseded": "",
+      "union": "Reply to a parent that is gone."
+    }
+  ],
+  "parts": [
+    {
+      "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml",
+      "path": "word/comments.xml",
+      "rel_type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments"
+    },
+    {
+      "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml",
+      "path": "word/commentsExtended.xml",
+      "rel_type": "http://schemas.microsoft.com/office/2011/relationships/commentsExtended"
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

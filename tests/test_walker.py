@@ -215,6 +215,7 @@ WALKER_OWNED_GAPS = {
     "revision_id_collision",
     "unrecorded_revision_kind",
     "unanchored_comment",
+    "dangling_comment_parent",
 }
 
 
@@ -1584,7 +1585,9 @@ def _comment_ex_facts_from_xml(package: opc.Package):
         done = element.get(f"{{{opc.W15_NS}}}done")
         found[para_id] = (
             element.get(f"{{{opc.W15_NS}}}paraIdParent"),
-            None if done is None else done.lower() not in ("0", "false", "off"),
+            # a strict ST_OnOff: anything other than true/false/on/off/1/0 is not stated
+            None if done is None else {"1": True, "true": True, "on": True, "0": False,
+                                       "false": False, "off": False}.get(done.strip().lower()),
         )
     return found
 
@@ -1776,7 +1779,10 @@ def test_a_threaded_comment_is_threaded_even_when_unanchored(tmp_path):
     assert record.anchor is None and record.anchor_text == ""
     assert record.threading_status is ThreadingStatus.VERIFIED
     assert (record.parent_id, record.resolved) == ("00000021", True)
-    assert parsed.known_gaps == [walker_mod.GAP_UNANCHORED_COMMENT]
+    # the parent 00000021 is named by the part but carried by no comment here
+    assert parsed.known_gaps == sorted(
+        [walker_mod.GAP_UNANCHORED_COMMENT, walker_mod.GAP_DANGLING_COMMENT_PARENT]
+    )
 
 
 @pytest.mark.spec_derived
@@ -2033,3 +2039,48 @@ def test_ordinary_documents_report_no_unrecorded_revision_kind():
         if path.name == "unrecorded_revision_kinds.docx":
             continue
         assert "unrecorded_revision_kind" not in walk_document(opc.Package(path)).known_gaps, path.name
+
+
+# --- threading edge cases: malformed done, dangling parent ----------------------
+
+
+@pytest.mark.spec_derived
+def test_threading_edge_case_fixture_matches_its_hand_typed_literals():
+    sidecar = labels.load_sidecar(MODEL / "threading_edge_cases.expected.json")
+    parsed = walk_document(opc.Package(MODEL / "threading_edge_cases.docx"))
+    assert len(parsed.comments) == len(sidecar.comments)
+    for record, label in zip(parsed.comments, sidecar.comments):
+        assert record.para_id == label.para_id
+        assert record.parent_id == label.parent_id
+        assert record.resolved == label.resolved
+        assert record.threading_status.value == label.threading_status
+    assert "dangling_comment_parent" in parsed.known_gaps
+
+
+@pytest.mark.spec_derived
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("1", True), ("true", True), ("on", True), ("TRUE", True), (" On ", True),
+        ("0", False), ("false", False), ("off", False), ("False", False),
+        ("yes", None), ("no", None), ("2", None), ("", None), ("maybe", None), (None, None),
+    ],
+)
+def test_done_is_a_strict_st_onoff_tri_state(value, expected):
+    from wordextract.walker import _on_off
+
+    assert _on_off(value) is expected
+
+
+@pytest.mark.spec_derived
+def test_a_dangling_parent_is_kept_and_reported(tmp_path):
+    parsed = walk_document(opc.Package(MODEL / "threading_edge_cases.docx"))
+    orphan = next(c for c in parsed.comments if c.para_id == "00000033")
+    assert orphan.parent_id == "0000DEAD" and orphan.threading_status.value == "verified"
+
+
+@pytest.mark.spec_derived
+def test_a_resolvable_thread_reports_no_dangling_parent():
+    for name in ("renamed_comments_extended", "spec_threaded"):
+        path = MODEL / f"{name}.docx" if name != "spec_threaded" else FIXTURES / "spec_threaded.docx"
+        assert "dangling_comment_parent" not in walk_document(opc.Package(path)).known_gaps, name

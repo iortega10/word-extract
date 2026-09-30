@@ -703,6 +703,78 @@ def _renamed_comments_extended():
     )
 
 
+def _threading_edge_cases():
+    """A malformed done value is 'not stated'; a reply naming a missing parent is a gap."""
+    body = (
+        _p('<w:commentRangeStart w:id="1"/>' + _r("Root comment text.")
+           + '<w:commentRangeEnd w:id="1"/>' + _comment_ref(1), para_id="60000001")
+        + _p('<w:commentRangeStart w:id="2"/>' + _r("Reply with a malformed done.")
+             + '<w:commentRangeEnd w:id="2"/>' + _comment_ref(2), para_id="60000002")
+        + _p('<w:commentRangeStart w:id="3"/>' + _r("Reply to a parent that is gone.")
+             + '<w:commentRangeEnd w:id="3"/>' + _comment_ref(3), para_id="60000003")
+    )
+    comments = XML_DECL + (
+        f'<w:comments {_nsdecl(NS, ("w", "w14"))}>'
+        + _comment(1, "T. Okoye", "TO", "00000031", "Root.")
+        + _comment(2, "T. Okoye", "TO", "00000032", "Reply, done says yes.")
+        + _comment(3, "T. Okoye", "TO", "00000033", "Reply whose parent was deleted.")
+        + "</w:comments>"
+    )
+    ext = XML_DECL + (
+        f'<w15:commentsEx {_nsdecl(NS, ("w15",))}>'
+        '<w15:commentEx w15:paraId="00000031" w15:done="1"/>'
+        '<w15:commentEx w15:paraId="00000032" w15:done="yes" w15:paraIdParent="00000031"/>'
+        '<w15:commentEx w15:paraId="00000033" w15:done="0" w15:paraIdParent="0000DEAD"/>'
+        "</w15:commentsEx>"
+    )
+    sidecar = {
+        "fixture": "threading_edge_cases.docx",
+        "labels_provenance": "spec",
+        "clauses": ["8"],
+        "known_gaps": ["dangling_comment_parent"],
+        "parts": [
+            {"rel_type": RT["comments"], "path": "word/comments.xml",
+             "content_type": CT["comments"]},
+            {"rel_type": RT["commentsExtended"], "path": "word/commentsExtended.xml",
+             "content_type": CT["commentsExtended"]},
+        ],
+        "comments": [
+            {"id": "1", "para_id": "00000031", "author": "T. Okoye", "initials": "TO",
+             "anchor_text": "Root comment text.", "threading_status": "verified",
+             "resolved": True, "parent_id": None},
+            {"id": "2", "para_id": "00000032", "author": "T. Okoye", "initials": "TO",
+             "anchor_text": "Reply with a malformed done.", "threading_status": "verified",
+             "resolved": None, "parent_id": "00000031",
+             "note": "done=\"yes\" is not a valid ST_OnOff: resolved is None (not stated), "
+                     "never a guess"},
+            {"id": "3", "para_id": "00000033", "author": "T. Okoye", "initials": "TO",
+             "anchor_text": "Reply to a parent that is gone.", "threading_status": "verified",
+             "resolved": False, "parent_id": "0000DEAD",
+             "note": "the parent id is the fact the part states and is kept; that no comment "
+                     "carries it is the dangling_comment_parent gap"},
+        ],
+        "paragraphs": [
+            _para(0, [("Root comment text.", [])], accepted="Root comment text.",
+                  original="Root comment text.", superseded="", clause="8"),
+            _para(1, [("Reply with a malformed done.", [])],
+                  accepted="Reply with a malformed done.",
+                  original="Reply with a malformed done.", superseded="", clause="8"),
+            _para(2, [("Reply to a parent that is gone.", [])],
+                  accepted="Reply to a parent that is gone.",
+                  original="Reply to a parent that is gone.", superseded="", clause="8"),
+        ],
+    }
+    return package(
+        "threading_edge_cases.docx", body, sidecar=sidecar, title="Threading edge cases",
+        doc_rels=[("rId1", RT["comments"], "comments.xml", None),
+                  ("rId2", RT["commentsExtended"], "commentsExtended.xml", None)],
+        extra_parts={"word/comments.xml": comments, "word/commentsExtended.xml": ext},
+        ct_overrides=[("/word/comments.xml", CT["comments"]),
+                      ("/word/commentsExtended.xml", CT["commentsExtended"])],
+        prefixes=("w", "w14", "w15", "r"),
+    )
+
+
 def _empty_parts():
     body = _p(_r("A body with empty footnotes and endnotes parts."), para_id="40000001")
     empty_footnotes = XML_DECL + f'<w:footnotes {_nsdecl(NS, ("w",))}/>'
@@ -1103,6 +1175,7 @@ BUILDERS = [
     _mixed_para_ids,
     _strict_namespaces,
     _renamed_comments_extended,
+    _threading_edge_cases,
     _empty_parts,
     _text_box,
     _nested_field_in_instruction,

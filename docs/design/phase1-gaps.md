@@ -76,6 +76,14 @@ slice that owns them lands; the full list is checked at Turn 9.
   comment is still a record: its author, date and body text are known, only the text it
   was made about is not.
 
+## Owned by the threading reader (Turn 2e)
+
+- **`dangling_comment_parent`** -- a `commentsExtended` row names a `w15:paraIdParent`
+  that no comment in the document carries. The part states the parent, so `parent_id`
+  keeps it; the gap says the thread is broken and the parent cannot be resolved. The
+  comparison is exact (case-sensitive), like the join itself: Word writes both sides in
+  upper case, and a producer that does not gets `UNKNOWN`, never a wrong parent.
+
 ## Declared by fixtures, owned by later slices
 
 `field_result_view_ancestry`, `w_cr_unspecified`, `empty_parts_unverified`,
