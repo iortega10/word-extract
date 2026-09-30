@@ -157,8 +157,9 @@ def test_the_fused_seam_token_is_a_faithful_match_not_a_false_positive():
     ]
     # the same document with the seams written as characters the union keeps as one run
     assert [m.start for m in match_text(index, "non\u00adcompliance")] == [0]
-    # a space is a real separator, so it is *not* the same term
-    assert match_text(index, "non compliance") == []
+    # a hyphenated form also reads with its hyphen as a separator, so the spaced spelling of
+    # the same compound is the same term (a space is still a real separator elsewhere)
+    assert [m.end - m.start for m in match_text(index, "non compliance")] == [14]
 
 
 def test_a_decomposed_spelling_folds_onto_the_precomposed_token():
@@ -472,3 +473,172 @@ def test_dedupe_hits_addresses_a_view_less_hit_by_its_union_span():
         location=LocationKind.COMMENT,
     )
     assert dedupe_hits([hit, hit]) == [hit]
+
+
+# --- option C: a term matches under either reading of the hyphen -----------------------
+
+
+def _spans(index: TermIndex, text: str) -> list[tuple[str, int, int]]:
+    return [(m.group, m.start, m.end) for m in match_text(index, text)]
+
+
+def test_a_plain_form_matches_the_hyphenated_spelling_in_the_text():
+    """``hold-harmless`` was silently missed by ``hold harmless`` before (hyphens joined)."""
+    index = _index(TermGroup(canonical="hold harmless"))
+    assert _spans(index, "Hold-harmless agreement") == [("hold harmless", 0, 13)]
+    assert _spans(index, "hold\u2010harmless") == [("hold harmless", 0, 13)]  # U+2010
+    assert _spans(index, "hold\u2011harmless") == [("hold harmless", 0, 13)]  # U+2011
+    assert _spans(index, "hold harmless") == [("hold harmless", 0, 13)]
+
+
+def test_a_hyphenated_form_matches_the_spaced_and_the_joined_spelling():
+    index = _index(TermGroup(canonical="hold-harmless"))
+    for text in ("hold-harmless", "hold harmless", "holdharmless", "HOLD  HARMLESS"):
+        assert [g for g, _, _ in _spans(index, text)] == ["hold-harmless"], text
+
+
+def test_the_joined_reading_still_matches_a_prefix_compound():
+    index = _index(TermGroup(canonical="non-compliance", synonyms=["noncompliance"]))
+    for text in ("non-compliance", "noncompliance", "non compliance", "NON\u00adCOMPLIANCE"):
+        assert len(match_text(index, text)) == 1, text
+
+
+def test_a_span_found_under_both_readings_is_one_hit():
+    """``non-compliance`` reads the same as a form under both readings: one hit, exact."""
+    index = _index(TermGroup(canonical="non-compliance", synonyms=["non compliance"]))
+    hits = match_text(index, "non-compliance")
+    assert [(h.start, h.end, h.match_type) for h in hits] == [(0, 14, MatchType.EXACT)]
+
+
+def test_an_unrelated_hyphen_elsewhere_never_changes_a_hit():
+    """The result is a property of the tokens that match, not of what else the paragraph
+    contains: the split reading runs for hyphenated forms either way."""
+    index = _index(
+        TermGroup(canonical="non-compliance"),
+        TermGroup(canonical="right of subrogation"),
+    )
+    plain = _spans(index, "a non compliance and a right of subrogation here")
+    with_hyphen = _spans(index, "a non compliance and a right of subrogation here x-y")
+    assert [g for g, _, _ in plain] == [g for g, _, _ in with_hyphen] == [
+        "non-compliance",
+        "right of subrogation",
+    ]
+    assert [(s, e) for _, s, e in plain] == [(s, e) for _, s, e in with_hyphen]
+
+
+def test_a_hyphen_never_makes_a_fused_seam_a_hit():
+    """``right ofsubrogation`` is not ``right of subrogation`` under any reading."""
+    index = _index(TermGroup(canonical="right of subrogation"))
+    assert match_text(index, "right ofsubrogation") == []
+    assert match_text(index, "right ofsubrogation x-y") == []
+    assert match_text(index, "right of-subrogation") != []  # a hyphen IS a separator there
+
+
+def test_hyphenated_hits_address_the_source_characters():
+    index = _index(TermGroup(canonical="hold harmless"))
+    text = "see hold-harmless here"
+    (hit,) = match_text(index, text)
+    assert text[hit.start : hit.end] == "hold-harmless"
+
+
+def test_split_forms_are_compiled_and_the_index_is_order_independent():
+    one = _index(TermGroup(canonical="hold-harmless"), TermGroup(canonical="aggregate limit"))
+    two = _index(TermGroup(canonical="aggregate limit"), TermGroup(canonical="hold-harmless"))
+    assert one == two
+    assert {form.tokens for form in one.split_forms} == {
+        ("hold", "harmless"),
+        ("aggregate", "limit"),
+    }
+    assert {form.tokens for form in one.forms} == {("holdharmless",), ("aggregate", "limit")}
+
+
+def test_the_matcher_version_records_the_hyphen_rule():
+    from wordextract.versions import MATCHER_VERSION
+
+    assert MATCHER_VERSION == "2"
+
+
+# --- the first-token index finds exactly what the linear scan found ---------------------
+
+
+def _reference_match_text(index: TermIndex, text: str) -> list[TermMatch]:
+    """The pre-index algorithm, kept here as the reference: every form at every position
+    under the hyphens-deleted reading. Equal to the index's answer on hyphen-free text."""
+    from wordextract.terms import _RANK, _resolve, _segments, _token_offsets
+
+    matches: list[TermMatch] = []
+    for base, segment in _segments(text):
+        tokens = _token_offsets(segment)
+        words = [token for token, _, _ in tokens]
+        by_group: dict[str, list[TermMatch]] = {}
+        for form in index.forms:
+            width = len(form.tokens)
+            for position in range(len(words) - width + 1):
+                if tuple(words[position : position + width]) != form.tokens:
+                    continue
+                by_group.setdefault(form.group, []).append(
+                    TermMatch(
+                        group=form.group,
+                        match_type=form.match_type,
+                        start=base + tokens[position][1],
+                        end=base + tokens[position + width - 1][2],
+                    )
+                )
+        for group in sorted(by_group):
+            matches.extend(_resolve(by_group[group]))
+    return sorted(matches, key=lambda m: (m.start, m.end, m.group, _RANK[m.match_type]))
+
+
+def _corpus_registry() -> TermIndex:
+    return _index(
+        TermGroup(canonical="subrogation", synonyms=["right of subrogation", "right of recovery"]),
+        TermGroup(canonical="aggregate limit", synonyms=["policy aggregate", "aggregate"]),
+        TermGroup(canonical="named insured", synonyms=["additional insured", "insured"]),
+        TermGroup(canonical="limit of liability", synonyms=["limit", "liability"]),
+    )
+
+
+def test_the_index_equals_the_linear_scan_on_every_fixture_view():
+    from wordextract import opc
+    from wordextract.model import View
+    from wordextract.views import project
+    from wordextract.walker import union_streams
+
+    index = _corpus_registry()
+    checked = 0
+    for path in sorted(Path(__file__).resolve().parents[1].joinpath("fixtures").rglob("*.docx")):
+        for stream in union_streams(opc.Package(path)):
+            for view in (View.ACCEPTED, View.ORIGINAL):
+                text = project(stream, view).text
+                if "-" in text:
+                    continue  # hyphenated text is option C's new ground, not the old rule's
+                assert match_text(index, text) == _reference_match_text(index, text), (
+                    path.name,
+                    view,
+                )
+                checked += 1
+    assert checked > 10
+
+
+def test_the_index_equals_the_linear_scan_on_random_hyphen_free_text():
+    import random
+
+    rng = random.Random(7)
+    words = "the insured limit aggregate of right subrogation recovery policy liability additional".split()
+    index = _corpus_registry()
+    for _ in range(300):
+        text = "\n".join(
+            " ".join(rng.choice(words) for _ in range(rng.randint(1, 12)))
+            for _ in range(rng.randint(1, 4))
+        )
+        assert match_text(index, text) == _reference_match_text(index, text), text
+
+
+def test_forms_sharing_a_first_token_are_all_tried():
+    index = _index(
+        TermGroup(canonical="limit"),
+        TermGroup(canonical="limit of liability"),
+        TermGroup(canonical="limit of indemnity"),
+    )
+    assert [g for g, _, _ in _spans(index, "limit of liability")] == ["limit", "limit of liability"]
+    assert [g for g, _, _ in _spans(index, "limit of indemnity")] == ["limit", "limit of indemnity"]

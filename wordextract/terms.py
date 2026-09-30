@@ -15,12 +15,17 @@ is why it is part of ``matcher_version``: *any* change to the rules below must b
 Case is folded (``str.casefold``) and each token is NFC, so a precomposed and a
 decomposed spelling of one word are one token. A token is a maximal run of letters,
 digits and combining marks; everything else separates tokens -- punctuation, whitespace,
-symbols -- **except** the hyphen family, which is deleted and so *joins*:
-``non-compliance`` and ``noncompliance`` are one term. That asymmetry is the spec's
-"fused seam token": ``non`` + ``compliance`` split across two runs is a faithful match,
-while a space is a real separator, so ``right ofsubrogation`` never matches
-``right of subrogation``, and a space in a registry entry and a ``w:tab`` or ``w:br`` in
-the corpus match each other (both are separators).
+symbols. The hyphen family is the one character with two honest readings, and real
+wording uses both (``non-compliance`` / ``noncompliance``, but ``hold-harmless`` /
+``hold harmless``), so a term matches under **either**: read with hyphens *deleted* (they
+join: ``non-compliance`` is the token ``noncompliance``) or with hyphens as *separators*
+(``hold-harmless`` is the two tokens ``hold``, ``harmless``). A form and a text match
+when their tokens are equal under one reading or the other, so the two spellings of a
+compound are one term whichever way the registry or the document writes it. Nothing
+fuzzy is involved: each reading is exact, and a hit is a hit under at least one of them.
+A space is still a real separator everywhere else, so ``right ofsubrogation`` never
+matches ``right of subrogation`` (no hyphen is involved), and a space in a registry
+entry and a ``w:tab`` or ``w:br`` in the corpus match each other.
 
 **Overlap precedence** is resolved **per group**, which is how "distinct groups report
 distinct hits" is meant: two groups may report overlapping hits, but one group reports a
@@ -30,6 +35,11 @@ hit once. Within a group: the longest span -- ``span`` is a character range, so
 synonym that normalizes onto its own canonical form (``non-compliance`` vs
 ``noncompliance``) reports one hit, as ``exact``. Losing candidates are dropped and
 disjoint matches are all reported.
+
+**Speed.** An index is compiled once and matched against many texts. Matching looks up
+each token of the text in a first-token table, so a position only tries the forms that
+begin with that token: the cost follows the size of the text, not the size of the term
+list (a 750-form list costs the same per position as a 10-form one).
 
 **6a is exact and synonym only.** The form/precedence machinery is generic
 (:class:`TermIndex` holds ``(group, match_type, tokens)`` entries and the precedence
@@ -70,14 +80,16 @@ PARAGRAPH_BOUNDARY = "\n"
 
 # --- normalization -----------------------------------------------------------------
 
-def tokenize(text: str) -> tuple[str, ...]:
+def tokenize(text: str, *, split_hyphens: bool = False) -> tuple[str, ...]:
     """``text``'s normalized tokens, in order (the corpus/registry-equal form).
 
-    A paragraph boundary is just another separator here: this is the lexical view of a
-    string, and :func:`match_text` -- which never matches across a ``"\\n"`` -- owns the
-    boundary.
+    By default hyphens are deleted and so *join* (``non-compliance`` -> ``noncompliance``);
+    with ``split_hyphens`` they are separators (``hold-harmless`` -> ``hold``, ``harmless``).
+    The matcher tries both readings. A paragraph boundary is just another separator here:
+    this is the lexical view of a string, and :func:`match_text` -- which never matches
+    across a ``"\\n"`` -- owns the boundary.
     """
-    return tuple(token for token, _, _ in _token_offsets(text))
+    return tuple(token for token, _, _ in _token_offsets(text, split_hyphens))
 
 
 def normalize(text: str) -> str:
@@ -85,7 +97,7 @@ def normalize(text: str) -> str:
     return " ".join(tokenize(text))
 
 
-def _token_offsets(text: str) -> list[tuple[str, int, int]]:
+def _token_offsets(text: str, split_hyphens: bool = False) -> list[tuple[str, int, int]]:
     """``(token, start, end)`` per token of ``text``, in ``text``'s own coordinates.
 
     ``start``/``end`` straddle the **source** characters, which is what lets a match on a
@@ -95,7 +107,7 @@ def _token_offsets(text: str) -> list[tuple[str, int, int]]:
     start: int | None = None
     raw: list[str] = []
     for index, char in enumerate(text):
-        if char in HYPHENS:
+        if char in HYPHENS and not split_hyphens:
             continue
         if char.isalnum() or unicodedata.category(char).startswith("M"):
             if start is None:
@@ -227,19 +239,47 @@ class _Form:
     group: str
     match_type: MatchType
     tokens: tuple[str, ...]
+    #: Whether the form's own text contains a hyphen, i.e. whether its two readings can
+    #: differ. Decides when the split-hyphen pass has to run (see :func:`_match_segment`).
+    hyphenated: bool = False
+
+
+def _first_tokens(forms: Iterable[_Form]) -> dict[str, tuple[_Form, ...]]:
+    """``forms`` grouped by their first token, each group in the forms' own order."""
+    found: dict[str, list[_Form]] = {}
+    for form in forms:
+        found.setdefault(form.tokens[0], []).append(form)
+    return {token: tuple(group) for token, group in found.items()}
 
 
 @dataclass(frozen=True)
 class TermIndex:
-    """A compiled registry: every form of every group as a token sequence.
+    """A compiled registry: every form of every group as token sequences, per reading.
 
-    Compiled once and matched against many locations, which is what keeps the matcher
-    linear in the corpus rather than in the corpus times the registry. Canonical in
-    itself -- the forms are sorted -- so two registries with the same term list compile
-    to an equal index whatever order they were built in.
+    ``forms`` is the hyphens-deleted reading and ``split_forms`` the hyphens-as-separators
+    one; the matcher tries both (see the module docstring). Compiled once and matched
+    against many locations, with the forms looked up by their first token, which is what
+    keeps the matcher linear in the corpus rather than in the corpus times the registry.
+    Canonical in itself -- the forms are sorted -- so two registries with the same term
+    list compile to an equal index whatever order they were built in.
     """
 
     forms: tuple[_Form, ...] = ()
+    split_forms: tuple[_Form, ...] = ()
+    _join_first: dict = field(init=False, repr=False, compare=False, default_factory=dict)
+    _split_first: dict = field(init=False, repr=False, compare=False, default_factory=dict)
+    _split_first_hyphenated: dict = field(
+        init=False, repr=False, compare=False, default_factory=dict
+    )
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "_join_first", _first_tokens(self.forms))
+        object.__setattr__(self, "_split_first", _first_tokens(self.split_forms))
+        object.__setattr__(
+            self,
+            "_split_first_hyphenated",
+            _first_tokens(form for form in self.split_forms if form.hyphenated),
+        )
 
 
 def compile_registry(registry: TermRegistry) -> TermIndex:
@@ -248,18 +288,30 @@ def compile_registry(registry: TermRegistry) -> TermIndex:
     Canonical ``canonical`` forms are ``exact``, ``synonyms`` are ``synonym``: the one
     place 6b has to extend to add a ``stem`` form per group.
     """
-    forms: list[_Form] = []
-    seen: set[_Form] = set()
+    joined: list[_Form] = []
+    split: list[_Form] = []
+    seen: set[tuple[bool, _Form]] = set()
     for group in registry.groups:
         for match_type, form in (
             [(MatchType.EXACT, group.canonical)]
             + [(MatchType.SYNONYM, synonym) for synonym in group.synonyms]
         ):
-            candidate = _Form(group=group.canonical, match_type=match_type, tokens=tokenize(form))
-            if candidate.tokens and candidate not in seen:
-                seen.add(candidate)
-                forms.append(candidate)
-    return TermIndex(forms=tuple(sorted(forms, key=lambda f: (f.group, _RANK[f.match_type], f.tokens))))
+            hyphenated = any(char in HYPHENS for char in form)
+            for is_split, target in ((False, joined), (True, split)):
+                candidate = _Form(
+                    group=group.canonical,
+                    match_type=match_type,
+                    tokens=tokenize(form, split_hyphens=is_split),
+                    hyphenated=hyphenated,
+                )
+                if candidate.tokens and (is_split, candidate) not in seen:
+                    seen.add((is_split, candidate))
+                    target.append(candidate)
+
+    def order(form: _Form) -> tuple:
+        return (form.group, _RANK[form.match_type], form.tokens)
+
+    return TermIndex(forms=tuple(sorted(joined, key=order)), split_forms=tuple(sorted(split, key=order)))
 
 
 def match_text(index: TermIndex, text: str) -> list[TermMatch]:
@@ -357,23 +409,38 @@ def _resolve(candidates: list[TermMatch]) -> list[TermMatch]:
 
 
 def _match_segment(index: TermIndex, segment: str, base: int) -> list[TermMatch]:
-    """One group's hits in one boundary-free ``segment``, addressed as ``base`` + offsets."""
-    tokens = _token_offsets(segment)
-    words = [token for token, _, _ in tokens]
+    """Every group's hits in one boundary-free ``segment``, addressed as ``base`` + offsets.
+
+    Two readings, unioned: the hyphens-deleted one over every form, and the
+    hyphens-as-separators one wherever it can differ from it -- over every form when the
+    segment itself contains a hyphen, and over the hyphenated forms otherwise (a form
+    without a hyphen reads the same either way, and so does a segment without one). That
+    makes a hit depend only on whether the tokens match under *some* reading, never on an
+    unrelated hyphen elsewhere in the paragraph.
+    """
     by_group: dict[str, list[TermMatch]] = {}
-    for form in index.forms:
-        width = len(form.tokens)
-        for position in range(len(words) - width + 1):
-            if tuple(words[position : position + width]) != form.tokens:
-                continue
-            by_group.setdefault(form.group, []).append(
-                TermMatch(
-                    group=form.group,
-                    match_type=form.match_type,
-                    start=base + tokens[position][1],
-                    end=base + tokens[position + width - 1][2],
+    has_hyphen = any(char in HYPHENS for char in segment)
+    passes = [(False, index._join_first)]
+    if has_hyphen:
+        passes.append((True, index._split_first))
+    elif index._split_first_hyphenated:
+        passes.append((True, index._split_first_hyphenated))
+    for split_hyphens, first in passes:
+        tokens = _token_offsets(segment, split_hyphens)
+        words = [token for token, _, _ in tokens]
+        for position, word in enumerate(words):
+            for form in first.get(word, ()):
+                width = len(form.tokens)
+                if tuple(words[position : position + width]) != form.tokens:
+                    continue
+                by_group.setdefault(form.group, []).append(
+                    TermMatch(
+                        group=form.group,
+                        match_type=form.match_type,
+                        start=base + tokens[position][1],
+                        end=base + tokens[position + width - 1][2],
+                    )
                 )
-            )
     matches: list[TermMatch] = []
     for group in sorted(by_group):
         matches.extend(_resolve(by_group[group]))
