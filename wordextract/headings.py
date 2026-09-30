@@ -21,8 +21,10 @@ The rules, in order:
   against a style definition (D1). Word names heading styles in the document's own
   language, so this rule only ever catches the styles whose id happens to be English --
   ``outlineLvl`` is what catches the others.
-* ``outlineLvl`` -- the paragraph states an outline level: its own ``w:outlineLvl``,
-  else the one its style chain defines. This is the *only* rule that identifies a
+* ``outlineLvl`` -- the paragraph states a **heading** outline level: its own
+  ``w:outlineLvl``, else the one its style chain defines, from 0 to 8. Level **9 is
+  Word's "body text"** -- a paragraph or style set to it is explicitly *not* in the
+  outline -- so it never fires, and neither does any value outside 0-9. This is the *only* rule that identifies a
   heading style with a non-English id (``Titre 2``, ``Überschrift 1``), and the reason
   ``styles.py`` reads ``w:outlineLvl`` at all. A paragraph can state an outline level and
   still be a list item -- an auto-numbered ``Heading 1`` is numbered -- and the rule
@@ -66,6 +68,10 @@ _HEADING_STYLE = re.compile(r"heading\s*([1-9])", re.IGNORECASE)
 #: ... and the one heading style that names no level.
 _TITLE_STYLE = "title"
 
+#: Word's outline levels: 0-8 are heading levels and 9 is "body text" (no outline).
+MAX_HEADING_OUTLINE_LEVEL = 8
+BODY_TEXT_OUTLINE_LEVEL = 9
+
 #: The longest paragraph the all-bold rule will call a heading, in characters of visible
 #: text (ruleset version 1): a heading is a line, and a bold *sentence* is emphasis.
 BOLD_MAX_CHARS = 120
@@ -103,7 +109,8 @@ class ParagraphFacts:
 
     #: The paragraph's own ``w:pStyle``.
     style: str | None = None
-    #: Its outline level: its own ``w:outlineLvl``, else its style chain's.
+    #: Its outline level: its own ``w:outlineLvl``, else its style chain's. The raw fact,
+    #: 9 (body text) included; only 0-8 is a heading level.
     outline_level: int | None = None
     #: The ``w:ilvl`` of the numbering that numbers it, ``None`` when it has none.
     numbering_level: int | None = None
@@ -151,7 +158,7 @@ def decide(facts: ParagraphFacts) -> RuleFiring:
     fired: list[str] = []
     if is_heading_style(facts.style):
         fired.append(RULE_STYLE)
-    if facts.outline_level is not None:
+    if facts.outline_level is not None and 0 <= facts.outline_level <= MAX_HEADING_OUTLINE_LEVEL:
         fired.append(RULE_OUTLINE_LVL)
     if facts.numbering_level is not None and is_heading_style(facts.numbering_style):
         fired.append(RULE_OUTLINE_ILVL)

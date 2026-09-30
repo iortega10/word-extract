@@ -137,6 +137,23 @@ def test_the_bold_rule_fires_up_to_and_including_the_length_limit():
     assert decide(ParagraphFacts(bold_all=True, chars=BOLD_MAX_CHARS + 1)).fired == ()
 
 
+@pytest.mark.parametrize("level", range(0, 9))
+def test_every_heading_outline_level_zero_to_eight_fires_the_outline_rule(level):
+    assert decide(ParagraphFacts(outline_level=level)).fired == ("outlineLvl",)
+
+
+@pytest.mark.parametrize("level", [9, 10, 99, -1])
+def test_outline_level_nine_is_word_body_text_and_no_other_value_fires(level):
+    """9 is Word's explicit body text; values outside 0-9 are not levels at all."""
+    firing = decide(ParagraphFacts(outline_level=level))
+    assert firing.fired == () and not firing.is_heading
+
+
+def test_body_text_level_does_not_stop_another_rule_claiming_the_paragraph():
+    firing = decide(ParagraphFacts(style="Heading1", outline_level=9))
+    assert firing.fired == ("style",)
+
+
 @pytest.mark.parametrize(
     "facts",
     [

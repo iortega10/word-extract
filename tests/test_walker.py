@@ -780,7 +780,8 @@ def _fired_rules(facts: dict, list_continuation: bool) -> tuple[str, ...]:
     fired = []
     if _heading_style(facts["style"]):
         fired.append("style")
-    if facts["outline_level"] is not None:
+    # 0-8 are heading levels; 9 is Word's "body text" (explicitly not in the outline)
+    if facts["outline_level"] is not None and 0 <= facts["outline_level"] <= 8:
         fired.append("outlineLvl")
     if facts["numbering_level"] is not None and _heading_style(facts["numbering_style"]):
         fired.append("outlineIlvl")
@@ -2286,6 +2287,42 @@ def test_style_defined_numbering_and_outline_level_match_the_hand_typed_facts():
             "label": node.numbering_label,
         }
         assert got == {k: fact[k] for k in got}, fact["paragraph"]
+
+
+def test_outline_level_nine_body_text_is_not_a_heading_and_zero_to_eight_are():
+    """Hand-typed in the generator: level 9 keeps its raw level but is a plain paragraph."""
+    sidecar = labels.load_sidecar(MODEL / "outline_level_body_text.expected.json")
+    expected = sidecar.annotations["node_facts"]
+    nodes = _facts("outline_level_body_text")
+    assert len(nodes) == len(expected)
+    for node, fact in zip(nodes, expected):
+        got = {
+            "kind": node.kind.value,
+            "style": node.style,
+            "level": node.level,
+            "label": node.numbering_label,
+        }
+        assert got == {k: fact[k] for k in got}, fact["paragraph"]
+
+
+def test_body_text_outline_level_does_not_make_the_walk_degraded_or_normal_by_itself():
+    from wordextract.model import HeadingDetection
+
+    parsed = walk_document(opc.Package(MODEL / "outline_level_body_text.docx"))
+    assert parsed.heading_detection is HeadingDetection.NORMAL  # levels 0, 8 and the style
+    body_only = _docx_body_text_only()
+    assert walk_document(opc.Package(body_only)).heading_detection is HeadingDetection.DEGRADED
+
+
+def _docx_body_text_only():
+    import tempfile
+
+    tmp = Path(tempfile.mkdtemp())
+    body = (
+        '<w:p><w:pPr><w:outlineLvl w:val="9"/></w:pPr><w:r><w:t>one</w:t></w:r></w:p>'
+        '<w:p><w:pPr><w:outlineLvl w:val="9"/></w:pPr><w:r><w:t>two</w:t></w:r></w:p>'
+    )
+    return _docx(tmp, body)
 
 
 def test_program_review_numbered_exclusions_are_list_items():

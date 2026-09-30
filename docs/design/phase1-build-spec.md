@@ -21,7 +21,7 @@ before writing anything and reuse them.
    exist and otherwise reports "not evaluated". L2 scorer is otherwise deferred.
 2. **The underwriting-sample sidecar is labeled by a human**
    (`labels_provenance: human`). Never generate or edit it. Until it exists,
-   claims about that file (5 headings, range starts 0,2,1,3,4,5, part
+   claims about that file (6 headings -- the Title and 5 Heading 1 -- range starts 0,2,1,3,4,5, part
    resolution) are **unenforced**, and the final report must say so.
 3. **Deleted paragraph marks**: a loud known gap in Phase 1 (`paragraph_mark_revision`),
    not honored. Revisit with a Word-produced doc.
@@ -356,7 +356,7 @@ not a list continuation. Fail open: no headings gives one flat root with
 size-chunked. 4b builds the section tree and `section_path`.
 
 Tests: sidecar outlines match; list items are never headings; a styleless doc
-degrades and still chunks. The underwriting sample's "exactly 5 headings" is
+degrades and still chunks. The underwriting sample's "exactly 6 headings (the Title plus 5 Heading 1; Title is a level-0 heading)" is
 asserted **only** once its human sidecar exists.
 
 ## Turn 5: chunker v1

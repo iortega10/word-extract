@@ -1163,6 +1163,57 @@ def _unrecorded_revision_kinds():
                    title="Unrecorded revision kinds")
 
 
+def _outline_level_body_text():
+    """Outline level 9 is Word's body text: it is NOT a heading; 0-8 are."""
+    styles = _part_xml("styles", "".join([
+        _style("Ttulo1", outline=0, name="Titulo 1"),
+        _style("BodyLevel9", outline=9, name="Body Level 9"),
+    ]))
+    ppr = lambda lvl: f'<w:outlineLvl w:val="{lvl}"/>'
+    body = "".join([
+        _p(_r("Own level zero"), ppr=ppr(0)),
+        _p(_r("Own level nine"), ppr=ppr(9)),
+        _p(_r("Own level eight"), ppr=ppr(8)),
+        _sp("Localized heading style", "Ttulo1"),
+        _sp("Style set to body text", "BodyLevel9"),
+        _p(_r("Plain paragraph")),
+    ])
+    texts = ["Own level zero", "Own level nine", "Own level eight", "Localized heading style",
+             "Style set to body text", "Plain paragraph"]
+    notes = {
+        0: "outlineLvl 0 on the paragraph: a heading level",
+        1: "outlineLvl 9 is Word's body text: explicitly not in the outline, so not a heading "
+           "(the raw level 9 is still the paragraph's fact)",
+        2: "outlineLvl 8 is the deepest heading level",
+        3: "a non-English style id: only its style's outlineLvl 0 identifies it",
+        4: "a style whose outlineLvl is 9 (body text): not a heading",
+    }
+    sidecar = {
+        "fixture": "outline_level_body_text.docx",
+        "labels_provenance": "spec",
+        "clauses": ["8"],
+        "known_gaps": [],
+        "paragraphs": [
+            _para(i, [(t, [])], accepted=t, original=t, superseded="", clause="8", note=notes.get(i))
+            for i, t in enumerate(texts)
+        ],
+        "node_facts": [
+            {"paragraph": 0, "kind": "heading", "style": None, "level": 0, "label": None},
+            {"paragraph": 1, "kind": "para", "style": None, "level": 9, "label": None},
+            {"paragraph": 2, "kind": "heading", "style": None, "level": 8, "label": None},
+            {"paragraph": 3, "kind": "heading", "style": "Ttulo1", "level": 0, "label": None},
+            {"paragraph": 4, "kind": "para", "style": "BodyLevel9", "level": 9, "label": None},
+            {"paragraph": 5, "kind": "para", "style": None, "level": None, "label": None},
+        ],
+    }
+    return package(
+        "outline_level_body_text.docx", body, sidecar=sidecar, title="Outline level body text",
+        doc_rels=[("rId20", RT_STYLES, "styles.xml", None)],
+        extra_parts={"word/styles.xml": styles},
+        ct_overrides=[("/word/styles.xml", CT_STYLES)],
+    )
+
+
 BUILDERS = [
     _nested_revisions,
     _move,
@@ -1185,6 +1236,7 @@ BUILDERS = [
     _style_numbering,
     _style_chain_cycle,
     _revision_id_collision,
+    _outline_level_body_text,
     _unrecorded_revision_kinds,
 ]
 

@@ -1,0 +1,157 @@
+{
+  "clauses": [
+    "8"
+  ],
+  "fixture": "outline_level_body_text.docx",
+  "known_gaps": [],
+  "labels_provenance": "spec",
+  "node_facts": [
+    {
+      "kind": "heading",
+      "label": null,
+      "level": 0,
+      "paragraph": 0,
+      "style": null
+    },
+    {
+      "kind": "para",
+      "label": null,
+      "level": 9,
+      "paragraph": 1,
+      "style": null
+    },
+    {
+      "kind": "heading",
+      "label": null,
+      "level": 8,
+      "paragraph": 2,
+      "style": null
+    },
+    {
+      "kind": "heading",
+      "label": null,
+      "level": 0,
+      "paragraph": 3,
+      "style": "Ttulo1"
+    },
+    {
+      "kind": "para",
+      "label": null,
+      "level": 9,
+      "paragraph": 4,
+      "style": "BodyLevel9"
+    },
+    {
+      "kind": "para",
+      "label": null,
+      "level": null,
+      "paragraph": 5,
+      "style": null
+    }
+  ],
+  "paragraphs": [
+    {
+      "accepted": "Own level zero",
+      "clause": "8",
+      "index": 0,
+      "note": "outlineLvl 0 on the paragraph: a heading level",
+      "original": "Own level zero",
+      "spans": [
+        {
+          "end": 14,
+          "stack": [],
+          "start": 0,
+          "text": "Own level zero"
+        }
+      ],
+      "superseded": "",
+      "union": "Own level zero"
+    },
+    {
+      "accepted": "Own level nine",
+      "clause": "8",
+      "index": 1,
+      "note": "outlineLvl 9 is Word's body text: explicitly not in the outline, so not a heading (the raw level 9 is still the paragraph's fact)",
+      "original": "Own level nine",
+      "spans": [
+        {
+          "end": 14,
+          "stack": [],
+          "start": 0,
+          "text": "Own level nine"
+        }
+      ],
+      "superseded": "",
+      "union": "Own level nine"
+    },
+    {
+      "accepted": "Own level eight",
+      "clause": "8",
+      "index": 2,
+      "note": "outlineLvl 8 is the deepest heading level",
+      "original": "Own level eight",
+      "spans": [
+        {
+          "end": 15,
+          "stack": [],
+          "start": 0,
+          "text": "Own level eight"
+        }
+      ],
+      "superseded": "",
+      "union": "Own level eight"
+    },
+    {
+      "accepted": "Localized heading style",
+      "clause": "8",
+      "index": 3,
+      "note": "a non-English style id: only its style's outlineLvl 0 identifies it",
+      "original": "Localized heading style",
+      "spans": [
+        {
+          "end": 23,
+          "stack": [],
+          "start": 0,
+          "text": "Localized heading style"
+        }
+      ],
+      "superseded": "",
+      "union": "Localized heading style"
+    },
+    {
+      "accepted": "Style set to body text",
+      "clause": "8",
+      "index": 4,
+      "note": "a style whose outlineLvl is 9 (body text): not a heading",
+      "original": "Style set to body text",
+      "spans": [
+        {
+          "end": 22,
+          "stack": [],
+          "start": 0,
+          "text": "Style set to body text"
+        }
+      ],
+      "superseded": "",
+      "union": "Style set to body text"
+    },
+    {
+      "accepted": "Plain paragraph",
+      "clause": "8",
+      "index": 5,
+      "original": "Plain paragraph",
+      "spans": [
+        {
+          "end": 15,
+          "stack": [],
+          "start": 0,
+          "text": "Plain paragraph"
+        }
+      ],
+      "superseded": "",
+      "union": "Plain paragraph"
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}
