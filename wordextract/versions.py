@@ -10,11 +10,16 @@ from dataclasses import asdict, dataclass
 
 from docextract_core import sha256_json
 
+from .stem import STEM_ALGORITHM_VERSION
+
 TEXTMODEL_VERSION = "2"
 SPEC_PARSER_VERSION = "1"
 HEADING_RULESET_VERSION = "2"
 CHUNKER_VERSION = "1"
-MATCHER_VERSION = "2"
+#: The matcher's own version, with the vendored stemmer's version nested inside it (6b): a
+#: new ``stem.py`` must invalidate every key that stemmed anything, so its identity is part
+#: of the matcher's -- the mirror of per-group algorithm choice living in ``term_list_hash``.
+MATCHER_VERSION = f"3+{STEM_ALGORITHM_VERSION}"
 SUMMARIZER_VERSION = "1"
 OUTPUT_SCHEMA_VERSION = "1"
 

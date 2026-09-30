@@ -225,6 +225,7 @@ def test_every_term_group_field_participates_in_the_term_list_hash():
     for flipped in (
         TermGroup(canonical="subrogations", synonyms=SUBROGATION.synonyms, stemming="porter", tags=SUBROGATION.tags),
         TermGroup(canonical="subrogation", synonyms=["waiver of subrogation"], stemming="porter", tags=SUBROGATION.tags),
+        TermGroup(canonical="subrogation", synonyms=SUBROGATION.synonyms, stemming=None, tags=SUBROGATION.tags),
         TermGroup(canonical="subrogation", synonyms=SUBROGATION.synonyms, stemming="snowball", tags=SUBROGATION.tags),
         TermGroup(canonical="subrogation", synonyms=SUBROGATION.synonyms, stemming="porter", rules={"allow": "x"}, tags=SUBROGATION.tags),
         TermGroup(canonical="subrogation", synonyms=SUBROGATION.synonyms, stemming="porter", tags={"category": "limits"}),
@@ -288,13 +289,23 @@ def test_an_exact_match_is_exact_and_a_synonym_match_is_synonym():
 
 
 def test_matching_is_whole_tokens_never_substrings():
-    index = _index(SUBROGATION, TermGroup(canonical="of"))
+    # a group without a stemmer matches only the whole token: the substring is never a hit
+    index = _index(TermGroup(canonical="subrogation"), TermGroup(canonical="of"))
     assert match_text(index, "subrogations") == []
     assert match_text(index, "subrogation") == [
         TermMatch(group="subrogation", match_type=MatchType.EXACT, start=0, end=11)
     ]
     # a one-token term is a token, not two characters
     assert [(m.group, m.start) for m in match_text(index, "office of the insured")] == [("of", 7)]
+
+
+def test_a_stemmer_is_what_reaches_a_whole_token_variant_never_a_substring():
+    """``subrogations`` is a hit of ``subrogation`` only because ``porter`` maps both to
+    ``subrog`` -- reported as ``stem``, and only for a group that asked for stemming."""
+    index = _index(SUBROGATION, TermGroup(canonical="of"))
+    assert match_text(index, "subrogations") == [
+        TermMatch(group="subrogation", match_type=MatchType.STEM, start=0, end=12)
+    ]
 
 
 def test_a_form_occurs_as_a_contiguous_token_sequence_or_not_at_all():
@@ -342,15 +353,72 @@ def test_distinct_groups_report_distinct_hits_on_the_same_span():
     assert {(hit.start, hit.end) for hit in hits} == {(0, 14)}
 
 
-def test_stemming_is_not_applied_in_6a():
-    """The field round-trips and the ranking already has the slot, but 6a matches exact
-    and synonym only: the stem forms are 6b's."""
+def test_stemming_is_applied_per_group_and_the_portmanteau_is_honest():
+    """6b: a group that names an algorithm matches its stem, in the canonical's own
+    reading. ``included`` and ``including`` both stem to ``includ`` and unify; ``inclusion``
+    stems to ``inclus`` and does not -- Porter's documented, genuine non-unification, kept
+    rather than papered over."""
     registry = _registry(TermGroup(canonical="included", stemming="porter"))
     assert registry.groups[0].stemming == "porter"
     index = compile_registry(registry)
-    assert [m.group for m in match_text(index, "included")] == ["included"]
-    assert match_text(index, "including") == []
+    assert match_text(index, "included") == [
+        TermMatch(group="included", match_type=MatchType.EXACT, start=0, end=8)
+    ]
+    assert match_text(index, "including") == [
+        TermMatch(group="included", match_type=MatchType.STEM, start=0, end=9)
+    ]
     assert match_text(index, "inclusion") == []
+
+
+def test_stem_forms_are_derived_from_the_canonical_only():
+    """A synonym is matched exactly; it never widens the stem table, which is the
+    canonical's alone."""
+    index = _index(TermGroup(canonical="include", synonyms=["incorporate"], stemming="porter"))
+    assert {form.tokens for form in index.stem_forms} == {("includ",)}
+    assert index.stem_split_forms == index.stem_forms
+    assert match_text(index, "incorporation") == []
+
+
+def test_stem_forms_never_leak_into_the_forms_the_term_list_wrote():
+    """``forms``/``split_forms`` are exactly what the registry wrote; the stem tables are the
+    matcher's own, so a caller reading ``index.forms`` never sees an invented token."""
+    index = _index(TermGroup(canonical="include", synonyms=["incorporate"], stemming="porter"))
+    assert {form.tokens for form in index.forms} == {("include",), ("incorporate",)}
+    assert {form.tokens for form in index.split_forms} == {("include",), ("incorporate",)}
+    assert {form.stem for form in index.forms} == {None}
+    assert {form.tokens for form in index.stem_forms} == {("includ",)}
+
+
+def test_a_stem_hit_loses_to_an_exact_hit_on_the_same_span():
+    """``exact > synonym > stem`` settles before dedupe: the canonical's own token is one
+    hit, reported as exact, even though its stem form also matches there."""
+    index = _index(TermGroup(canonical="subrogation", stemming="porter"))
+    assert match_text(index, "subrogation") == [
+        TermMatch(group="subrogation", match_type=MatchType.EXACT, start=0, end=11)
+    ]
+
+
+def test_an_unknown_stemming_algorithm_is_a_loud_failure():
+    """A ``stemming`` naming no shipped algorithm is a registry the matcher cannot honour;
+    it must fail at compile, not silently match nothing (the miss is the failure mode)."""
+    registry = _registry(TermGroup(canonical="subrogation", stemming="snowball"))
+    with pytest.raises(ValueError, match="snowball"):
+        compile_registry(registry)
+
+
+def test_stem_matching_reads_the_hyphen_the_same_way_exact_matching_does():
+    index = _index(TermGroup(canonical="non-compliance", stemming="porter"))
+    for text in ("non-compliance", "noncompliance", "non compliance"):
+        assert [
+            (m.group, m.match_type) for m in match_text(index, text)
+        ] == [("non-compliance", MatchType.EXACT)], text
+    assert match_text(index, "non-compliance") == match_text(
+        _index(TermGroup(canonical="non-compliance")), "non-compliance"
+    )
+    # the split reading reaches a stem hit too: ``compliances`` stems to ``complianc``
+    assert match_text(index, "non compliances") == [
+        TermMatch(group="non-compliance", match_type=MatchType.STEM, start=0, end=15)
+    ]
 
 
 def test_rules_and_tags_cannot_steer_the_matcher():
@@ -552,10 +620,15 @@ def test_split_forms_are_compiled_and_the_index_is_order_independent():
     assert {form.tokens for form in one.forms} == {("holdharmless",), ("aggregate", "limit")}
 
 
-def test_the_matcher_version_records_the_hyphen_rule():
+def test_the_matcher_version_records_the_normalization_and_the_stemmer():
+    """``matcher_version`` is the reproducibility key's matcher half (D10): the normalization
+    rules and, nested inside it, the vendored stemmer's own identity -- so a new ``stem.py``
+    invalidates every key that stemmed anything, even when no matcher line changed."""
+    from wordextract.stem import STEM_ALGORITHM_VERSION
     from wordextract.versions import MATCHER_VERSION
 
-    assert MATCHER_VERSION == "2"
+    assert MATCHER_VERSION == "3+" + STEM_ALGORITHM_VERSION
+    assert MATCHER_VERSION == "3+porter-1"
 
 
 # --- the first-token index finds exactly what the linear scan found ---------------------
