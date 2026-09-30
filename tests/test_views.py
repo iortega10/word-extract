@@ -382,3 +382,156 @@ def test_gap_closing_never_reaches_across_a_paragraph(path):
 @pytest.mark.parametrize("path", ALL_DOCX, ids=lambda p: p.name)
 def test_projection_is_deterministic_for_a_package(path):
     assert _projections(path) == _projections(path)
+
+
+# --- union_spans: one span per retained run, never the elided text ----------------
+
+
+def _pollution():
+    """program_review_v3's tracked pollution paragraph, projected through both views."""
+    from wordextract.walker import walk_document
+
+    parsed = walk_document(opc.Package(FIXTURES / "program_review_v3.docx"))
+    stream = parsed.union_streams[0]
+    node = next(
+        n
+        for n in parsed.nodes
+        if n.spans and stream.text[n.spans[0].start : n.spans[0].end].startswith("Pollution")
+    )
+    span = node.spans[0]
+    return stream, span
+
+
+def test_union_spans_skip_the_elided_text_a_covering_span_includes():
+    """Hand-typed: 'Pollution: ' is 11 characters at union 662; the accepted rest is 40
+    characters at 694, because the 21 deleted characters 'excluded in all cases' sit at
+    673..694 and are elided from the accepted view."""
+    from wordextract.model import Span
+
+    stream, span = _pollution()
+    accepted = project(stream, View.ACCEPTED, span.start, span.end)
+    assert accepted.text == "Pollution: excluded except for hostile-fire release"
+    assert accepted.union_spans(0, len(accepted.text)) == [
+        Span(accepted.part_id, 662, 673),
+        Span(accepted.part_id, 694, 734),
+    ]
+    # the covering span is one span over all of it -- elided text included
+    assert accepted.union_range(0, len(accepted.text)) == Span(accepted.part_id, 662, 734)
+
+
+def test_union_spans_of_the_original_view_are_one_contiguous_span():
+    from wordextract.model import Span
+
+    stream, span = _pollution()
+    original = project(stream, View.ORIGINAL, span.start, span.end)
+    assert original.text == "Pollution: excluded in all cases"
+    assert original.union_spans(0, len(original.text)) == [Span(original.part_id, 662, 694)]
+
+
+def test_union_spans_of_a_range_inside_one_run_is_that_one_span():
+    stream, span = _pollution()
+    accepted = project(stream, View.ACCEPTED, span.start, span.end)
+    for start, end in ((0, 5), (2, 9), (12, 20), (30, 51)):
+        assert accepted.union_spans(start, end) == [accepted.union_range(start, end)]
+
+
+def test_union_spans_clip_a_range_that_starts_and_ends_mid_run():
+    """A range that straddles the gap is the tail of one run and the head of the next."""
+    from wordextract.model import Span
+
+    stream, span = _pollution()
+    accepted = project(stream, View.ACCEPTED, span.start, span.end)
+    # view 5..16 is 'tion: exclu' -> union 667..673 (tail of run 0) and 694..699 (head of run 1)
+    assert accepted.text[5:16] == "tion: exclu"
+    assert accepted.union_spans(5, 16) == [
+        Span(accepted.part_id, 667, 673),
+        Span(accepted.part_id, 694, 699),
+    ]
+
+
+def test_union_spans_merge_runs_that_are_contiguous_in_the_union():
+    """Two retained spans with different stacks but no elided text between them are one span."""
+    from wordextract.model import Span
+
+    stream = UnionStream(
+        part_id="p",
+        text="abcd\n",
+        spans=[
+            ElementarySpan(0, 2, ["ins:1"]),
+            ElementarySpan(2, 4, ["ins:2"]),
+            ElementarySpan(4, 5, []),
+        ],
+    )
+    accepted = project(stream, View.ACCEPTED)
+    assert len(accepted.runs) == 3  # runs stay per span ...
+    assert accepted.union_spans(0, 4) == [Span("p", 0, 4)]  # ... but the address merges
+
+
+def test_union_spans_refuse_a_range_they_cannot_address():
+    stream, span = _pollution()
+    accepted = project(stream, View.ACCEPTED, span.start, span.end)
+    for bad in ((3, 3), (5, 2), (-1, 4), (0, len(accepted.text) + 1)):
+        with pytest.raises(ValueError):
+            accepted.union_spans(*bad)
+
+
+@pytest.mark.parametrize("path", ALL_DOCX, ids=lambda p: p.name)
+def test_union_spans_cover_exactly_the_text_of_the_view_range(path):
+    """Every span's union text, concatenated, is the view range's text: nothing elided."""
+    for stream in union_streams(opc.Package(path)):
+        for view in VIEWS:
+            projection = project(stream, view)
+            if not projection.text:
+                continue
+            for start in range(0, len(projection.text), 7):
+                end = min(len(projection.text), start + 11)
+                got = "".join(
+                    stream.text[s.start : s.end] for s in projection.union_spans(start, end)
+                )
+                assert got == projection.text[start:end], (path.name, view, start, end)
+
+
+# --- the range search is the linear scan, faster ------------------------------------
+
+
+def _linear_project(stream, view, start, end):
+    """The pre-optimization algorithm, kept here as the reference for the search."""
+    from wordextract.views import Run, _retained
+
+    pieces, runs, cursor = [], [], 0
+    for span in stream.spans:
+        low, high = max(span.start, start), min(span.end, end)
+        if low >= high or not _retained(stream, span, view):
+            continue
+        text = stream.text[low:high]
+        runs.append(Run(view_start=cursor, view_end=cursor + len(text), union_start=low))
+        pieces.append(text)
+        cursor += len(text)
+    return "".join(pieces), tuple(runs)
+
+
+@pytest.mark.parametrize("path", ALL_DOCX, ids=lambda p: p.name)
+def test_ranged_projection_equals_the_linear_scan_on_every_range(path):
+    for stream in union_streams(opc.Package(path)):
+        size = len(stream.text)
+        starts = sorted({0, 1, size // 3, size // 2, max(0, size - 5)} | {s.start for s in stream.spans})
+        ends = sorted({size, size - 1, size // 2} | {s.end for s in stream.spans})
+        for view in VIEWS:
+            for start in starts:
+                for end in ends:
+                    if not 0 <= start <= end <= size:
+                        continue
+                    got = project(stream, view, start, end)
+                    assert (got.text, got.runs) == _linear_project(stream, view, start, end), (
+                        path.name,
+                        view,
+                        start,
+                        end,
+                    )
+
+
+def test_an_empty_range_projects_to_nothing():
+    stream, span = _pollution()
+    for view in VIEWS:
+        assert project(stream, view, span.start, span.start).text == ""
+        assert project(stream, view, span.end, span.end).runs == ()

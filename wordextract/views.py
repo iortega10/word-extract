@@ -23,6 +23,7 @@ Nothing here stores a view: :func:`project` derives one on demand from a part's
 """
 from __future__ import annotations
 
+from bisect import bisect_right
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -110,10 +111,38 @@ class Projection:
             end=last.union_start + end - last.view_start,
         )
 
+    def union_spans(self, start: int, end: int) -> list[Span]:
+        """The union addresses of a non-empty range of this view's text, one per run.
+
+        Where :meth:`union_range` returns the one span that *covers* the range --
+        elided text included -- this returns the text the range is actually made of: one
+        span for each retained run it overlaps, in order, adjacent runs that are
+        contiguous in the union merged. A hit on ``right of subrogation`` in the
+        accepted view is the spans of ``right of `` and ``subrogation``, never the
+        deleted ``recovery`` between them. This is the ``spans`` a term hit carries
+        (design D6); a citation built on it never highlights text the view removed.
+        """
+        if not 0 <= start < end <= len(self.text):
+            raise ValueError(f"view range [{start}, {end}) is not a range of {len(self.text)}")
+        spans: list[Span] = []
+        index = bisect_right(self.runs, start, key=lambda run: run.view_end)
+        while index < len(self.runs) and self.runs[index].view_start < end:
+            run = self.runs[index]
+            low = max(start, run.view_start)
+            high = min(end, run.view_end)
+            first = run.union_start + low - run.view_start
+            last = run.union_start + high - run.view_start
+            if spans and spans[-1].end == first:
+                spans[-1] = Span(part_id=self.part_id, start=spans[-1].start, end=last)
+            else:
+                spans.append(Span(part_id=self.part_id, start=first, end=last))
+            index += 1
+        return spans
+
     def _run_at(self, offset: int) -> Run:
-        for run in self.runs:
-            if run.view_start <= offset < run.view_end:
-                return run
+        index = bisect_right(self.runs, offset, key=lambda run: run.view_end)
+        if index < len(self.runs) and self.runs[index].view_start <= offset:
+            return self.runs[index]
         raise ValueError(f"no retained character at view offset {offset}")
 
 
@@ -135,7 +164,13 @@ def project(
     pieces: list[str] = []
     runs: list[Run] = []
     cursor = 0
-    for span in stream.spans:
+    # The spans tile the union in order, so the first one that overlaps the range is found
+    # by search and the scan stops at the range's end: projecting a paragraph costs that
+    # paragraph, not the whole part (a range per paragraph would otherwise be quadratic).
+    first = bisect_right(stream.spans, start, key=lambda span: span.end)
+    for span in stream.spans[first:]:
+        if span.start >= stop:
+            break
         low = max(span.start, start)
         high = min(span.end, stop)
         if low >= high or not _retained(stream, span, view):
