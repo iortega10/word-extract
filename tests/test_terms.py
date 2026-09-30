@@ -628,7 +628,7 @@ def test_the_matcher_version_records_the_normalization_and_the_stemmer():
     from wordextract.versions import MATCHER_VERSION
 
     assert MATCHER_VERSION == "3+" + STEM_ALGORITHM_VERSION
-    assert MATCHER_VERSION == "3+porter-1"
+    assert MATCHER_VERSION == "3+porter-2"
 
 
 # --- the first-token index finds exactly what the linear scan found ---------------------

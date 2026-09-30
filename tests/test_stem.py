@@ -185,5 +185,6 @@ def test_an_unknown_algorithm_is_a_loud_failure():
 def test_the_stemmer_version_is_the_nested_matcher_half():
     from wordextract.versions import MATCHER_VERSION
 
-    assert STEM_ALGORITHM_VERSION == "porter-1"
+    assert STEM_ALGORITHM_VERSION == "porter-2"
     assert MATCHER_VERSION.endswith("+" + STEM_ALGORITHM_VERSION)
+

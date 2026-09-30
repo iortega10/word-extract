@@ -27,7 +27,7 @@ from typing import Callable
 #: The vendored transcriptions's pinned identity, folded into ``matcher_version`` (D6). A
 #: group names an *algorithm* (``TermGroup.stemming``); this names the *code* behind it, so
 #: bumping it invalidates every key that stemmed anything.
-STEM_ALGORITHM_VERSION = "porter-1"
+STEM_ALGORITHM_VERSION = "porter-2"
 
 #: Porter's vowels. ``y`` is a consonant unless it has a vowel before it, handled in
 #: :func:`_is_consonant`.
@@ -203,10 +203,16 @@ def _step_1c(word: str) -> str:
 
 
 def _apply_table(word: str, table: tuple[tuple[str, str], ...], minimum: int) -> str:
-    """Replace the longest-matching suffix in ``table`` if the stem's measure exceeds ``minimum``."""
+    """Replace the longest-matching suffix in ``table`` if the stem's measure exceeds ``minimum``.
+
+    Porter's rule is that the **longest** matching suffix decides the step: if its condition
+    fails, the step does nothing -- it does not fall back to a shorter suffix. (The tables are
+    ordered so the longer of two overlapping suffixes comes first.)
+    """
     for suffix, replacement in table:
-        if word.endswith(suffix) and _measure(word[: len(word) - len(suffix)]) > minimum:
-            return word[: len(word) - len(suffix)] + replacement
+        if word.endswith(suffix):
+            stem = word[: len(word) - len(suffix)]
+            return stem + replacement if _measure(stem) > minimum else word
     return word
 
 
@@ -225,9 +231,10 @@ def _step_4(word: str) -> str:
             continue
         stem = word[: len(word) - len(suffix)]
         if suffix == "ion" and (not stem or stem[-1] not in "st"):
-            continue
-        if _measure(stem) > 1:
-            return stem + replacement
+            return word  # -ion is a suffix only after s or t; the longest match decided
+        # the longest matching suffix decides: a failed condition ends the step, it does not
+        # fall back to a shorter suffix (``agreement``: -ement fails, so not -ment, not -ent)
+        return stem + replacement if _measure(stem) > 1 else word
     return word
 
 
