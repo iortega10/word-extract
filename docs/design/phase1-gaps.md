@@ -20,9 +20,23 @@ slice that owns them lands; the full list is checked at Turn 9.
   document order), so ids stay stable but are not Word's. Word always writes ids, so
   this only occurs in malformed or generated input.
 
+## Owned by the node walker (Turn 2b)
+
+- **`inline_sdt_transparent`** -- an inline content control (`w:sdt` inside a
+  paragraph) is walked through with no node and no boundary: its content is ordinary
+  content at its position, and what the control *was* -- a tag, an alias, a lock --
+  does not survive into the union. A block-level `sdt` is unaffected: it is a node of
+  its own kind. Recorded whenever an inline control is met.
+- **`duplicate_content_id_churn`** -- two nodes in the same part derived the same
+  content-hash id, so the later one was re-id'd with an occurrence ordinal (`:1`, ...).
+  The ordinal is a position among equal-content nodes in *document order*, so inserting
+  another equal-content node ahead of one **changes its id**. Word's own files trigger
+  this routinely: an empty footnote/endnote part holds both a `separator` and a
+  `continuationSeparator` note of identical content. Recorded whenever a duplicate
+  content-derived id is actually spent.
+
 ## Declared by fixtures, owned by later slices
 
-`paragraph_mark_revision`, `inline_sdt_transparent`, `field_result_view_ancestry`,
-`duplicate_content_id_churn`, `w_cr_unspecified`, `empty_parts_unverified`,
-`renamed_part_unverified`, `strict_namespaces_unverified`. Each will be documented
-here by the slice that reports it.
+`paragraph_mark_revision`, `field_result_view_ancestry`, `w_cr_unspecified`,
+`empty_parts_unverified`, `renamed_part_unverified`, `strict_namespaces_unverified`.
+Each will be documented here by the slice that reports it.
