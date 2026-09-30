@@ -1,0 +1,65 @@
+{
+  "clauses": [
+    "8"
+  ],
+  "fixture": "style_chain_cycle.docx",
+  "known_gaps": [
+    "style_chain_cycle"
+  ],
+  "labels_provenance": "spec",
+  "paragraphs": [
+    {
+      "accepted": "in a cycle",
+      "clause": "8",
+      "index": 0,
+      "note": "CycleA<->CycleB: the chain stops at the cycle and is recorded; numId 9 has no numbering.xml, so the paragraph is numbered but has no label",
+      "original": "in a cycle",
+      "spans": [
+        {
+          "end": 10,
+          "stack": [],
+          "start": 0,
+          "text": "in a cycle"
+        }
+      ],
+      "superseded": "",
+      "union": "in a cycle"
+    },
+    {
+      "accepted": "orphaned",
+      "clause": "8",
+      "index": 1,
+      "note": "basedOn names a style styles.xml does not define: nothing to inherit, silent",
+      "original": "orphaned",
+      "spans": [
+        {
+          "end": 8,
+          "stack": [],
+          "start": 0,
+          "text": "orphaned"
+        }
+      ],
+      "superseded": "",
+      "union": "orphaned"
+    },
+    {
+      "accepted": "undefined style",
+      "clause": "8",
+      "index": 2,
+      "note": "its own style is undefined: silent, Word treats it as Normal",
+      "original": "undefined style",
+      "spans": [
+        {
+          "end": 15,
+          "stack": [],
+          "start": 0,
+          "text": "undefined style"
+        }
+      ],
+      "superseded": "",
+      "union": "undefined style"
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

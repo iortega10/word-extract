@@ -1,0 +1,180 @@
+{
+  "clauses": [
+    "8"
+  ],
+  "fixture": "style_numbering.docx",
+  "known_gaps": [],
+  "labels_provenance": "spec",
+  "node_facts": [
+    {
+      "kind": "heading",
+      "label": "1.",
+      "level": 0,
+      "paragraph": 0,
+      "style": "Heading1"
+    },
+    {
+      "kind": "list_item",
+      "label": "1.",
+      "level": null,
+      "paragraph": 1,
+      "style": "ListNumber"
+    },
+    {
+      "kind": "list_item",
+      "label": "2.",
+      "level": null,
+      "paragraph": 2,
+      "style": "ListNumber"
+    },
+    {
+      "kind": "list_item",
+      "label": "(a)",
+      "level": null,
+      "paragraph": 3,
+      "style": "ListNumber2"
+    },
+    {
+      "kind": "list_item",
+      "label": "3.",
+      "level": null,
+      "paragraph": 4,
+      "style": "ListNumber"
+    },
+    {
+      "kind": "heading",
+      "label": "2.",
+      "level": 0,
+      "paragraph": 5,
+      "style": "Heading1"
+    },
+    {
+      "kind": "para",
+      "label": null,
+      "level": 1,
+      "paragraph": 6,
+      "style": "Localized2"
+    }
+  ],
+  "paragraphs": [
+    {
+      "accepted": "Coverage",
+      "clause": "8",
+      "index": 0,
+      "note": "Heading1 style carries numPr (numId 1) and outlineLvl 0; ilvl comes from the w:lvl/w:pStyle link. Heading style still wins over numbering: kind heading, label 1.",
+      "original": "Coverage",
+      "spans": [
+        {
+          "end": 8,
+          "stack": [],
+          "start": 0,
+          "text": "Coverage"
+        }
+      ],
+      "superseded": "",
+      "union": "Coverage"
+    },
+    {
+      "accepted": "First",
+      "clause": "8",
+      "index": 1,
+      "note": "ListNumber style carries numPr numId 2: a list item, label 1.",
+      "original": "First",
+      "spans": [
+        {
+          "end": 5,
+          "stack": [],
+          "start": 0,
+          "text": "First"
+        }
+      ],
+      "superseded": "",
+      "union": "First"
+    },
+    {
+      "accepted": "Second",
+      "clause": "8",
+      "index": 2,
+      "original": "Second",
+      "spans": [
+        {
+          "end": 6,
+          "stack": [],
+          "start": 0,
+          "text": "Second"
+        }
+      ],
+      "superseded": "",
+      "union": "Second"
+    },
+    {
+      "accepted": "Sub a",
+      "clause": "8",
+      "index": 3,
+      "note": "ListNumber2 is basedOn ListNumber: numId inherited, ilvl 1 from its own numPr: label (a).",
+      "original": "Sub a",
+      "spans": [
+        {
+          "end": 5,
+          "stack": [],
+          "start": 0,
+          "text": "Sub a"
+        }
+      ],
+      "superseded": "",
+      "union": "Sub a"
+    },
+    {
+      "accepted": "Third",
+      "clause": "8",
+      "index": 4,
+      "note": "level 0 resumes after a deeper item: label 3.",
+      "original": "Third",
+      "spans": [
+        {
+          "end": 5,
+          "stack": [],
+          "start": 0,
+          "text": "Third"
+        }
+      ],
+      "superseded": "",
+      "union": "Third"
+    },
+    {
+      "accepted": "Exclusions",
+      "clause": "8",
+      "index": 5,
+      "original": "Exclusions",
+      "spans": [
+        {
+          "end": 10,
+          "stack": [],
+          "start": 0,
+          "text": "Exclusions"
+        }
+      ],
+      "superseded": "",
+      "union": "Exclusions"
+    },
+    {
+      "accepted": "Localized heading",
+      "clause": "8",
+      "index": 6,
+      "note": "a non-English heading style has no name to match; only its style's outlineLvl (1) identifies it. Kind is paragraph until Turn 4 decides headings.",
+      "original": "Localized heading",
+      "spans": [
+        {
+          "end": 17,
+          "stack": [],
+          "start": 0,
+          "text": "Localized heading"
+        }
+      ],
+      "superseded": "",
+      "union": "Localized heading"
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

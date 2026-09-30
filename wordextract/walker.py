@@ -15,15 +15,14 @@ in the build spec). Nothing here guesses at them:
   ``w:cr``, ``w:sym``, ``w:softHyphen``, ``w:noBreakHyphen`` and a literal ``\\n`` /
   ``\\r`` inside ``w:t`` are content **inside** a span, never boundaries;
 * ``w:t`` and ``w:delText`` are content, ``w:instrText`` never is, and field text is
-  emitted only once the innermost open field has passed its ``separate`` (a
-  ``w:fldChar`` depth counter, so nested fields resolve; ``w:fldSimple``'s
-  instruction is its attribute and is never read);
+  emitted only once **every** open field has passed its ``separate`` (a ``w:fldChar``
+  depth counter, so nested fields resolve; ``w:fldSimple``'s instruction is its
+  attribute and is never read);
 * revision ancestry is the ancestor stack, ``<kind>:<w:id>`` (2c adds the records);
 * ``w:txbxContent`` is never entered: text-box text belongs to its own fragment and
   is not part of any part's union stream (a later slice, hence no fragment stream);
   the omission is recorded as the ``textbox`` known gap so it is never silent;
-* field text is content only when **every** open field has passed its ``separate``:
-  a nested field's result inside an outer field's instruction is still instruction;
+* a nested field's result inside an outer field's instruction is still instruction;
 * descent is an explicit allow-list and every drawing is skipped. An unknown ``w:``
   container contributes nothing rather than something invented, **but the loss is
   recorded**: a skipped element that holds text is the ``unrecognized_container``
@@ -35,10 +34,12 @@ derived on demand from it (Turn 3), and the union itself is never matched or
 summarized.
 
 2b adds the nodes over that address space. A paragraph is a **heading** when its own
-``w:pStyle`` is ``heading`` plus a level 1-9 (case-insensitive), and a **list item**
-when its own ``w:numPr`` names a numbering -- which wins over heading. ``style`` and
-``level`` are the paragraph's *own* ``w:pStyle`` / ``w:outlineLvl`` (never a resolved
-style cascade), and the numbering label comes from a small counter over
+``w:pStyle`` is ``heading`` plus a level 1-9 (case-insensitive) -- a numbered heading is
+still a heading, and carries its label -- else a **list item** when it is numbered, by
+its own ``w:numPr`` or by the numbering its style defines (``styles.py``: ``basedOn``
+chain, nearest definition wins). ``style`` is the paragraph's own ``w:pStyle`` and
+``level`` its own ``w:outlineLvl``, else the one its style chain defines (never a
+resolved font or spacing cascade). The numbering label comes from a small counter over
 ``numbering.xml``. ``table``, ``row`` and a block ``w:sdt`` are containers: their text
 belongs to the nodes under them, so they carry no span and list ``child_ids``.
 ``header``, ``footer`` and ``footnote`` are the same kind of container -- a part's own
@@ -76,6 +77,7 @@ from .model import (
     UnionStream,
 )
 from .opc import W14_NS, Package, Part, is_w, local_name, wattr
+from .styles import StyleFacts, Styles
 
 #: One per paragraph, empty stack: the paragraph boundary in the union coordinate
 #: space (``text-model-spec.md`` section 1).
@@ -93,6 +95,7 @@ GAP_UNRECOGNIZED_CONTAINER = "unrecognized_container"
 GAP_REVISION_MISSING_ID = "revision_missing_id"
 GAP_INLINE_SDT_TRANSPARENT = "inline_sdt_transparent"
 GAP_DUPLICATE_CONTENT_ID = "duplicate_content_id_churn"
+GAP_STYLE_CHAIN_CYCLE = "style_chain_cycle"
 
 #: A paragraph's own ``w:pStyle`` is a heading style when it is ``heading`` plus one
 #: level 1-9; the style name is matched, never a resolved style definition.
@@ -329,12 +332,14 @@ class _Numbering:
 
     Word's numbering is two lookups: ``w:num`` names a ``w:abstractNum``, which defines
     one ``w:lvl`` per ``w:ilvl``; a ``w:lvlOverride`` on the ``w:num`` replaces a level
-    or only its start value. Nothing here resolves a *style*'s numbering -- only the
-    ``w:numPr`` a paragraph carries on itself is asked about.
+    or only its start value. A ``w:lvl`` may also name the paragraph style it belongs to
+    (``w:pStyle``), which is how a style whose ``w:numPr`` gives only a ``w:numId`` gets
+    its level. Which numbering a *paragraph* has is decided by ``_resolve_numbering``.
     """
 
     def __init__(self, part: Part | None = None) -> None:
         self._abstracts: dict[str, dict[int, _Level]] = {}
+        self._style_levels: dict[tuple[str, str], int] = {}
         self._numbers: dict[str, str] = {}
         self._levels: dict[tuple[str, int], _Level] = {}
         self._starts: dict[tuple[str, int], int] = {}
@@ -351,6 +356,17 @@ class _Numbering:
             return None
         return _Level(level.format, level.text, self._starts.get((num_id, ilvl), level.start))
 
+    def style_level(self, num_id: str, chain: tuple[str, ...]) -> int | None:
+        """The level a style in ``chain`` is linked to by a ``w:lvl/w:pStyle``, if any."""
+        abstract = self._numbers.get(num_id)
+        if abstract is None:
+            return None
+        for style_id in chain:
+            ilvl = self._style_levels.get((abstract, style_id))
+            if ilvl is not None:
+                return ilvl
+        return None
+
     def _read(self, root: etree._Element) -> None:
         for child in root:
             if not isinstance(child.tag, str):
@@ -359,6 +375,11 @@ class _Numbering:
                 ident = wattr(child, "abstractNumId")
                 if ident is not None:
                     self._abstracts[ident] = _levels_of(child)
+                    for lvl in child:
+                        style_id = _child_val(lvl, "pStyle") if is_w(lvl, "lvl") else None
+                        ilvl = _int_or(wattr(lvl, "ilvl"), None) if style_id is not None else None
+                        if style_id is not None and ilvl is not None:
+                            self._style_levels[(ident, style_id)] = ilvl
             elif is_w(child, "num"):
                 self._read_num(child)
 
@@ -509,35 +530,53 @@ def _format_number(value: int, fmt: str) -> str:
     return str(value)
 
 
-def _num_pr(paragraph: etree._Element) -> tuple[str, int] | None:
-    """The paragraph's own ``(numId, ilvl)``, or ``None`` when it is not numbered.
+def _resolve_numbering(
+    p_pr: etree._Element | None,
+    facts: StyleFacts,
+    numbering: _Numbering | None,
+) -> tuple[str, int] | None:
+    """The paragraph's ``(numId, ilvl)``, or ``None`` when it is not numbered.
 
-    A missing ``w:ilvl`` is level 0, Word's default. ``w:numId 0`` is Word's "no
-    numbering" -- it clears numbering inherited from a style -- so it is not a list.
+    Each half resolves on its own, paragraph before style: ``w:numId`` from the
+    paragraph's ``w:numPr`` else its style chain, then ``w:ilvl`` from the paragraph
+    else the style else the level a ``w:lvl/w:pStyle`` links the style to, else 0.
+    ``w:numId 0`` is Word's "no numbering" -- it clears numbering inherited from a
+    style -- so it is not a list.
     """
-    p_pr = _first_w(paragraph, "pPr")
     num_pr = _first_w(p_pr, "numPr") if p_pr is not None else None
-    if num_pr is None:
-        return None
-    num_id = _child_val(num_pr, "numId")
+    num_id = _child_val(num_pr, "numId") if num_pr is not None else None
+    if num_id is None:
+        num_id = facts.num_id
     if num_id is None or num_id == "0":
         return None
-    return num_id, _int_or(_child_val(num_pr, "ilvl"), 0) or 0
+    ilvl = _int_or(_child_val(num_pr, "ilvl"), None) if num_pr is not None else None
+    if ilvl is None:
+        ilvl = facts.ilvl
+    if ilvl is None and numbering is not None:
+        ilvl = numbering.style_level(num_id, facts.chain)
+    return num_id, ilvl or 0
 
 
 def _paragraph_facts(
     paragraph: etree._Element,
-) -> tuple[NodeKind, str | None, int | None, tuple[str, int] | None]:
-    """A paragraph's node kind, its own style, its own level and its own ``w:numPr``."""
+    styles: Styles | None = None,
+    numbering: _Numbering | None = None,
+) -> tuple[NodeKind, str | None, int | None, tuple[str, int] | None, bool]:
+    """A paragraph's kind, style, level, numbering and whether its style chain has a cycle."""
     p_pr = _first_w(paragraph, "pPr")
     style = _child_val(p_pr, "pStyle")
+    facts = styles.resolve(style) if styles is not None else StyleFacts()
     level = _int_or(_child_val(p_pr, "outlineLvl"), None)
-    numbered = _num_pr(paragraph)
-    if numbered is not None:
-        return NodeKind.LIST_ITEM, style, level, numbered
+    if level is None:
+        level = facts.outline_level
+    numbered = _resolve_numbering(p_pr, facts, numbering)
     if style is not None and _HEADING_STYLE.fullmatch(style):
-        return NodeKind.HEADING, style, level, None
-    return NodeKind.PARA, style, level, None
+        kind = NodeKind.HEADING
+    elif numbered is not None:
+        kind = NodeKind.LIST_ITEM
+    else:
+        kind = NodeKind.PARA
+    return kind, style, level, numbered, facts.broken
 
 
 @dataclass
@@ -585,9 +624,12 @@ class _Walker:
         part: Part,
         numbering: _Numbering | None = None,
         used_ids: set[str] | None = None,
+        styles: Styles | None = None,
     ) -> None:
         self._stream = stream
         self._part = part
+        self._numbering = numbering
+        self._styles = styles
         self._labels = _LabelCounter(numbering)
         self._used_ids = used_ids if used_ids is not None else set()
         self._hashes: dict[str, int] = {}
@@ -629,7 +671,11 @@ class _Walker:
         self._close_node()
 
     def _walk_paragraph(self, paragraph: etree._Element) -> None:
-        kind, style, level, numbered = _paragraph_facts(paragraph)
+        kind, style, level, numbered, broken = _paragraph_facts(
+            paragraph, self._styles, self._numbering
+        )
+        if broken:
+            self.gaps.add(GAP_STYLE_CHAIN_CYCLE)
         label = self._labels.label(*numbered) if numbered is not None else None
         self._stack = []
         self._fields = []
@@ -821,12 +867,13 @@ def _walk(
     part: Part | None,
     numbering: _Numbering | None = None,
     used_ids: set[str] | None = None,
+    styles: Styles | None = None,
 ) -> tuple[UnionStream | None, set[str], list[Node]]:
     """One part's union stream, known-gap ids and node tree (2a + 2b)."""
     if part is None or part.tree is None:
         return None, set(), []
     stream = _PartStream()
-    walker = _Walker(stream, part, numbering, used_ids)
+    walker = _Walker(stream, part, numbering, used_ids, styles)
     walker.walk(part.tree)
     if not stream.paragraphs:
         # No ``w:p`` is no address space: neither a stream nor nodes that would address
@@ -844,6 +891,7 @@ def walk_part(
     part: Part | None,
     numbering: _Numbering | None = None,
     used_ids: set[str] | None = None,
+    styles: Styles | None = None,
 ) -> tuple[UnionStream | None, set[str]]:
     """``part``'s union stream (or ``None``) and the known-gap ids met while walking it.
 
@@ -857,7 +905,7 @@ def walk_part(
     never reach the union, so a per-part walk without ``numbering`` streams the same
     text.
     """
-    stream, gaps, _nodes = _walk(part, numbering, used_ids)
+    stream, gaps, _nodes = _walk(part, numbering, used_ids, styles)
     return stream, gaps
 
 
@@ -915,12 +963,13 @@ def walk_document(package: Package) -> ParseResult:
     here yet, and headings (Turn 4) are left to the heading rules.
     """
     numbering = _Numbering(package.numbering)
+    styles = Styles(package.styles)
     used_ids: set[str] = set()
     streams: list[UnionStream] = []
     nodes: list[Node] = []
     gaps: set[str] = set()
     for part in _parts(package):
-        stream, part_gaps, part_nodes = _walk(part, numbering, used_ids)
+        stream, part_gaps, part_nodes = _walk(part, numbering, used_ids, styles)
         gaps |= part_gaps
         if stream is not None:
             streams.append(stream)

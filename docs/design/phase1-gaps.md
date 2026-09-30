@@ -35,6 +35,13 @@ slice that owns them lands; the full list is checked at Turn 9.
   `continuationSeparator` note of identical content. Recorded whenever a duplicate
   content-derived id is actually spent.
 
+- **`style_chain_cycle`** -- resolving a paragraph style's numbering or outline level
+  (`styles.py`, along `w:basedOn`) hit a `basedOn` cycle. The chain stops there and
+  whatever was found before is kept; the paragraph is not guessed at further. An
+  undefined style, or a `basedOn` naming a style `styles.xml` does not define, is
+  **not** a gap: there is nothing to inherit, as when Word treats the style as Normal
+  (docx generators routinely omit `Normal`).
+
 ## Declared by fixtures, owned by later slices
 
 `paragraph_mark_revision`, `field_result_view_ancestry`, `w_cr_unspecified`,

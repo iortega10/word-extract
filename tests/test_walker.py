@@ -180,7 +180,7 @@ def test_strict_namespaces_get_the_same_union():
 
 
 def _gaps(name: str) -> list[str]:
-    return walk_package(opc.Package(MODEL / f"{name}.docx"))[1]
+    return walk_document(opc.Package(MODEL / f"{name}.docx")).known_gaps
 
 
 #: The known-gap ids the walker itself can report (2a + 2b). Every other id a sidecar
@@ -191,6 +191,7 @@ WALKER_OWNED_GAPS = {
     "revision_missing_id",
     "inline_sdt_transparent",
     "duplicate_content_id_churn",
+    "style_chain_cycle",
 }
 
 
@@ -211,7 +212,7 @@ def test_the_corpus_reports_every_gap_id_the_walker_owns():
     """Ownership is earned per id: some fixture in the corpus has to report it."""
     reported = set()
     for path in ALL_DOCX:
-        reported |= set(walk_package(opc.Package(path))[1])
+        reported |= set(walk_document(opc.Package(path)).known_gaps)
     assert reported == WALKER_OWNED_GAPS
 
 
@@ -275,7 +276,23 @@ TYPES_NS = "http://schemas.openxmlformats.org/package/2006/content-types"
 W_ATTRS = f'xmlns:w="{opc.W_NS}" xmlns:w14="{opc.W14_NS}" xmlns:r="{opc.R_NS}"'
 
 
-def _docx(tmp_path: Path, body: str, *, numbering: str | None = None, name: str = "synth.docx"):
+def _style_xml(style_id: str, *, num_id: str | None = None) -> str:
+    """A one-style ``styles.xml`` whose style carries a numPr (numId only)."""
+    numpr = f'<w:numPr><w:numId w:val="{num_id}"/></w:numPr>' if num_id is not None else ""
+    return (
+        f'<w:style w:type="paragraph" w:styleId="{style_id}"><w:name w:val="{style_id}"/>'
+        f"<w:pPr>{numpr}</w:pPr></w:style>"
+    )
+
+
+def _docx(
+    tmp_path: Path,
+    body: str,
+    *,
+    numbering: str | None = None,
+    styles: str | None = None,
+    name: str = "synth.docx",
+):
     """A minimal, valid package: only the parts the walker reads, nothing else.
 
     A part is resolved by relationship type plus existence and XML is parsed by its
@@ -302,12 +319,19 @@ def _docx(tmp_path: Path, body: str, *, numbering: str | None = None, name: str 
                 if numbering is not None
                 else ""
             )
+            + (
+                f'<Relationship Id="rId3" Type="{opc.RT_STYLES}" Target="styles.xml"/>'
+                if styles is not None
+                else ""
+            )
             + "</Relationships>"
         ),
         "word/document.xml": f"<w:document {W_ATTRS}><w:body>{body}</w:body></w:document>",
     }
     if numbering is not None:
         members["word/numbering.xml"] = f"<w:numbering {W_ATTRS}>{numbering}</w:numbering>"
+    if styles is not None:
+        members["word/styles.xml"] = f"<w:styles {W_ATTRS}>{styles}</w:styles>"
     path = tmp_path / name
     with zipfile.ZipFile(path, "w") as archive:
         for member, data in members.items():
@@ -471,19 +495,44 @@ def _element_at(package: opc.Package, source_ref: str):
     return element
 
 
-def _kind_from_xml(element) -> NodeKind:
-    """The kind rule read off the element itself: numPr, then style, then the local name."""
+def _kind_from_xml(element, package: opc.Package) -> NodeKind:
+    """The kind rule read off the element itself, with numbering resolved through its style.
+
+    A heading style wins (a numbered heading is a heading); otherwise a non-zero numId,
+    on the paragraph or on its style chain, makes a list item.
+    """
     local = opc.local_name(element)
     if local != "p":
         return KIND_BY_LOCAL[local]
     properties = _w_child(element, "pPr")
-    num_id = _w_val(_w_child(properties, "numPr"), "numId")
-    if num_id is not None and num_id != "0":
-        return NodeKind.LIST_ITEM
     style = _w_val(properties, "pStyle")
     if style is not None and HEADING_STYLE.fullmatch(style):
         return NodeKind.HEADING
+    num_id = _w_val(_w_child(properties, "numPr"), "numId")
+    if num_id is None:
+        num_id = _style_num_id(package, style)
+    if num_id is not None and num_id != "0":
+        return NodeKind.LIST_ITEM
     return NodeKind.PARA
+
+
+def _style_num_id(package: opc.Package, style_id: str | None) -> str | None:
+    """A second, independent reading of ``basedOn`` inheritance for ``numId`` only."""
+    if style_id is None or package.styles is None or package.styles.tree is None:
+        return None
+    defined = {
+        opc.wattr(node, "styleId"): node for node in package.styles.tree if isinstance(node.tag, str)
+        and opc.local_name(node) == "style"
+    }
+    seen: set[str] = set()
+    while style_id is not None and style_id in defined and style_id not in seen:
+        seen.add(style_id)
+        node = defined[style_id]
+        num_id = _w_val(_w_child(_w_child(node, "pPr"), "numPr"), "numId")
+        if num_id is not None:
+            return num_id
+        style_id = _w_val(node, "basedOn")
+    return None
 
 
 def test_every_node_kind_is_exercised_by_the_corpus():
@@ -500,7 +549,7 @@ def test_a_nodes_kind_is_re_derivable_from_its_own_source_ref(path):
     assert nodes, path
     for node in nodes:
         element = _element_at(package, node.source_ref)
-        assert node.kind is _kind_from_xml(element), node.source_ref
+        assert node.kind is _kind_from_xml(element, package), node.source_ref
 
 
 # --- spans ---------------------------------------------------------------------
@@ -821,3 +870,104 @@ def test_the_gap_doc_documents_exactly_the_walker_owned_ids():
     assert documented == WALKER_OWNED_GAPS
     for gap in WALKER_OWNED_GAPS:
         assert f"`{gap}`" not in declared, gap
+
+
+# --- style-defined numbering and outline level ---------------------------------
+
+
+def _facts(name: str):
+    """Per-paragraph node facts of a model fixture, in document order, paragraphs only."""
+    package = opc.Package(MODEL / f"{name}.docx")
+    result = walk_document(package)
+    stream = {s.part_id: s for s in result.union_streams}
+    return [
+        node
+        for node in result.nodes
+        if node.kind in (NodeKind.PARA, NodeKind.HEADING, NodeKind.LIST_ITEM)
+        and stream[node.part_id].text[node.spans[0].start : node.spans[0].end]
+    ]
+
+
+def test_style_defined_numbering_and_outline_level_match_the_hand_typed_facts():
+    """Every fact is a hand-typed literal in the fixture generator, never read off the walker."""
+    sidecar = labels.load_sidecar(MODEL / "style_numbering.expected.json")
+    expected = sidecar.annotations["node_facts"]
+    nodes = _facts("style_numbering")
+    assert len(nodes) == len(expected)
+    for node, fact in zip(nodes, expected):
+        got = {
+            "kind": node.kind.value,
+            "style": node.style,
+            "level": node.level,
+            "label": node.numbering_label,
+        }
+        assert got == {k: fact[k] for k in got}, fact["paragraph"]
+
+
+def test_program_review_numbered_exclusions_are_list_items():
+    """The case that motivated styles.py: List Number defines its numbering on the style."""
+    nodes = walk_document(opc.Package(FIXTURES / "program_review_v3.docx")).nodes
+    items = [n for n in nodes if n.style in ("ListNumber", "ListNumber2")]
+    assert len(items) == 3
+    assert all(n.kind is NodeKind.LIST_ITEM for n in items)
+    assert all(n.numbering_label is not None for n in items)
+    assert [n.numbering_label for n in items][:2] == ["1.", "2."]
+
+
+def test_a_style_cycle_is_recorded_not_guessed():
+    package = opc.Package(MODEL / "style_chain_cycle.docx")
+    result = walk_document(package)
+    assert "style_chain_cycle" in result.known_gaps
+    kinds = {n.kind for n in result.nodes if n.spans}
+    assert kinds <= {NodeKind.PARA, NodeKind.LIST_ITEM}
+
+
+def test_only_a_cycle_is_a_gap_undefined_styles_and_bases_are_silent():
+    """An undefined style or basedOn leaves nothing to inherit (docx generators omit Normal)."""
+    from wordextract.styles import Styles
+
+    package = opc.Package(MODEL / "style_chain_cycle.docx")
+    styles = Styles(package.styles)
+    assert styles.resolve("NotDefined").broken is False
+    assert styles.resolve("Orphan").broken is False  # basedOn an undefined style
+    assert styles.resolve("CycleA").broken is True
+    assert styles.resolve(None).broken is False
+
+
+def test_style_resolution_takes_the_nearest_definition_per_property():
+    from wordextract.styles import Styles
+
+    styles = Styles(opc.Package(MODEL / "style_numbering.docx").styles)
+    derived = styles.resolve("ListNumber2")
+    assert derived.chain == ("ListNumber2", "ListNumber")
+    assert derived.num_id == "2" and derived.ilvl == 1  # numId inherited, ilvl its own
+    assert styles.resolve("Heading1").outline_level == 0
+    assert styles.resolve("Localized2").outline_level == 1
+
+
+def test_own_num_id_zero_still_clears_a_style_numbering(tmp_path):
+    numbering = _abstract_num("0", _lvl(0, "decimal", "%1.")) + _num("5", "0")
+    body = _p("cleared", num_id="0", style="StyleNum") + _p("kept", style="StyleNum")
+    path = _docx(tmp_path, body, numbering=numbering, styles=_style_xml("StyleNum", num_id="5"))
+    nodes = [n for n in walk_document(opc.Package(path)).nodes if n.spans]
+    assert [n.kind for n in nodes] == [NodeKind.PARA, NodeKind.LIST_ITEM]
+    assert nodes[1].numbering_label == "1."
+
+
+def test_a_paragraph_ilvl_alone_uses_the_styles_numid(tmp_path):
+    numbering = _abstract_num("0", _lvl(0, "decimal", "%1."), _lvl(1, "lowerLetter", "(%2)")) + _num("5", "0")
+    body = _p("top", style="StyleNum") + (
+        '<w:p><w:pPr><w:pStyle w:val="StyleNum"/><w:numPr><w:ilvl w:val="1"/></w:numPr></w:pPr>'
+        "<w:r><w:t>child</w:t></w:r></w:p>"
+    )
+    path = _docx(tmp_path, body, numbering=numbering, styles=_style_xml("StyleNum", num_id="5"))
+    nodes = [n for n in walk_document(opc.Package(path)).nodes if n.spans]
+    assert [n.numbering_label for n in nodes] == ["1.", "(a)"]
+
+
+def test_a_heading_style_stays_a_heading_when_it_is_numbered(tmp_path):
+    numbering = _abstract_num("0", _lvl(0, "decimal", "%1.")) + _num("5", "0")
+    body = _p("Numbered heading", style="Heading1", num_id="5")
+    path = _docx(tmp_path, body, numbering=numbering)
+    node = next(n for n in walk_document(opc.Package(path)).nodes if n.spans)
+    assert node.kind is NodeKind.HEADING and node.numbering_label == "1."

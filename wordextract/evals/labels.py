@@ -106,6 +106,7 @@ ANNOTATION_KEYS = (
     "id_expectations",
     "move_groups",
     "namespaces",
+    "node_facts",
     "parts",
 )
 

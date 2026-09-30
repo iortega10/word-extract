@@ -838,6 +838,137 @@ def _revision_missing_id():
                    title="Revision missing id")
 
 
+RT_STYLES = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"
+RT_NUMBERING = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering"
+CT_STYLES = "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"
+CT_NUMBERING = "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"
+
+
+def _part_xml(root, inner):
+    return XML_DECL + f"<w:{root} {_nsdecl(NS, ('w',))}>{inner}</w:{root}>"
+
+
+def _style(style_id, *, based_on=None, num_id=None, ilvl=None, outline=None, name=None):
+    ppr = ""
+    if num_id is not None or ilvl is not None:
+        ppr += "<w:numPr>"
+        if ilvl is not None:
+            ppr += f'<w:ilvl w:val="{ilvl}"/>'
+        if num_id is not None:
+            ppr += f'<w:numId w:val="{num_id}"/>'
+        ppr += "</w:numPr>"
+    if outline is not None:
+        ppr += f'<w:outlineLvl w:val="{outline}"/>'
+    based = f'<w:basedOn w:val="{based_on}"/>' if based_on else ""
+    return (f'<w:style w:type="paragraph" w:styleId="{style_id}"><w:name w:val="{name or style_id}"/>'
+            f"{based}<w:pPr>{ppr}</w:pPr></w:style>")
+
+
+def _sp(text, style):
+    return _p(_r(text), ppr=f'<w:pStyle w:val="{style}"/>')
+
+
+def _style_numbering():
+    """Numbering and outline level defined on STYLES, not on the paragraphs."""
+    styles = _part_xml("styles", "".join([
+        _style("Heading1", num_id=1, outline=0, name="heading 1"),
+        _style("ListNumber", num_id=2, name="List Number"),
+        _style("ListNumber2", based_on="ListNumber", ilvl=1, name="List Number 2"),
+        _style("Localized2", outline=1, name="Titre 2"),
+    ]))
+    lvl = lambda i, fmt, text, pstyle="": (
+        f'<w:lvl w:ilvl="{i}"><w:start w:val="1"/><w:numFmt w:val="{fmt}"/>'
+        + (f'<w:pStyle w:val="{pstyle}"/>' if pstyle else "")
+        + f'<w:lvlText w:val="{text}"/></w:lvl>')
+    numbering = _part_xml("numbering", "".join([
+        '<w:abstractNum w:abstractNumId="0">' + lvl(0, "decimal", "%1.", "Heading1")
+        + lvl(1, "decimal", "%1.%2") + "</w:abstractNum>",
+        '<w:abstractNum w:abstractNumId="1">' + lvl(0, "decimal", "%1.")
+        + lvl(1, "lowerLetter", "(%2)") + "</w:abstractNum>",
+        '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>',
+        '<w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num>',
+    ]))
+    body = "".join([
+        _sp("Coverage", "Heading1"),
+        _sp("First", "ListNumber"),
+        _sp("Second", "ListNumber"),
+        _sp("Sub a", "ListNumber2"),
+        _sp("Third", "ListNumber"),
+        _sp("Exclusions", "Heading1"),
+        _sp("Localized heading", "Localized2"),
+    ])
+    texts = ["Coverage", "First", "Second", "Sub a", "Third", "Exclusions", "Localized heading"]
+    notes = {
+        0: "Heading1 style carries numPr (numId 1) and outlineLvl 0; ilvl comes from the "
+           "w:lvl/w:pStyle link. Heading style still wins over numbering: kind heading, label 1.",
+        1: "ListNumber style carries numPr numId 2: a list item, label 1.",
+        3: "ListNumber2 is basedOn ListNumber: numId inherited, ilvl 1 from its own numPr: label (a).",
+        4: "level 0 resumes after a deeper item: label 3.",
+        6: "a non-English heading style has no name to match; only its style's outlineLvl (1) "
+           "identifies it. Kind is paragraph until Turn 4 decides headings.",
+    }
+    sidecar = {
+        "fixture": "style_numbering.docx",
+        "labels_provenance": "spec",
+        "clauses": ["8"],
+        "known_gaps": [],
+        "paragraphs": [
+            _para(i, [(t, [])], accepted=t, original=t, superseded="", clause="8", note=notes.get(i))
+            for i, t in enumerate(texts)
+        ],
+        "node_facts": [
+            {"paragraph": 0, "kind": "heading", "style": "Heading1", "level": 0, "label": "1."},
+            {"paragraph": 1, "kind": "list_item", "style": "ListNumber", "level": None, "label": "1."},
+            {"paragraph": 2, "kind": "list_item", "style": "ListNumber", "level": None, "label": "2."},
+            {"paragraph": 3, "kind": "list_item", "style": "ListNumber2", "level": None, "label": "(a)"},
+            {"paragraph": 4, "kind": "list_item", "style": "ListNumber", "level": None, "label": "3."},
+            {"paragraph": 5, "kind": "heading", "style": "Heading1", "level": 0, "label": "2."},
+            {"paragraph": 6, "kind": "para", "style": "Localized2", "level": 1, "label": None},
+        ],
+    }
+    return package(
+        "style_numbering.docx", body, sidecar=sidecar, title="Style numbering",
+        doc_rels=[("rId20", RT_STYLES, "styles.xml", None),
+                  ("rId21", RT_NUMBERING, "numbering.xml", None)],
+        extra_parts={"word/styles.xml": styles, "word/numbering.xml": numbering},
+        ct_overrides=[("/word/styles.xml", CT_STYLES), ("/word/numbering.xml", CT_NUMBERING)],
+    )
+
+
+def _style_chain_cycle():
+    """A basedOn cycle is recorded, never guessed; an undefined basedOn / style is silent."""
+    styles = _part_xml("styles", "".join([
+        _style("CycleA", based_on="CycleB", num_id=9),
+        _style("CycleB", based_on="CycleA"),
+        _style("Orphan", based_on="NoSuchStyle"),
+    ]))
+    body = _sp("in a cycle", "CycleA") + _sp("orphaned", "Orphan") + _sp("undefined style", "NotDefined")
+    sidecar = {
+        "fixture": "style_chain_cycle.docx",
+        "labels_provenance": "spec",
+        "clauses": ["8"],
+        "known_gaps": ["style_chain_cycle"],
+        "paragraphs": [
+            _para(0, [("in a cycle", [])], accepted="in a cycle", original="in a cycle",
+                  superseded="", clause="8",
+                  note="CycleA<->CycleB: the chain stops at the cycle and is recorded; numId 9 "
+                       "has no numbering.xml, so the paragraph is numbered but has no label"),
+            _para(1, [("orphaned", [])], accepted="orphaned", original="orphaned",
+                  superseded="", clause="8",
+                  note="basedOn names a style styles.xml does not define: nothing to inherit, silent"),
+            _para(2, [("undefined style", [])], accepted="undefined style",
+                  original="undefined style", superseded="", clause="8",
+                  note="its own style is undefined: silent, Word treats it as Normal"),
+        ],
+    }
+    return package(
+        "style_chain_cycle.docx", body, sidecar=sidecar, title="Style chain cycle",
+        doc_rels=[("rId20", RT_STYLES, "styles.xml", None)],
+        extra_parts={"word/styles.xml": styles},
+        ct_overrides=[("/word/styles.xml", CT_STYLES)],
+    )
+
+
 BUILDERS = [
     _nested_revisions,
     _move,
@@ -855,6 +986,8 @@ BUILDERS = [
     _transparent_containers,
     _unrecognized_container,
     _revision_missing_id,
+    _style_numbering,
+    _style_chain_cycle,
 ]
 
 
