@@ -1,0 +1,66 @@
+{
+  "clauses": [
+    "2"
+  ],
+  "fixture": "unrecorded_revision_kinds.docx",
+  "known_gaps": [
+    "unrecorded_revision_kind"
+  ],
+  "labels_provenance": "spec",
+  "paragraphs": [
+    {
+      "accepted": "bold",
+      "clause": "2",
+      "index": 0,
+      "note": "w:rPrChange: a formatting revision, not a text revision",
+      "original": "bold",
+      "spans": [
+        {
+          "end": 4,
+          "stack": [],
+          "start": 0,
+          "text": "bold"
+        }
+      ],
+      "superseded": "",
+      "union": "bold"
+    },
+    {
+      "accepted": "indent",
+      "clause": "2",
+      "index": 1,
+      "note": "w:pPrChange: a paragraph-formatting revision",
+      "original": "indent",
+      "spans": [
+        {
+          "end": 6,
+          "stack": [],
+          "start": 0,
+          "text": "indent"
+        }
+      ],
+      "superseded": "",
+      "union": "indent"
+    },
+    {
+      "accepted": "row text",
+      "clause": "2",
+      "index": 2,
+      "note": "w:trPr/w:del: a row-level revision mark; the row's text is not itself inside a w:del here",
+      "original": "row text",
+      "spans": [
+        {
+          "end": 8,
+          "stack": [],
+          "start": 0,
+          "text": "row text"
+        }
+      ],
+      "superseded": "",
+      "union": "row text"
+    }
+  ],
+  "revisions": [],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

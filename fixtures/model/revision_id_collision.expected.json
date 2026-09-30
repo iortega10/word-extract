@@ -1,0 +1,85 @@
+{
+  "clauses": [
+    "2"
+  ],
+  "fixture": "revision_id_collision.docx",
+  "known_gaps": [
+    "revision_id_collision"
+  ],
+  "labels_provenance": "spec",
+  "paragraphs": [
+    {
+      "accepted": "one",
+      "clause": "2",
+      "index": 0,
+      "note": "first revision with w:id 5 (Alice)",
+      "original": "",
+      "spans": [
+        {
+          "end": 3,
+          "stack": [
+            "ins:5"
+          ],
+          "start": 0,
+          "text": "one"
+        }
+      ],
+      "superseded": "",
+      "union": "one"
+    },
+    {
+      "accepted": "two",
+      "clause": "2",
+      "index": 1,
+      "note": "a DIFFERENT revision (Bob) sharing w:id 5: its own record and id, never folded into Alice's",
+      "original": "",
+      "spans": [
+        {
+          "end": 3,
+          "stack": [
+            "ins:5~1"
+          ],
+          "start": 0,
+          "text": "two"
+        }
+      ],
+      "superseded": "",
+      "union": "two"
+    },
+    {
+      "accepted": "again",
+      "clause": "2",
+      "index": 2,
+      "note": "same id, same author and date as the first: the same revision, no new record",
+      "original": "",
+      "spans": [
+        {
+          "end": 5,
+          "stack": [
+            "ins:5"
+          ],
+          "start": 0,
+          "text": "again"
+        }
+      ],
+      "superseded": "",
+      "union": "again"
+    }
+  ],
+  "revisions": [
+    {
+      "author": "Alice",
+      "date": "2026-01-01T00:00:00Z",
+      "id": "ins:5",
+      "kind": "ins"
+    },
+    {
+      "author": "Bob",
+      "date": "2026-01-01T00:00:00Z",
+      "id": "ins:5~1",
+      "kind": "ins"
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

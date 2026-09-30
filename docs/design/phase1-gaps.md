@@ -50,6 +50,20 @@ slice that owns them lands; the full list is checked at Turn 9.
   merge is not reproduced. The mark itself is still a fact, recorded as a revision of its
   own. Recorded whenever such a mark is met, even when its `w:id` was already seen.
 
+- **`revision_id_collision`** -- two revisions of the same kind shared one `w:id` but
+  carried a different author or date. Word repeats one id across the runs of *one*
+  revision, so a same-author-and-date repeat is one record; a different author or date
+  is a different revision, and folding it into the first would silently drop its
+  attribution. The second is recorded under `<kind>:<w:id>~<n>` (`n` counts the
+  colliding variants of that id) and this gap. Ancestor stacks use the disambiguated id.
+- **`unrecorded_revision_kind`** -- the part carries a tracked *formatting or structure*
+  change: `w:rPrChange`, `w:pPrChange`, `w:sectPrChange`, `w:tblPrChange`,
+  `w:trPrChange`, `w:tcPrChange`, `w:tblGridChange`, `w:numberingChange`, `w:cellIns` /
+  `w:cellDel` / `w:cellMerge`, or a row-level `w:ins` / `w:del` (`w:trPr`). None changes
+  text, so none is a `Revision` record and none affects a view; the gap says the
+  document has them, so "who changed what" is known to be incomplete. A deleted row's
+  *text* is still captured whenever its runs sit inside `w:del`.
+
 ## Declared by fixtures, owned by later slices
 
 `field_result_view_ancestry`, `w_cr_unspecified`, `empty_parts_unverified`,

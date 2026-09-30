@@ -197,6 +197,8 @@ WALKER_OWNED_GAPS = {
     "duplicate_content_id_churn",
     "style_chain_cycle",
     "paragraph_mark_revision",
+    "revision_id_collision",
+    "unrecorded_revision_kind",
 }
 
 
@@ -902,6 +904,9 @@ def _marks_from_xml(part) -> list[tuple]:
             local = opc.local_name(child)
             if not opc.is_w(child, local):
                 visit(child, ancestors)
+            elif local in REVISION_KINDS and opc.local_name(element) == "trPr":
+                # a row-level mark is the unrecorded_revision_kind gap, never a record
+                visit(child, ancestors)
             elif local in REVISION_KINDS:
                 raw = opc.wattr(child, "id")
                 if raw is None:
@@ -957,15 +962,22 @@ def test_model_sidecar_revisions_are_walked_exactly(name):
 def test_every_revision_is_re_derived_from_the_parts_own_xml(path):
     """The records are the marks the parts hold: id, ancestry, kind, author, date, group.
 
-    One record per id, the first meeting in the order the parts are addressed.
+    One record per (id, author, date), the first meeting in the order the parts are
+    addressed; a different author or date under a shared id is a further record whose id
+    carries ``~<n>``. (No corpus document nests a colliding revision, so ancestors here
+    are still the plain ids.)
     """
     expected: list[tuple] = []
-    seen: set[str] = set()
+    seen: dict[str, list[tuple[str, str | None]]] = {}
     for part in _read_parts(opc.Package(path)):
         for mark in _marks_from_xml(part):
-            if mark[0] not in seen:
-                seen.add(mark[0])
-                expected.append(mark)
+            base, key = mark[0], (mark[3], mark[4])
+            variants = seen.setdefault(base, [])
+            if key in variants:
+                continue
+            variants.append(key)
+            final = base if len(variants) == 1 else f"{base}~{len(variants) - 1}"
+            expected.append((final,) + mark[1:])
     got = [
         (
             revision.id,
@@ -1218,3 +1230,93 @@ def test_a_heading_style_stays_a_heading_when_it_is_numbered(tmp_path):
     path = _docx(tmp_path, body, numbering=numbering)
     node = next(n for n in walk_document(opc.Package(path)).nodes if n.spans)
     assert node.kind is NodeKind.HEADING and node.numbering_label == "1."
+
+
+# --- a shared w:id is one revision only while it has one author and date -----------
+
+
+def test_two_authors_sharing_a_w_id_are_two_records_and_a_gap():
+    """The fixture's literals are hand-typed: Alice keeps ins:5, Bob gets ins:5~1."""
+    package = opc.Package(MODEL / "revision_id_collision.docx")
+    parsed = walk_document(package)
+    assert [(r.id, r.author) for r in parsed.revisions] == [("ins:5", "Alice"), ("ins:5~1", "Bob")]
+    assert "revision_id_collision" in parsed.known_gaps
+
+
+def test_a_same_author_repeat_stays_one_record_and_is_no_gap(tmp_path):
+    body = (
+        '<w:p><w:ins w:id="3" w:author="A" w:date="d"><w:r><w:t>x</w:t></w:r></w:ins>'
+        '<w:ins w:id="3" w:author="A" w:date="d"><w:r><w:t>y</w:t></w:r></w:ins></w:p>'
+    )
+    parsed = walk_document(opc.Package(_docx(tmp_path, body)))
+    assert [r.id for r in parsed.revisions] == ["ins:3"]
+    assert "revision_id_collision" not in parsed.known_gaps
+
+
+def test_a_same_id_with_a_different_date_is_a_different_revision(tmp_path):
+    body = (
+        '<w:p><w:ins w:id="3" w:author="A" w:date="d1"><w:r><w:t>x</w:t></w:r></w:ins></w:p>'
+        '<w:p><w:ins w:id="3" w:author="A" w:date="d2"><w:r><w:t>y</w:t></w:r></w:ins></w:p>'
+    )
+    parsed = walk_document(opc.Package(_docx(tmp_path, body)))
+    assert [(r.id, r.date) for r in parsed.revisions] == [("ins:3", "d1"), ("ins:3~1", "d2")]
+
+
+def test_a_third_colliding_revision_gets_the_next_suffix(tmp_path):
+    body = "".join(
+        f'<w:p><w:ins w:id="3" w:author="{a}" w:date="d"><w:r><w:t>{a}</w:t></w:r></w:ins></w:p>'
+        for a in ("A", "B", "C")
+    )
+    parsed = walk_document(opc.Package(_docx(tmp_path, body)))
+    assert [r.id for r in parsed.revisions] == ["ins:3", "ins:3~1", "ins:3~2"]
+
+
+def test_a_colliding_revision_still_appears_on_its_own_ancestor_stack():
+    package = opc.Package(MODEL / "revision_id_collision.docx")
+    streams = walk_document(package).union_streams
+    stacks = [span.stack for span in streams[0].spans if span.stack]
+    assert stacks == [["ins:5"], ["ins:5~1"], ["ins:5"]]
+
+
+# --- tracked formatting / row changes are never silent ---------------------------
+
+
+def test_tracked_formatting_and_row_changes_are_a_gap_not_a_record():
+    parsed = walk_document(opc.Package(MODEL / "unrecorded_revision_kinds.docx"))
+    assert parsed.revisions == []
+    assert "unrecorded_revision_kind" in parsed.known_gaps
+
+
+@pytest.mark.parametrize(
+    "properties",
+    [
+        '<w:pPr><w:pPrChange w:id="1" w:author="A"><w:pPr/></w:pPrChange></w:pPr>',
+        '<w:pPr><w:rPr><w:rPrChange w:id="1" w:author="A"><w:rPr/></w:rPrChange></w:rPr></w:pPr>',
+        '<w:pPr><w:sectPr><w:sectPrChange w:id="1" w:author="A"><w:sectPr/></w:sectPrChange></w:sectPr></w:pPr>',
+    ],
+)
+def test_each_formatting_change_kind_is_reported(tmp_path, properties):
+    body = f"<w:p>{properties}<w:r><w:t>text</w:t></w:r></w:p>"
+    parsed = walk_document(opc.Package(_docx(tmp_path, body)))
+    assert "unrecorded_revision_kind" in parsed.known_gaps
+
+
+def test_a_row_level_ins_is_reported_but_a_paragraph_mark_ins_is_a_record(tmp_path):
+    row = (
+        '<w:tbl><w:tr><w:trPr><w:ins w:id="1" w:author="A" w:date="d"/></w:trPr>'
+        "<w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"
+    )
+    parsed = walk_document(opc.Package(_docx(tmp_path, row)))
+    assert parsed.revisions == []
+    assert "unrecorded_revision_kind" in parsed.known_gaps
+    mark = '<w:p><w:pPr><w:rPr><w:ins w:id="2" w:author="A" w:date="d"/></w:rPr></w:pPr><w:r><w:t>x</w:t></w:r></w:p>'
+    parsed = walk_document(opc.Package(_docx(tmp_path, mark, name="mark.docx")))
+    assert [r.id for r in parsed.revisions] == ["ins:2"]
+    assert "unrecorded_revision_kind" not in parsed.known_gaps
+
+
+def test_ordinary_documents_report_no_unrecorded_revision_kind():
+    for path in ALL_DOCX:
+        if path.name == "unrecorded_revision_kinds.docx":
+            continue
+        assert "unrecorded_revision_kind" not in walk_document(opc.Package(path)).known_gaps, path.name

@@ -969,6 +969,68 @@ def _style_chain_cycle():
     )
 
 
+def _revision_id_collision():
+    """Two DIFFERENT revisions sharing one w:id are two records; a same-author repeat is one."""
+    body = (
+        _p(_ins(5, _r("one"), author="Alice"))
+        + _p(_ins(5, _r("two"), author="Bob"))
+        + _p(_ins(5, _r("again"), author="Alice"))
+    )
+    sidecar = {
+        "fixture": "revision_id_collision.docx",
+        "labels_provenance": "spec",
+        "clauses": ["2"],
+        "known_gaps": ["revision_id_collision"],
+        "revisions": [
+            {"id": "ins:5", "kind": "ins", "author": "Alice", "date": DATE},
+            {"id": "ins:5~1", "kind": "ins", "author": "Bob", "date": DATE},
+        ],
+        "paragraphs": [
+            _para(0, [("one", ["ins:5"])], accepted="one", original="", superseded="", clause="2",
+                  note="first revision with w:id 5 (Alice)"),
+            _para(1, [("two", ["ins:5~1"])], accepted="two", original="", superseded="", clause="2",
+                  note="a DIFFERENT revision (Bob) sharing w:id 5: its own record and id, never "
+                       "folded into Alice's"),
+            _para(2, [("again", ["ins:5"])], accepted="again", original="", superseded="", clause="2",
+                  note="same id, same author and date as the first: the same revision, no new record"),
+        ],
+    }
+    return package("revision_id_collision.docx", body, sidecar=sidecar,
+                   title="Revision id collision")
+
+
+def _unrecorded_revision_kinds():
+    """Tracked formatting and row changes are not records, but their presence is recorded."""
+    fmt = (f'<w:rPrChange w:id="9" w:author="{AUTHOR}" w:date="{DATE}"><w:rPr/></w:rPrChange>')
+    ppr_change = (f'<w:pPrChange w:id="10" w:author="{AUTHOR}" w:date="{DATE}"><w:pPr/></w:pPrChange>')
+    row = ('<w:tbl><w:tr><w:trPr>'
+           f'<w:del w:id="11" w:author="{AUTHOR}" w:date="{DATE}"/></w:trPr>'
+           f"<w:tc>{_p(_r('row text'))}</w:tc></w:tr></w:tbl>")
+    body = (
+        _p("<w:r><w:rPr><w:b/>" + fmt + "</w:rPr><w:t>bold</w:t></w:r>")
+        + _p(_r("indent"), ppr=ppr_change)
+        + row
+    )
+    sidecar = {
+        "fixture": "unrecorded_revision_kinds.docx",
+        "labels_provenance": "spec",
+        "clauses": ["2"],
+        "known_gaps": ["unrecorded_revision_kind"],
+        "revisions": [],
+        "paragraphs": [
+            _para(0, [("bold", [])], accepted="bold", original="bold", superseded="", clause="2",
+                  note="w:rPrChange: a formatting revision, not a text revision"),
+            _para(1, [("indent", [])], accepted="indent", original="indent", superseded="",
+                  clause="2", note="w:pPrChange: a paragraph-formatting revision"),
+            _para(2, [("row text", [])], accepted="row text", original="row text", superseded="",
+                  clause="2", note="w:trPr/w:del: a row-level revision mark; the row's text is "
+                                    "not itself inside a w:del here"),
+        ],
+    }
+    return package("unrecorded_revision_kinds.docx", body, sidecar=sidecar,
+                   title="Unrecorded revision kinds")
+
+
 BUILDERS = [
     _nested_revisions,
     _move,
@@ -988,6 +1050,8 @@ BUILDERS = [
     _revision_missing_id,
     _style_numbering,
     _style_chain_cycle,
+    _revision_id_collision,
+    _unrecorded_revision_kinds,
 ]
 
 

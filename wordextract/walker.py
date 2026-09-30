@@ -113,6 +113,26 @@ _REVISION_KINDS = {
 #: The four revision marks, in document order.
 _REVISION_LOCALS = tuple(_REVISION_KINDS)
 
+#: Tracked *formatting or structure* changes. None of them changes text, so none is a
+#: :class:`~wordextract.model.Revision` here, but silently ignoring them would hide that
+#: the document carries them: meeting one is the ``unrecorded_revision_kind`` gap. A
+#: row-level ``w:ins`` / ``w:del`` (``w:trPr``) is the same kind of fact.
+_UNRECORDED_REVISION_LOCALS = frozenset(
+    {
+        "rPrChange",
+        "pPrChange",
+        "sectPrChange",
+        "tblPrChange",
+        "trPrChange",
+        "tcPrChange",
+        "tblGridChange",
+        "numberingChange",
+        "cellIns",
+        "cellDel",
+        "cellMerge",
+    }
+)
+
 #: The move-range markers that wrap a move: a ``...RangeStart`` opens a range and
 #: carries the shared ``w:name``, its ``...RangeEnd`` carries only the marker's
 #: ``w:id`` and closes it. A marker is never itself a revision record.
@@ -127,6 +147,8 @@ GAP_TEXTBOX = "textbox"
 GAP_UNRECOGNIZED_CONTAINER = "unrecognized_container"
 GAP_REVISION_MISSING_ID = "revision_missing_id"
 GAP_PARAGRAPH_MARK_REVISION = "paragraph_mark_revision"
+GAP_REVISION_ID_COLLISION = "revision_id_collision"
+GAP_UNRECORDED_REVISION_KIND = "unrecorded_revision_kind"
 GAP_INLINE_SDT_TRANSPARENT = "inline_sdt_transparent"
 GAP_DUPLICATE_CONTENT_ID = "duplicate_content_id_churn"
 GAP_STYLE_CHAIN_CYCLE = "style_chain_cycle"
@@ -660,7 +682,7 @@ class _Walker:
         numbering: _Numbering | None = None,
         used_ids: set[str] | None = None,
         styles: Styles | None = None,
-        seen_revisions: set[str] | None = None,
+        seen_revisions: dict[str, list[tuple[tuple[str, str | None], str]]] | None = None,
     ) -> None:
         self._stream = stream
         self._part = part
@@ -668,7 +690,9 @@ class _Walker:
         self._styles = styles
         self._labels = _LabelCounter(numbering)
         self._used_ids = used_ids if used_ids is not None else set()
-        self._seen_revisions = seen_revisions if seen_revisions is not None else set()
+        # w:id-based id -> [((author, date), final id)], shared across parts: one w:id is
+        # one revision only while it carries one author and date.
+        self._seen_revisions = seen_revisions if seen_revisions is not None else {}
         self._hashes: dict[str, int] = {}
         self._open: list[_Frame] = []
         self._roots: list[_Frame] = []
@@ -683,6 +707,7 @@ class _Walker:
         self._fields: list[bool] = []
 
     def walk(self, root: etree._Element) -> None:
+        self._note_unrecorded_revisions(root)
         local = local_name(root)
         if is_w(root, local) and local in _KINDS_BY_LOCAL:
             self._walk_container(root)
@@ -744,8 +769,9 @@ class _Walker:
             if local in _SKIP_LOCALS:
                 continue
             if local in _REVISION_LOCALS:
-                ident = self._revision_id(child, local)
-                self._record_revision(child, local, ident)
+                ident, is_new = self._resolve_revision(child, local)
+                if is_new:
+                    self._record_revision(child, local, ident)
                 self._stack.append(ident)
                 self._walk_inline(child)
                 self._stack.pop()
@@ -893,16 +919,30 @@ class _Walker:
             self.gaps.add(GAP_REVISION_MISSING_ID)
         return f"{local}:{ident}"
 
-    def _record_revision(self, element: etree._Element, local: str, ident: str) -> None:
-        """One raw revision fact: kind, author, date, ancestry and move group (2c).
+    def _resolve_revision(self, element: etree._Element, local: str) -> tuple[str, bool]:
+        """A revision mark's final id and whether it is a new record (2c).
 
-        The same ``w:id`` recurs whenever a revision spans several runs, so the first
-        occurrence in document order is the record -- the mark still opens its ancestor
-        frame either way.
+        Word repeats one ``w:id`` across the runs of one revision, so a repeat with the
+        **same author and date** is the same revision. A repeat with a different author
+        or date is a different revision that *shares an id* -- some generators and merge
+        tools reuse them -- and folding it into the first would silently drop its author
+        and date, so it gets its own id (``<kind>:<w:id>~<n>``) and the
+        ``revision_id_collision`` gap.
         """
-        if ident in self._seen_revisions:
-            return
-        self._seen_revisions.add(ident)
+        base = self._revision_id(element, local)
+        key = (wattr(element, "author") or "", wattr(element, "date"))
+        entries = self._seen_revisions.setdefault(base, [])
+        for known, final in entries:
+            if known == key:
+                return final, False
+        final = base if not entries else f"{base}~{len(entries)}"
+        if entries:
+            self.gaps.add(GAP_REVISION_ID_COLLISION)
+        entries.append((key, final))
+        return final, True
+
+    def _record_revision(self, element: etree._Element, local: str, ident: str) -> None:
+        """One raw revision fact: kind, author, date, ancestry and move group (2c)."""
         self.revisions.append(
             Revision(
                 id=ident,
@@ -913,6 +953,23 @@ class _Walker:
                 ancestors=list(self._stack),
             )
         )
+
+    def _note_unrecorded_revisions(self, root: etree._Element) -> None:
+        """Record that the part carries tracked formatting/structure changes (2c)."""
+        for node in root.iter():
+            if not isinstance(node.tag, str):
+                continue
+            local = local_name(node)
+            if not is_w(node, local):
+                continue
+            if local in _UNRECORDED_REVISION_LOCALS:
+                self.gaps.add(GAP_UNRECORDED_REVISION_KIND)
+                return
+            if local in ("ins", "del"):
+                parent = node.getparent()
+                if parent is not None and is_w(parent, "trPr"):
+                    self.gaps.add(GAP_UNRECORDED_REVISION_KIND)
+                    return
 
     def _paragraph_mark_revisions(self, paragraph: etree._Element) -> None:
         """A ``w:pPr/w:rPr`` revision is a fact; its effect is not honored (2c).
@@ -932,7 +989,9 @@ class _Walker:
             local = local_name(child)
             if is_w(child, local) and local in _REVISION_LOCALS:
                 self.gaps.add(GAP_PARAGRAPH_MARK_REVISION)
-                self._record_revision(child, local, self._revision_id(child, local))
+                ident, is_new = self._resolve_revision(child, local)
+                if is_new:
+                    self._record_revision(child, local, ident)
 
     def _move_range(self, local: str, element: etree._Element) -> None:
         """Track the markers that wrap a move: the group name lives on the start (2c).
@@ -985,7 +1044,7 @@ def _walk(
     numbering: _Numbering | None = None,
     used_ids: set[str] | None = None,
     styles: Styles | None = None,
-    seen_revisions: set[str] | None = None,
+    seen_revisions: dict[str, list[tuple[tuple[str, str | None], str]]] | None = None,
 ) -> tuple[UnionStream | None, set[str], list[Node], list[Revision]]:
     """One part's union stream, known-gap ids, node tree and revision facts (2a-2c)."""
     if part is None or part.tree is None:
@@ -1085,7 +1144,7 @@ def walk_document(package: Package) -> ParseResult:
     numbering = _Numbering(package.numbering)
     styles = Styles(package.styles)
     used_ids: set[str] = set()
-    seen_revisions: set[str] = set()
+    seen_revisions: dict[str, list[tuple[tuple[str, str | None], str]]] = {}
     streams: list[UnionStream] = []
     nodes: list[Node] = []
     revisions: list[Revision] = []
