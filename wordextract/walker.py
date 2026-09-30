@@ -88,6 +88,19 @@ container addressed by the ordinary paragraph nodes under it (there is no commen
 kind), and its own text excludes the terminator after its last paragraph. A comment's
 identity is its last paragraph's ``w14:paraId``, else a content hash -- never its
 ``w:id``, which Word renumbers (D4).
+
+2e adds the threading facts. ``commentsExtended`` is reached by relationship type, so a
+renamed part (``word/ext/commentsExt.xml``) is the same part, and its absence -- no such
+relationship -- leaves every comment ``ThreadingStatus.ABSENT`` with no parent and no
+``resolved`` flag: an absent part is never read as "no replies". Each ``w15:commentEx``
+is keyed by its ``w15:paraId``, which names the comment by the ``w14:paraId`` of its last
+paragraph -- the same identity 2d gave it, never a ``w:id`` (D4). A comment whose identity
+the part names is ``VERIFIED``, with ``parent_id`` the row's ``w15:paraIdParent`` (``None``
+when the comment is a thread root) and ``resolved`` its ``w15:done`` (``None`` when ``done``
+is not stated); a comment the part cannot name -- no ``w14:paraId``, or one the part does
+not list -- is ``UNKNOWN`` and carries neither. Threading is the body's own fact, so an
+unanchored comment is threaded exactly the same way. ``commentsExtended`` is not a union
+or addressed stream: it holds no ``w:p``, so it contributes no text and no nodes.
 """
 from __future__ import annotations
 
@@ -108,9 +121,10 @@ from .model import (
     Revision,
     RevisionKind,
     Span,
+    ThreadingStatus,
     UnionStream,
 )
-from .opc import W14_NS, Package, Part, is_w, local_name, wattr
+from .opc import W14_NS, W15_NS, Package, Part, is_w, local_name, wattr
 from .styles import StyleFacts, Styles
 
 #: One per paragraph, empty stack: the paragraph boundary in the union coordinate
@@ -733,6 +747,14 @@ class _Comments:
     bodies: list[_CommentBody] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class _CommentEx:
+    """One ``w15:commentEx``: the threading facts about one comment (2e)."""
+
+    parent_para_id: str | None
+    resolved: bool | None
+
+
 def _clamp_anchor(text: str, start: int, end: int) -> tuple[int, int]:
     """A range's offsets clamped to the text a comment actually covers (2d).
 
@@ -765,15 +787,74 @@ def _comment_identity(body: _CommentBody, hashes: dict[str, int]) -> tuple[str, 
     return f"hash:{digest}:{occurrence}", IdStability.CONTENT_HASH
 
 
+def _on_off(value: str | None) -> bool | None:
+    """An ``ST_OnOff`` attribute as a tri-state: ``None`` when it is not stated (2e)."""
+    if value is None:
+        return None
+    return value.strip().lower() not in ("0", "false", "off")
+
+
+def _read_comments_extended(part: Part | None) -> dict[str, _CommentEx] | None:
+    """The thread facts of ``commentsExtended``, keyed by the ``paraId`` they join on (2e).
+
+    ``None`` when the package resolves no such part -- that is **absent**, never "no
+    replies". The part is reached by relationship type, so a renamed path is the same
+    part. A repeated ``paraId`` keeps the first row, so a malformed repeat is still
+    deterministic. The row's ``w15:done`` is the ``resolved`` flag, ``None`` when the
+    attribute is not stated.
+    """
+    if part is None or part.tree is None:
+        return None
+    found: dict[str, _CommentEx] = {}
+    for element in part.tree.iter():
+        if element.tag != f"{{{W15_NS}}}commentEx":
+            continue
+        para_id = element.get(f"{{{W15_NS}}}paraId")
+        if not para_id:
+            continue
+        found.setdefault(
+            para_id,
+            _CommentEx(
+                parent_para_id=element.get(f"{{{W15_NS}}}paraIdParent") or None,
+                resolved=_on_off(element.get(f"{{{W15_NS}}}done")),
+            ),
+        )
+    return found
+
+
+def _threading(
+    body: _CommentBody, extended: dict[str, _CommentEx] | None
+) -> tuple[ThreadingStatus, str | None, bool | None]:
+    """A comment's threading: the ``commentsExtended`` row its ``w14:paraId`` names (2e).
+
+    The join key is the ``w14:paraId`` of the comment's **last** paragraph -- the same
+    identity 2d gives the comment, never its ``w:id`` (D4). A missing part is ``ABSENT``
+    and carries no parent or flag, so an absent part is never read as "no replies". With
+    the part present the join has to *succeed* to be ``VERIFIED``: a body without a
+    ``w14:paraId``, or one the part does not name, is ``UNKNOWN`` -- the part cannot say
+    whether that comment was ever a reply. The anchor is irrelevant here: a comment can be
+    threaded and still unanchored.
+    """
+    if extended is None:
+        return ThreadingStatus.ABSENT, None, None
+    entry = extended.get(body.para_id) if body.para_id is not None else None
+    if entry is None:
+        return ThreadingStatus.UNKNOWN, None, None
+    return ThreadingStatus.VERIFIED, entry.parent_para_id, entry.resolved
+
+
 def _assemble_comments(
-    comments: _Comments, text_by_part: dict[str, str]
+    comments: _Comments,
+    text_by_part: dict[str, str],
+    extended: dict[str, _CommentEx] | None,
 ) -> tuple[list[Comment], set[str]]:
-    """Join the comment bodies with the ranges their markers bracketed (2d).
+    """Join the comment bodies with the ranges their markers bracketed (2d + 2e).
 
     A comment *is* its body, so the records come in body order. A body whose range never
     closed in one part, or whose part has no union text to anchor into, carries no anchor
     and reports the ``unanchored_comment`` gap; so does a marker naming no body at all --
-    there no record can carry it, so the gap is reported on its own.
+    there no record can carry it, so the gap is reported on its own. Threading (2e) is the
+    ``commentsExtended`` row the body's ``paraId`` names, independent of the anchor.
     """
     named = {body.w_id for body in comments.bodies if body.w_id is not None}
     gaps = {GAP_UNANCHORED_COMMENT} if any(m not in named for m in comments.markers) else set()
@@ -791,6 +872,7 @@ def _assemble_comments(
         if anchor is None:
             gaps.add(GAP_UNANCHORED_COMMENT)
         para_id, stability = _comment_identity(body, hashes)
+        threading_status, parent_id, resolved = _threading(body, extended)
         records.append(
             Comment(
                 para_id=para_id,
@@ -800,6 +882,9 @@ def _assemble_comments(
                 date=body.date,
                 anchor=anchor,
                 anchor_text=anchor_text,
+                parent_id=parent_id,
+                threading_status=threading_status,
+                resolved=resolved,
             )
         )
     return records, gaps
@@ -1343,7 +1428,8 @@ def walk_document(package: Package) -> ParseResult:
     Parts are read in the fixed order of :func:`walk_package`, and node ids and
     revision ids are spent globally across them, so a ``w14:paraId`` is package-unique
     and a revision met in two parts is one record. Comments (2d) are joined from the
-    markers met while walking the parts and the bodies off ``word/comments.xml``;
+    markers met while walking the parts and the bodies off ``word/comments.xml``, and
+    threaded (2e) from ``commentsExtended``;
     headings (Turn 4) are not read here yet.
     """
     numbering = _Numbering(package.numbering)
@@ -1365,7 +1451,9 @@ def walk_document(package: Package) -> ParseResult:
         nodes.extend(part_nodes)
         revisions.extend(part_revisions)
     records, comment_gaps = _assemble_comments(
-        comments, {stream.part_id: stream.text for stream in streams}
+        comments,
+        {stream.part_id: stream.text for stream in streams},
+        _read_comments_extended(package.comments_extended),
     )
     gaps |= comment_gaps
     return ParseResult(

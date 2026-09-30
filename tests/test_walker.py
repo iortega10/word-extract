@@ -25,6 +25,13 @@ from the parts' XML, the exact offsets and strings come from the sidecars' hand-
 literals, and the shapes that cannot anchor -- a bare reference, a range that never
 closes, a range closed in another part, a marker naming no body -- are pinned by packages
 built here.
+
+Turn 2e adds the threading facts. ``commentsExtended`` is resolved by relationship type, so
+a renamed path is the same part, and its absence leaves a comment ``ABSENT`` -- never read
+as "no replies"; a part that does not name the comment's identity leaves it ``UNKNOWN``. The
+join is the comment's own ``w14:paraId``, and what is re-derived from the parts' XML here is
+the ``w15:paraId`` -> ``(w15:paraIdParent, w15:done)`` row; the exact flags come from the
+sidecars' hand-typed literals and the constructs a package here can build.
 """
 from __future__ import annotations
 
@@ -308,6 +315,7 @@ def _docx(
     numbering: str | None = None,
     styles: str | None = None,
     comments: str | None = None,
+    extended: str | None = None,
     header: str | None = None,
     name: str = "synth.docx",
 ):
@@ -353,6 +361,12 @@ def _docx(
                 if header is not None
                 else ""
             )
+            + (
+                f'<Relationship Id="rId6" Type="{opc.RT_COMMENTS_EXTENDED}" '
+                'Target="commentsExtended.xml"/>'
+                if extended is not None
+                else ""
+            )
             + "</Relationships>"
         ),
         "word/document.xml": f"<w:document {W_ATTRS}><w:body>{body}</w:body></w:document>",
@@ -363,6 +377,8 @@ def _docx(
         members["word/styles.xml"] = f"<w:styles {W_ATTRS}>{styles}</w:styles>"
     if comments is not None:
         members["word/comments.xml"] = comments
+    if extended is not None:
+        members["word/commentsExtended.xml"] = extended
     if header is not None:
         members["word/header1.xml"] = f"<w:hdr {W_ATTRS}>{header}</w:hdr>"
     path = tmp_path / name
@@ -1179,9 +1195,9 @@ def _comments(*bodies: str) -> str:
     return f"<w:comments {W_ATTRS}>{''.join(bodies)}</w:comments>"
 
 
-def _walk_synth(tmp_path: Path, body: str, *, comments=None, header=None):
-    package = opc.Package(_docx(tmp_path, body, comments=comments, header=header))
-    return walk_document(package)
+def _walk_synth(tmp_path: Path, body: str, *, comments=None, extended=None, header=None):
+    path = _docx(tmp_path, body, comments=comments, extended=extended, header=header)
+    return walk_document(opc.Package(path))
 
 
 #: Every sidecar that labels at least one comment: the 2d ground truth of the corpus.
@@ -1223,22 +1239,6 @@ def test_comment_anchors_are_the_sidecars_hand_typed_literals(sidecar_path):
                 label.para_id,
                 IdStability.PARAID,
             ), where
-
-
-def test_the_renamed_comments_extended_part_is_left_to_2e():
-    """``commentsExtended`` is 2e's: a 2d record is the body and its anchor, nothing more.
-
-    The fixture's labels name the threading facts, so this pins the slice boundary: the
-    part is resolved (a renamed path, by relationship type) and reported unverified, but
-    it never reaches a 2d record.
-    """
-    sidecar = labels.load_sidecar(MODEL / "renamed_comments_extended.expected.json")
-    comments = walk_document(opc.Package(MODEL / "renamed_comments_extended.docx")).comments
-    assert [label.threading_status for label in sidecar.comments] == ["verified"] * 2
-    assert [comment.threading_status for comment in comments] == [ThreadingStatus.UNKNOWN] * 2
-    assert [comment.parent_id for comment in comments] == [None, None]
-    assert [comment.resolved for comment in comments] == [None, None]
-    assert [comment.resolved_identity for comment in comments] == [None, None]
 
 
 def _markers_from_xml(part) -> list[tuple[str, str | None]]:
@@ -1542,6 +1542,277 @@ def test_a_comment_without_a_para_id_hashes_its_own_body_text(tmp_path):
         walker_mod.GAP_DUPLICATE_CONTENT_ID,
         walker_mod.GAP_UNANCHORED_COMMENT,
     }
+
+
+# --- 2e: threaded comments (commentsExtended) -----------------------------------
+
+#: ``commentsExtended`` declares the ``w15`` namespace the ``w:``/``w14:`` root does not.
+W15_ATTRS = f'xmlns:w="{opc.W_NS}" xmlns:w14="{opc.W14_NS}" xmlns:w15="{opc.W15_NS}"'
+
+
+def _comment_ex(para_id: str, *, done: str | None = None, parent: str | None = None) -> str:
+    """One ``w15:commentEx``: the ``w15:paraId`` it joins on, and what it states."""
+    attrs = f' w15:paraId="{para_id}"'
+    if done is not None:
+        attrs += f' w15:done="{done}"'
+    if parent is not None:
+        attrs += f' w15:paraIdParent="{parent}"'
+    return f"<w15:commentEx{attrs}/>"
+
+
+def _comments_extended(*rows: str) -> str:
+    return f"<w15:commentsEx {W15_ATTRS}>{''.join(rows)}</w15:commentsEx>"
+
+
+def _comment_ex_facts_from_xml(package: opc.Package):
+    """The 2e facts of ``package``, re-derived from the parts' own XML -- never the walker.
+
+    ``None`` when the package resolves no ``commentsExtended`` part; else its
+    ``w15:paraId`` -> ``(w15:paraIdParent, w15:done)`` rows, ``done`` a tri-state (``None``
+    when absent) and the first row for a repeated ``paraId``.
+    """
+    part = package.comments_extended
+    if part is None:
+        return None
+    found: dict[str, tuple[str | None, bool | None]] = {}
+    for element in part.tree.iter():
+        if not isinstance(element.tag, str) or element.tag != f"{{{opc.W15_NS}}}commentEx":
+            continue
+        para_id = element.get(f"{{{opc.W15_NS}}}paraId")
+        if not para_id or para_id in found:
+            continue
+        done = element.get(f"{{{opc.W15_NS}}}done")
+        found[para_id] = (
+            element.get(f"{{{opc.W15_NS}}}paraIdParent"),
+            None if done is None else done.lower() not in ("0", "false", "off"),
+        )
+    return found
+
+
+@pytest.mark.spec_derived
+def test_the_renamed_comments_extended_part_is_joined_by_relationship_type():
+    """``commentsExtended`` is reached by relationship type, so a renamed path is it.
+
+    The fixture labels are 2e's hand-typed ground truth (never edited, D11): both comments
+    are threaded -- the first a thread root marked unresolved, the second a reply to it and
+    resolved -- joined on each comment's last-paragraph ``w14:paraId``, never its ``w:id``.
+    """
+    sidecar = labels.load_sidecar(MODEL / "renamed_comments_extended.expected.json")
+    package = opc.Package(MODEL / "renamed_comments_extended.docx")
+    assert package.comments_extended is not None
+    assert (package.comments_extended.name, package.comments_extended.rel_type) == (
+        "word/ext/commentsExt.xml",
+        opc.RT_COMMENTS_EXTENDED,
+    )
+    comments = walk_document(package).comments
+    assert [label.threading_status for label in sidecar.comments] == ["verified"] * 2
+    assert [record.threading_status for record in comments] == [ThreadingStatus.VERIFIED] * 2
+    assert [record.para_id for record in comments] == [
+        label.para_id for label in sidecar.comments
+    ]
+    assert [record.parent_id for record in comments] == [
+        label.parent_id for label in sidecar.comments
+    ]
+    assert [record.resolved for record in comments] == [
+        label.resolved for label in sidecar.comments
+    ]
+    assert (comments[0].parent_id, comments[0].resolved) == (None, False)
+    assert (comments[1].parent_id, comments[1].resolved) == ("00000021", True)
+
+
+@pytest.mark.spec_derived
+def test_the_spec_fixture_threads_a_root_and_its_resolved_reply():
+    """The written-spec fixture: one unresolved root and the reply that resolves it."""
+    comments = walk_document(opc.Package(FIXTURES / "spec_threaded.docx")).comments
+    assert [record.threading_status for record in comments] == [ThreadingStatus.VERIFIED] * 2
+    assert [(record.parent_id, record.resolved) for record in comments] == [
+        (None, False),
+        ("00000001", True),
+    ]
+
+
+@pytest.mark.spec_derived
+@pytest.mark.parametrize("path", ALL_DOCX, ids=lambda p: p.name)
+def test_every_comment_threading_is_re_derived_from_the_parts_own_xml(path):
+    """Threading is the ``commentsExtended`` row the comment's ``w14:paraId`` names.
+
+    An absent part is ``ABSENT`` and carries no parent or flag -- it is never read as "no
+    replies"; a part that does not name the comment's identity is ``UNKNOWN``, also carrying
+    neither.
+    """
+    package = opc.Package(path)
+    parsed = walk_document(package)
+    extended = _comment_ex_facts_from_xml(package)
+    bodies, _, _ = _comment_facts_from_xml(package)
+    para_ids = [body[4] for body in bodies]
+    assert len(parsed.comments) == len(para_ids), path
+    for record, para_id in zip(parsed.comments, para_ids):
+        where = (path, record.para_id)
+        if extended is None:
+            assert record.threading_status is ThreadingStatus.ABSENT, where
+            assert (record.parent_id, record.resolved) == (None, None), where
+        elif para_id is not None and para_id in extended:
+            assert record.threading_status is ThreadingStatus.VERIFIED, where
+            assert (record.parent_id, record.resolved) == extended[para_id], where
+        else:
+            assert record.threading_status is ThreadingStatus.UNKNOWN, where
+            assert (record.parent_id, record.resolved) == (None, None), where
+
+
+@pytest.mark.spec_derived
+def test_no_comments_extended_part_is_absent_not_a_document_without_replies(tmp_path):
+    """An absent part is ``ABSENT``: a ``paraId`` it *could* name is still no evidence."""
+    body = f"<w:p>{_range_start('1')}{_run('T.')}{_range_end('1')}{_reference('1')}</w:p>"
+    parsed = _walk_synth(
+        tmp_path, body, comments=_comments(_comment("1", "Body", para_id="00000021"))
+    )
+    (record,) = parsed.comments
+    assert record.threading_status is ThreadingStatus.ABSENT
+    assert (record.parent_id, record.resolved) == (None, None)
+
+
+@pytest.mark.spec_derived
+def test_a_part_that_names_no_comment_leaves_it_unknown(tmp_path):
+    """A present-but-empty part cannot say whether the comment was ever a reply."""
+    body = f"<w:p>{_range_start('1')}{_run('T.')}{_range_end('1')}{_reference('1')}</w:p>"
+    parsed = _walk_synth(
+        tmp_path,
+        body,
+        comments=_comments(_comment("1", "Body", para_id="00000021")),
+        extended=_comments_extended(),
+    )
+    (record,) = parsed.comments
+    assert record.threading_status is ThreadingStatus.UNKNOWN
+    assert (record.parent_id, record.resolved) == (None, None)
+
+
+@pytest.mark.spec_derived
+def test_a_thread_root_is_joined_with_no_parent(tmp_path):
+    """A row with no ``w15:paraIdParent`` is a root: unresolved when ``done`` is 0."""
+    body = f"<w:p>{_range_start('1')}{_run('T.')}{_range_end('1')}{_reference('1')}</w:p>"
+    parsed = _walk_synth(
+        tmp_path,
+        body,
+        comments=_comments(_comment("1", "Body", para_id="00000021")),
+        extended=_comments_extended(_comment_ex("00000021", done="0")),
+    )
+    (record,) = parsed.comments
+    assert record.threading_status is ThreadingStatus.VERIFIED
+    assert (record.parent_id, record.resolved) == (None, False)
+
+
+@pytest.mark.spec_derived
+def test_a_reply_is_joined_to_its_parent_and_resolved(tmp_path):
+    """``w15:paraIdParent`` is the parent id, ``w15:done=1`` the resolved flag."""
+    body = f"<w:p>{_range_start('1')}{_run('T.')}{_range_end('1')}{_reference('1')}</w:p>"
+    parsed = _walk_synth(
+        tmp_path,
+        body,
+        comments=_comments(_comment("1", "Body", para_id="00000022")),
+        extended=_comments_extended(_comment_ex("00000022", done="1", parent="00000021")),
+    )
+    (record,) = parsed.comments
+    assert record.threading_status is ThreadingStatus.VERIFIED
+    assert (record.parent_id, record.resolved) == ("00000021", True)
+
+
+@pytest.mark.spec_derived
+def test_a_comment_without_a_para_id_cannot_be_joined(tmp_path):
+    """A body with no ``w14:paraId`` has no join key, so the row naming one is not it."""
+    body = f"<w:p>{_range_start('1')}{_run('T.')}{_range_end('1')}{_reference('1')}</w:p>"
+    parsed = _walk_synth(
+        tmp_path,
+        body,
+        comments=_comments(_comment("1", "Body")),
+        extended=_comments_extended(_comment_ex("00000021", done="0")),
+    )
+    (record,) = parsed.comments
+    assert record.id_stability is IdStability.CONTENT_HASH
+    assert record.threading_status is ThreadingStatus.UNKNOWN
+    assert (record.parent_id, record.resolved) == (None, None)
+
+
+@pytest.mark.spec_derived
+def test_a_para_id_the_part_does_not_list_is_unknown(tmp_path):
+    """The part names another comment, so this one's threading is simply not stated."""
+    body = f"<w:p>{_range_start('1')}{_run('T.')}{_range_end('1')}{_reference('1')}</w:p>"
+    parsed = _walk_synth(
+        tmp_path,
+        body,
+        comments=_comments(_comment("1", "Body", para_id="000000AB")),
+        extended=_comments_extended(_comment_ex("00000021", done="0")),
+    )
+    (record,) = parsed.comments
+    assert record.threading_status is ThreadingStatus.UNKNOWN
+    assert (record.parent_id, record.resolved) == (None, None)
+
+
+@pytest.mark.spec_derived
+def test_the_join_never_uses_the_w_id(tmp_path):
+    """A ``w:id`` that happens to equal a listed ``paraId`` is not the join key (D4)."""
+    body = f"<w:p>{_range_start('1')}{_run('T.')}{_range_end('1')}{_reference('1')}</w:p>"
+    parsed = _walk_synth(
+        tmp_path,
+        body,
+        comments=_comments(_comment("00000021", "Body", para_id="000000AB")),
+        extended=_comments_extended(_comment_ex("00000021", done="1")),
+    )
+    (record,) = parsed.comments
+    assert record.threading_status is ThreadingStatus.UNKNOWN
+    assert (record.parent_id, record.resolved) == (None, None)
+
+
+@pytest.mark.spec_derived
+def test_a_threaded_comment_is_threaded_even_when_unanchored(tmp_path):
+    """Threading is the body's own fact: an unanchored comment is joined all the same."""
+    body = f"<w:p>{_run('Bare reference.')}{_reference('1')}</w:p>"
+    parsed = _walk_synth(
+        tmp_path,
+        body,
+        comments=_comments(_comment("1", "Body", para_id="00000022")),
+        extended=_comments_extended(_comment_ex("00000022", done="1", parent="00000021")),
+    )
+    (record,) = parsed.comments
+    assert record.anchor is None and record.anchor_text == ""
+    assert record.threading_status is ThreadingStatus.VERIFIED
+    assert (record.parent_id, record.resolved) == ("00000021", True)
+    assert parsed.known_gaps == [walker_mod.GAP_UNANCHORED_COMMENT]
+
+
+@pytest.mark.spec_derived
+def test_a_repeated_para_id_keeps_the_first_row(tmp_path):
+    """A malformed repeat is still deterministic: the first ``w15:commentEx`` wins."""
+    body = f"<w:p>{_range_start('1')}{_run('T.')}{_range_end('1')}{_reference('1')}</w:p>"
+    parsed = _walk_synth(
+        tmp_path,
+        body,
+        comments=_comments(_comment("1", "Body", para_id="00000021")),
+        extended=_comments_extended(
+            _comment_ex("00000021", done="0"),
+            _comment_ex("00000021", done="1", parent="00000020"),
+        ),
+    )
+    (record,) = parsed.comments
+    assert (record.parent_id, record.resolved) == (None, False)
+
+
+@pytest.mark.spec_derived
+@pytest.mark.parametrize(
+    "done,expected",
+    [("1", True), ("true", True), ("0", False), ("false", False), ("off", False), (None, None)],
+)
+def test_the_done_flag_is_a_tri_state(tmp_path, done, expected):
+    """``w15:done`` is ``False`` only for Word's off values, and ``None`` when not stated."""
+    body = f"<w:p>{_range_start('1')}{_run('T.')}{_range_end('1')}{_reference('1')}</w:p>"
+    parsed = _walk_synth(
+        tmp_path,
+        body,
+        comments=_comments(_comment("1", "Body", para_id="00000021")),
+        extended=_comments_extended(_comment_ex("00000021", done=done)),
+    )
+    (record,) = parsed.comments
+    assert record.threading_status is ThreadingStatus.VERIFIED
+    assert record.resolved is expected
 
 
 # --- determinism ----------------------------------------------------------------
