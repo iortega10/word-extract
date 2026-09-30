@@ -35,7 +35,9 @@ always yields the same chunks, and a reviewer can re-derive every boundary by ha
   text -- a heading's own text (a heading is a section's ``heading_id``, never one of its
   members), a paragraph terminator, or any part but the body the chunks are built from --
   belongs to no chunk and folds into no ``context_hash``; see
-  ``docs/design/phase1-gaps.md``.
+  ``docs/design/phase1-gaps.md``. A comment anchored in a **heading's own text** belongs
+  to the first chunk of that heading's section -- the chunk a reader of the section meets
+  first -- or, when the section merged up, to the chunk its heading text landed in;
 
 Identity. ``content_hash`` is over the chunk's own view text plus the ``view_id`` and
 ``textmodel_version`` that produced it, so the same text in another view is another
@@ -50,19 +52,22 @@ chunk. It is a **summary**-key input only, never part of the chunk id or the sto
 ``(source_content_hash, chunk_id)``, so editing or resolving a comment re-summarizes
 nothing (D8). The contract's :class:`~wordextract.model.Comment` carries no body text --
 only its anchors and its facts -- so the facts are what is folded in (identity, author,
-initials, date, anchored text, resolution, threading, parent); a comment whose identity
-is the content-hash fallback folds its body text in *through* that identity. Raw anchor
+initials, date, anchored text, the comment's own text, resolution, threading,
+parent), so a rewritten comment re-summarizes whatever it annotates. Raw anchor
 offsets are deliberately excluded: they are union offsets, so they churn with
 ``textmodel_version`` and would re-summarize on any edit above the anchor.
 
-Heading text is deliberately **not** chunk content: 4b makes a heading the section's
-``heading_id`` and not one of its members, and the size the cap measures is the chunk's
-own text. So a chunk's bytes are its members and nothing else, while ``section_path``
-says where it sits -- which also means retitling a heading re-ids no chunk beneath it.
+Heading text is **not** chunk content for a section that opens its own chunks: 4b makes
+a heading the section's ``heading_id`` and not one of its members, and ``section_path``
+says where the chunk sits -- which also means retitling such a heading re-ids no chunk
+beneath it. A section that **merges up** has no chunk of its own and no path entry left,
+so its heading text becomes the leading line of what it merged into: a short clause
+heading ("Waiver of Subrogation") is exactly what a reader searches for and must never
+vanish from every chunk. A heading is never the last line of a chunk it does not end.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import Iterable, Iterator, Sequence
 
 from docextract_core import sha256_json
@@ -141,7 +146,8 @@ def chunk(
     blocks = _blocks(parsed.nodes, part_id, by_id, stream, view)
     if not blocks:
         return []
-    drafts = _Groups(parsed.sections, blocks).drafts(params, by_id)
+    headings = _heading_blocks(parsed.sections, by_id, stream, view)
+    drafts = _Groups(parsed.sections, blocks, headings).drafts(params, by_id)
     drafts.sort(key=lambda draft: (draft.first, draft.last))
     decisions = {decision.node_id: decision for decision in parsed.heading_decisions}
     comments = [c for c in parsed.comments if _anchored_in(c, part_id)]
@@ -291,6 +297,29 @@ def _block(
     )
 
 
+def _heading_blocks(
+    forest: Sequence[Section], by_id: dict[str, Node], stream: UnionStream, view: View
+) -> dict[str, _Block]:
+    """Every section's heading as a block of its own text, keyed by the heading's node id.
+
+    A heading is not a member of its section's chunks, so these blocks are only used where
+    a heading has to *become* chunk content: a section that merges up (its heading text
+    leads what it merged into), and comment anchoring (a comment on a heading is held by
+    the heading's own range). The index is a placeholder; a merge assigns the real one.
+    """
+    found: dict[str, _Block] = {}
+
+    def visit(sections: Sequence[Section]) -> None:
+        for section in sections:
+            node = by_id.get(section.heading_id)
+            if node is not None:
+                found[section.heading_id] = _block(node, 0, by_id, stream, view)
+            visit(section.children)
+
+    visit(forest)
+    return found
+
+
 def _leaves(node: Node, by_id: dict[str, Node]) -> Iterator[Node]:
     """``node``'s text-bearing nodes in document order (a leaf is not descended)."""
     if node.kind in _LEAF_KINDS:
@@ -364,7 +393,13 @@ class _Groups:
     blocks are simply the parent's from then on.
     """
 
-    def __init__(self, forest: Sequence[Section], blocks: Sequence[_Block]) -> None:
+    def __init__(
+        self,
+        forest: Sequence[Section],
+        blocks: Sequence[_Block],
+        headings: dict[str, _Block] | None = None,
+    ) -> None:
+        self.headings = headings or {}
         self.root = _Group(path=[], section=None, heading_ids=[])
         by_section: dict[int, _Group] = {}
         owner: dict[str, _Group] = {}
@@ -428,6 +463,11 @@ class _Groups:
             for item in self._order(group):
                 if isinstance(item, _Group):
                     if self._dissolves(item, params):
+                        # the merged section has no chunk and no path entry of its own:
+                        # its heading text leads its content instead of vanishing
+                        heading = self.headings.get(item.section.heading_id)
+                        if heading is not None:
+                            stream.append(replace(heading, index=item.position))
                         stream.extend(self._melt(item, params))
                 else:
                     stream.append(item)
@@ -468,10 +508,16 @@ class _Groups:
         by_id: dict[str, Node],
         found: list[_Draft],
     ) -> None:
+        mark = len(found)
         _pack(self._melt(group, params), group, params, by_id, found)
         for child in group.children:
             if not self._dissolves(child, params):
                 self._collect(child, params, by_id, found)
+        heading = self.headings.get(group.section.heading_id) if group.section else None
+        if heading is not None and len(found) > mark:
+            # a comment anchored in the heading's own text is held by the first chunk the
+            # section (or, with no content of its own, its first descendant) opens
+            found[mark].ranges.append((heading.start, heading.end))
 
 
 # --- packing -------------------------------------------------------------------------
@@ -539,8 +585,11 @@ def _pack(
                 _emit_rows(block, group, params, by_id, found)
                 continue
             if current and size + 1 + len(block.text) > params.size_cap:
+                carry: list[_Block] = []
+                if len(current) > 1 and current[-1].node.kind is NodeKind.HEADING:
+                    carry = [current.pop()]  # a heading leads its content, never ends a chunk
                 _emit(current, group, by_id, found)
-                current, size = [], 0
+                current, size = carry, len(_join(carry)) if carry else 0
             size += len(block.text) + (1 if current else 0)
             current.append(block)
         _emit(current, group, by_id, found)
@@ -632,6 +681,7 @@ def _comment_facts(comments: Sequence[Comment], draft: _Draft) -> list[list[str]
             comment.initials,
             comment.date or "",
             comment.anchor_text,
+            comment.text,
             comment.threading_status.value,
             comment.resolved_identity or "",
             comment.parent_id or "",

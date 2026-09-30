@@ -974,6 +974,7 @@ def _assemble_comments(
                 date=body.date,
                 anchor=anchor,
                 anchor_text=anchor_text,
+                text=body.text,
                 parent_id=parent_id,
                 threading_status=threading_status,
                 resolved=resolved,

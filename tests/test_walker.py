@@ -2527,3 +2527,28 @@ def test_a_resolvable_thread_reports_no_dangling_parent():
     for name in ("renamed_comments_extended", "spec_threaded"):
         path = MODEL / f"{name}.docx" if name != "spec_threaded" else FIXTURES / "spec_threaded.docx"
         assert "dangling_comment_parent" not in walk_document(opc.Package(path)).known_gaps, name
+
+
+# --- the comment's own words ---------------------------------------------------------
+
+
+def test_a_comment_carries_the_words_its_body_holds():
+    """Hand-typed in the generator's sidecar labels: the reviewer's text, not the anchor."""
+    import json
+
+    parsed = walk_document(opc.Package(FIXTURES / "program_review_v3.docx"))
+    raw = json.loads((FIXTURES / "program_review_v3.expected.json").read_text(encoding="utf-8"))
+    assert len(parsed.comments) == len(raw["comments"]) > 0
+    for record, label in zip(parsed.comments, raw["comments"]):
+        assert record.text == label["text"], label["id"]
+        assert record.text != record.anchor_text
+
+
+def test_a_multi_paragraph_comment_text_joins_its_paragraphs_with_a_newline(tmp_path):
+    comments = (
+        '<w:comment w:id="1" w:author="A" w:initials="X"><w:p><w:r><w:t>first</w:t></w:r></w:p>'
+        "<w:p><w:r><w:t>second</w:t></w:r></w:p></w:comment>"
+    )
+    body = '<w:p><w:r><w:commentReference w:id="1"/></w:r><w:r><w:t>x</w:t></w:r></w:p>'
+    parsed = _walk_synth(tmp_path, body, comments=f"<w:comments {W_ATTRS}>{comments}</w:comments>")
+    assert parsed.comments[0].text == "first\nsecond"

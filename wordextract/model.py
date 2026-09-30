@@ -183,6 +183,10 @@ class Comment:
     date: str | None = None
     anchor: Span | None = None
     anchor_text: str = ""
+    #: The comment's own words -- what the reviewer wrote, not the text it is about
+    #: (``anchor_text``). The body's paragraphs joined by ``"\n"``, without the terminator
+    #: after the last one.
+    text: str = ""
     parent_id: str | None = None
     threading_status: ThreadingStatus = ThreadingStatus.UNKNOWN
     resolved: bool | None = None

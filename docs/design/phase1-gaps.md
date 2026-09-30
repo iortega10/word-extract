@@ -86,29 +86,27 @@ slice that owns them lands; the full list is checked at Turn 9.
 
 ## Owned by the chunker (Turn 5)
 
-These two are the chunker's own limitations, and **not** `known_gaps` ids: the chunker
+This is the chunker's own remaining limitation, and **not** `known_gaps` ids: the chunker
 reports no gaps -- it has no such channel, and the walker has already reported every fact
 they are about -- so they are written here without the bold id form above, which is
 reserved for an id a parse result can report. They carry an id and a sentence all the
 same, because the id is what a reviewer greps for.
 
-- `comment_body_text` -- the contract's `Comment` record carries no **body text**: the
-  anchors, the anchored text and the facts (author, initials, date, resolution, parent),
-  never the comment's own words. The chunker folds those facts into `context_hash`, so a
-  comment whose identity is Word's own `w14:paraId` and whose body is rewritten is, to
-  every summary key, the same comment: the edited prose re-summarizes nothing. Only a
-  comment with no `paraId` folds its body in, and it does so *through* the content-hash
-  fallback identity (2b) rather than as a fact of its own -- which is the whole shape of
-  the limitation.
-- `comment_off_chunk` -- a comment can be anchored where **no chunk holds text**, and
-  then it folds into no chunk's `context_hash`. Three ways it happens: the anchor is in a
-  heading's own text (a heading is its section's `heading_id`, never one of its members);
-  the anchor is on a paragraph's terminator, which is a boundary rather than block
-  content; or the anchor is in a part other than the one the chunks were built from --
-  the chunker chunks the part it is handed, so a comment in the footnotes folds into no
-  body chunk. The comment is still a `Comment` record with all its facts, and
-  `unanchored_comment` above covers the ranges that anchor to nothing at all: what is
-  lost is only the fold-in, a fact of the document that no chunk's summary key can see.
+- `comment_off_chunk` -- a comment can still be anchored where **no chunk holds text**,
+  and then it folds into no chunk's `context_hash`. What is left of it: the anchor is on a
+  paragraph's terminator (a boundary, not block content); the anchor is in a part other
+  than the one the chunks were built from (a comment in the footnotes folds into no body
+  chunk); or the anchor is in the heading of a section with no chunk anywhere under it
+  (a heading with nothing beneath it, in a document whose only content is that heading).
+  A comment on a heading that *has* content is **not** off-chunk: it folds into the
+  section's first chunk, or into the chunk its heading text merged into. The comment is
+  still a `Comment` record with all its facts, and `unanchored_comment` above covers the
+  ranges that anchor to nothing at all: what is lost is only the fold-in.
+
+Resolved since Turn 5 first landed: `comment_body_text` (the `Comment` record now carries the
+comment's own `text`, so a rewritten comment moves the `context_hash` and a cached
+summary cannot go stale) and the loss of a merged-up section's heading text (it now leads the
+chunk it merged into).
 
 ## Declared by fixtures, owned by later slices
 

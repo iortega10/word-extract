@@ -64,7 +64,7 @@ def _text(parsed: ParseResult, part_id: str, view: View, one: Chunk) -> str:
     named = set(one.node_ids)
     pieces: list[str] = []
     for node in parsed.nodes:
-        if node.id not in named or node.kind not in LEAF_KINDS:
+        if node.id not in named or node.kind not in LEAF_KINDS | {NodeKind.HEADING}:
             continue
         if not node.spans:
             pieces.append("")
@@ -210,8 +210,8 @@ def test_every_chunk_is_its_own_view_text(path):
     """``size`` and ``content_hash`` are over the chunk's own bytes, in its own view.
 
     The bytes are rebuilt here out of the union stream, so a chunk that quietly included a
-    heading's text, a neighbour's paragraph or a terminator would fail this: the join is
-    the chunk's members and nothing else.
+    neighbour's paragraph or a terminator would fail this: the join is the chunk's members
+    -- a merged-up section's heading among them -- and nothing else.
     """
     parsed, part_id = _parsed(path)
     for one in chunk(parsed, part_id):
@@ -246,16 +246,17 @@ def test_every_chunk_id_is_the_content_hash_and_the_documents_ordinal(path):
 
 
 @pytest.mark.parametrize("path", ALL_DOCX, ids=lambda path: path.stem)
-def test_no_chunk_is_made_of_a_heading_and_its_nodes_are_in_document_order(path):
-    """A heading opens a section (4b), so it is never a member of one: no chunk's
-    ``node_ids`` names a heading, and the ids a chunk does name are unique and in the
-    walker's own document order.
+def test_no_chunk_is_only_a_heading_and_its_nodes_are_in_document_order(path):
+    """A heading opens a section (4b), so it is a chunk member only when its section merged
+    up into one that has content: a chunk is never *just* headings, and the ids a chunk
+    names are unique and in the walker's own document order.
     """
     parsed, part_id = _parsed(path)
     order = {node.id: index for index, node in enumerate(parsed.nodes)}
-    headings = {node.id for node in parsed.nodes if node.kind is NodeKind.HEADING}
+    by_id = {node.id: node for node in parsed.nodes}
     for one in chunk(parsed, part_id):
-        assert not set(one.node_ids) & headings
+        kinds = {by_id[node_id].kind for node_id in one.node_ids}
+        assert kinds - {NodeKind.HEADING}
         assert len(set(one.node_ids)) == len(one.node_ids)
         indices = [order[node_id] for node_id in one.node_ids]
         assert indices == sorted(indices)
@@ -345,8 +346,8 @@ def test_a_preamble_is_chunked_under_the_empty_path_and_swallows_no_section(tmp_
 def test_a_tiny_section_merges_up_into_a_parent_with_content_of_its_own(tmp_path):
     """A one-line subsection under an established heading is part of what encloses it.
 
-    Its blocks become the parent's from then on, so the child's title is nowhere in the
-    paths and the parent's chunk reads as its own two paragraphs.
+    Its blocks become the parent's from then on and its heading leads them, so the child's
+    title is not in any path but is never lost: it is a line of the parent's chunk.
     """
     parsed, part_id = _synth(
         tmp_path,
@@ -356,8 +357,8 @@ def test_a_tiny_section_merges_up_into_a_parent_with_content_of_its_own(tmp_path
         + _p("Child text"),
     )
     chunks = chunk(parsed, part_id)
-    assert _shape(chunks) == [(["Top"], 22, 2)]
-    assert _text(parsed, part_id, View.ACCEPTED, chunks[0]) == "Parent text\nChild text"
+    assert _shape(chunks) == [(["Top"], 28, 3)]
+    assert _text(parsed, part_id, View.ACCEPTED, chunks[0]) == "Parent text\nChild\nChild text"
 
 
 def test_a_numbered_list_run_is_forced_to_its_own_chunk_on_both_sides(tmp_path):
@@ -615,11 +616,10 @@ def test_a_comment_only_edit_keeps_the_chunk_id_and_moves_its_context_hash(tmp_p
     assert first[0].context_hash != second[0].context_hash
 
 
-def test_a_comment_body_edit_under_a_paraid_identity_moves_nothing(tmp_path):
-    """The documented gap (``comment_body_text``, phase1-gaps.md): the contract's comment
-    record carries no body text, so a comment keyed on a ``w14:paraId`` that only has its
-    words rewritten is, to the chunker, the same comment -- neither id nor context moves.
-    """
+def test_a_comment_body_edit_under_a_paraid_identity_moves_the_context_hash(tmp_path):
+    """A comment keyed on a ``w14:paraId`` whose words are rewritten is the same comment
+    but not the same context: the record carries its own text, so the summary key moves
+    and a cached summary cannot go stale. The chunk id, which is content only, does not."""
     body = (
         _p("Top", style="Heading1")
         + '<w:p><w:commentRangeStart w:id="1"/><w:r><w:t>Commented text</w:t></w:r>'
@@ -634,8 +634,9 @@ def test_a_comment_body_edit_under_a_paraid_identity_moves_nothing(tmp_path):
     first = chunk(before, part_id)
     second = chunk(after, part_id)
     assert first[0].id == second[0].id
-    assert first[0].context_hash == second[0].context_hash
-    assert before.comments[0].para_id == "11111111"
+    assert first[0].context_hash != second[0].context_hash
+    assert before.comments[0].para_id == after.comments[0].para_id == "11111111"
+    assert (before.comments[0].text, after.comments[0].text) == ("a note", "a much longer note")
 
 
 def test_a_comment_body_edit_under_a_fallback_identity_moves_the_context_hash(tmp_path):
@@ -685,11 +686,9 @@ def test_a_range_comment_belongs_to_the_chunk_its_range_starts_in(tmp_path):
     assert with_comment[1].context_hash == without[1].context_hash
 
 
-def test_a_comment_anchored_off_the_chunks_folds_into_no_context_hash(tmp_path):
-    """The documented gap (``comment_off_chunk``, phase1-gaps.md): a comment anchored on a
-    heading's own text is anchored where no chunk holds text -- a heading is its section's
-    ``heading_id``, never a member -- so it reaches no chunk's context hash.
-    """
+def test_a_comment_on_a_heading_folds_into_the_first_chunk_of_its_section(tmp_path):
+    """A heading is its section's ``heading_id`` and not a member, but a reviewer's comment
+    on a clause title is about that section: it belongs to the section's first chunk."""
     heading = (
         '<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr>'
         '<w:commentRangeStart w:id="1"/><w:r><w:t>Top</w:t></w:r>'
@@ -704,8 +703,118 @@ def test_a_comment_anchored_off_the_chunks_folds_into_no_context_hash(tmp_path):
     assert commented.comments[0].anchor is not None
     first = chunk(commented, part_id)
     second = chunk(bare, part_id)
-    assert [one.id for one in first] == [one.id for one in second]
-    assert [one.context_hash for one in first] == [one.context_hash for one in second]
+    assert [one.id for one in first] == [one.id for one in second]  # content is unchanged
+    assert first[0].context_hash != second[0].context_hash  # the comment is folded in
+
+
+# --- headings are never lost, and a comment on one is never orphaned ------------------
+
+
+def _body_with_short_subsection():
+    long_text = "Established coverage text. " * 12
+    return (
+        _p("Coverage", style="Heading1")
+        + _p(long_text)
+        + _p("Waiver of Subrogation", style="Heading2")
+        + _p("Applies where required by contract.")
+        + _p("Exclusions", style="Heading1")
+        + _p("Pollution is excluded. " * 12)
+    )
+
+
+def test_a_merged_up_headings_text_is_a_line_of_the_chunk_it_merged_into(tmp_path):
+    """The defect this pins: 'Waiver of Subrogation' was in no chunk text and no path."""
+    parsed, part_id = _synth(tmp_path, _body_with_short_subsection())
+    chunks = chunk(parsed, part_id)
+    assert [one.section_path for one in chunks] == [["Coverage"], ["Exclusions"]]
+    text = _text(parsed, part_id, View.ACCEPTED, chunks[0])
+    assert text.endswith("Waiver of Subrogation\nApplies where required by contract.")
+    # the heading that opens its own chunks stays out of the bytes: it is in the path
+    assert "Coverage" not in text.replace("Established coverage", "")
+
+
+def test_a_surviving_sections_heading_stays_out_of_its_chunk_bytes(tmp_path):
+    parsed, part_id = _synth(tmp_path, _body_with_short_subsection())
+    chunks = chunk(parsed, part_id)
+    assert not _text(parsed, part_id, View.ACCEPTED, chunks[1]).startswith("Exclusions")
+
+
+def test_a_comment_on_a_merged_up_heading_folds_into_the_chunk_its_text_landed_in(tmp_path):
+    body = _body_with_short_subsection().replace(
+        '<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Waiver of Subrogation</w:t></w:r></w:p>',
+        '<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:commentRangeStart w:id="1"/>'
+        "<w:r><w:t>Waiver of Subrogation</w:t></w:r><w:commentRangeEnd w:id=\"1\"/>"
+        '<w:r><w:commentReference w:id="1"/></w:r></w:p>',
+    )
+    assert "commentRangeStart" in body
+    commented, part_id = _synth(
+        tmp_path, body, comments=_comments(_comment("1", "check this", para_id="11111111")),
+        name="commented.docx",
+    )
+    bare, _ = _synth(tmp_path, _body_with_short_subsection(), name="bare.docx")
+    with_comment = chunk(commented, part_id)
+    without = chunk(bare, part_id)
+    assert [c.id for c in with_comment] == [c.id for c in without]
+    assert with_comment[0].context_hash != without[0].context_hash
+    assert with_comment[1].context_hash == without[1].context_hash
+
+
+def test_a_comment_on_a_heading_with_no_content_of_its_own_goes_to_its_first_descendant(tmp_path):
+    heading = (
+        '<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:commentRangeStart w:id="1"/>'
+        "<w:r><w:t>Top</w:t></w:r><w:commentRangeEnd w:id=\"1\"/>"
+        '<w:r><w:commentReference w:id="1"/></w:r></w:p>'
+    )
+    tail = _p("Sub", style="Heading2") + _p("Sub text. " * 40)
+    commented, part_id = _synth(
+        tmp_path, heading + tail, comments=_comments(_comment("1", "note", para_id="11111111")),
+        name="commented.docx",
+    )
+    bare, _ = _synth(tmp_path, _p("Top", style="Heading1") + tail, name="bare.docx")
+    with_comment = chunk(commented, part_id)
+    without = chunk(bare, part_id)
+    assert [c.id for c in with_comment] == [c.id for c in without]
+    assert with_comment[0].context_hash != without[0].context_hash
+
+
+def test_a_comment_on_a_heading_that_has_no_chunk_at_all_is_still_off_chunk(tmp_path):
+    """The remaining limit: a heading with nothing under it, anywhere, has no chunk to hold
+    its comment -- the document yields no chunks at all."""
+    heading = (
+        '<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:commentRangeStart w:id="1"/>'
+        "<w:r><w:t>Alone</w:t></w:r><w:commentRangeEnd w:id=\"1\"/>"
+        '<w:r><w:commentReference w:id="1"/></w:r></w:p>'
+    )
+    parsed, part_id = _synth(
+        tmp_path, heading, comments=_comments(_comment("1", "note", para_id="11111111"))
+    )
+    assert chunk(parsed, part_id) == []
+    assert parsed.comments[0].anchor is not None
+
+
+def test_a_heading_is_never_stranded_as_the_last_line_of_a_capped_chunk(tmp_path):
+    """Packing moves a trailing heading to lead the next chunk with its content."""
+    body = (
+        _p("Top", style="Heading1")
+        + _p("Top text " * 6)
+        + _p("Short sub", style="Heading2")
+        + _p("Sub text " * 6)
+    )
+    parsed, part_id = _synth(tmp_path, body)
+    params = ChunkParams(size_cap=80, min_size=400)  # the subsection is tiny -> merges up
+    chunks = chunk(parsed, part_id, params=params)
+    assert len(chunks) >= 2
+    by_id = {n.id: n for n in parsed.nodes}
+    for one in chunks[:-1]:
+        assert by_id[one.node_ids[-1]].kind is not NodeKind.HEADING, one.node_ids
+
+
+def test_every_comment_carries_its_own_words_in_the_context_facts():
+    from wordextract.chunker import _comment_facts  # noqa: F401  (the fact list is internal)
+    from wordextract.model import Comment
+
+    assert Comment(para_id="p", author="a", initials="x").text == ""
+    assert Comment(para_id="p", author="a", initials="x", text="note").text == "note"
 
 
 # --- churn: reported, never gated -----------------------------------------------------
