@@ -25,6 +25,7 @@ from wordextract import (
     Revision,
     RevisionKind,
     RunRecord,
+    Section,
     Span,
     TermGroup,
     TermHit,
@@ -142,6 +143,7 @@ SAMPLES = [
         id_stability=IdStability.CONTENT_HASH,
         occurrence_index=2,
         host_node_id="n1",
+        section_path=["Program Review", "Coverage Terms"],
     ),
     Comment(
         para_id="hash:9f2c1b",
@@ -182,6 +184,15 @@ SAMPLES = [
                 spans=[Span("word/document.xml", 0, 27)],
             )
         ],
+        sections=[
+            Section(
+                heading_id="n1",
+                title="Coverage Terms",
+                level=2,
+                node_ids=["n2"],
+                children=[Section(heading_id="n3", title="", level=3, node_ids=["n4"])],
+            )
+        ],
         revisions=[Revision(id="r1", kind=RevisionKind.DEL, author="A. Ito")],
         comments=[
             Comment(
@@ -196,6 +207,7 @@ SAMPLES = [
         heading_detection=HeadingDetection.DEGRADED,
         known_gaps=["paragraph_mark_revision", "textbox"],
     ),
+    Section(heading_id="n1", title="Coverage Terms", level=2, node_ids=["n2", "n4"]),
 ]
 
 

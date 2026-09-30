@@ -98,6 +98,18 @@ def is_heading_style(value: str | None) -> bool:
     return value.casefold() == _TITLE_STYLE or _HEADING_STYLE.fullmatch(value) is not None
 
 
+def heading_style_level(value: str | None) -> int | None:
+    """The level a heading style names, or ``None`` when it names none.
+
+    ``HeadingN`` names N; ``Title`` names no level, and neither does a style that is not
+    a heading style at all. A document can name a level without stating one -- a
+    ``Heading2`` style whose definition is absent, so no ``w:outlineLvl`` reaches the walk
+    -- and the level a section is built on (4b) is then the one the name gives.
+    """
+    match = None if value is None else _HEADING_STYLE.fullmatch(value)
+    return int(match.group(1)) if match is not None else None
+
+
 @dataclass(frozen=True)
 class ParagraphFacts:
     """What the rules read off one paragraph -- all of it, so that nothing is guessed.

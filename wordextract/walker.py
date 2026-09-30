@@ -1611,7 +1611,7 @@ def walk_package(package: Package) -> tuple[list[UnionStream], list[str]]:
 
 
 def walk_document(package: Package) -> ParseResult:
-    """``package``'s streams, node tree, revision and comment facts, gap ids (2b-2d).
+    """``package``'s streams, node tree, section tree, revision and comment facts (2b-4b).
 
     Parts are read in the fixed order of :func:`walk_package`, and node ids and
     revision ids are spent globally across them, so a ``w14:paraId`` is package-unique
@@ -1620,7 +1620,17 @@ def walk_document(package: Package) -> ParseResult:
     threaded (2e) from ``commentsExtended``; the heading decisions (4a) are the parts'
     decisions concatenated in that same order, and the detection verdict is what
     :func:`~wordextract.headings.summarize` reads off them.
+
+    The section tree (4b) is read off the finished node tree. The outline is the body's
+    (``package.document.part_id``), so a heading in a header, a footnote or a comment
+    opens no section and those nodes carry the empty path; every body node is given its
+    ``section_path`` here, and :attr:`~wordextract.model.ParseResult.sections` is the
+    forest -- empty when the walk found no heading at all.
     """
+    # Imported here rather than at module scope: ``sections`` imports ``views``, which
+    # imports ``TERMINATOR`` from this module, so a module-level import would be circular.
+    from . import sections
+
     numbering = _Numbering(package.numbering)
     styles = Styles(package.styles)
     used_ids: set[str] = set()
@@ -1647,9 +1657,11 @@ def walk_document(package: Package) -> ParseResult:
         _read_comments_extended(package.comments_extended),
     )
     gaps |= comment_gaps
+    nodes, section_tree = sections.assign(nodes, streams, package.document.part_id)
     return ParseResult(
         union_streams=streams,
         nodes=nodes,
+        sections=section_tree,
         revisions=revisions,
         comments=records,
         heading_decisions=decisions,

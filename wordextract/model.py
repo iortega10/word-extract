@@ -147,6 +147,7 @@ class Node:
     id_stability: IdStability = IdStability.PATH
     occurrence_index: int = 0
     host_node_id: str | None = None
+    section_path: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -236,14 +237,42 @@ class ViewSpan:
 
 
 @dataclass(frozen=True)
+class Section:
+    """One section of a document's outline: the heading that opens it, and what it holds
+    (Turn 4b).
+
+    ``heading_id`` is the ``HEADING`` node the section is named after and ``title`` is
+    that heading's own text **in the accepted view** -- what the section is *called*,
+    never an identity: a renamed heading renames its section, which is why
+    ``section_path`` is a field and part of no key. ``level`` is Word's own numbering,
+    where a heading at outline level *n* is level *n + 1* and a heading that names no
+    level (``Title``, the all-bold rule) is level 0 -- so a level compares across the
+    tree even where the tree nests a title over a heading.
+
+    ``node_ids`` are the nodes the section holds directly, in document order;
+    containers included, so a consumer filters by ``Node.kind``. Nodes under a
+    descendant section are the descendant's, not this one's, and the heading itself is
+    ``heading_id`` rather than a member. ``children`` are the sections nested under it.
+    """
+
+    heading_id: str
+    title: str
+    level: int
+    node_ids: list[str] = field(default_factory=list)
+    children: list[Section] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class ParseResult:
     """Everything the deterministic walker produces for one document: the union
-    streams (the address space), the resolved node tree, raw revision and comment
-    facts, the heading decisions, and ``known_gaps`` as **ids only** (the prose
-    lives in ``docs/design/phase1-gaps.md``)."""
+    streams (the address space), the resolved node tree, the section tree the
+    heading tree defines (4b), raw revision and comment facts, the heading
+    decisions, and ``known_gaps`` as **ids only** (the prose lives in
+    ``docs/design/phase1-gaps.md``)."""
 
     union_streams: list[UnionStream] = field(default_factory=list)
     nodes: list[Node] = field(default_factory=list)
+    sections: list[Section] = field(default_factory=list)
     revisions: list[Revision] = field(default_factory=list)
     comments: list[Comment] = field(default_factory=list)
     heading_decisions: list[HeadingDecision] = field(default_factory=list)
