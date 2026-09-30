@@ -73,12 +73,15 @@ def _by_text(parsed) -> dict[str, str]:
     }
 
 
-def _level(node: Node) -> int:
-    """The 4b level rule, restated: outline level plus one, else the styled level, else 0."""
-    if node.level is not None:
+def _level(node: Node) -> int | None:
+    """The level a heading states, restated: outline 0-8 plus one, else the styled level,
+    else 0 for a Title, else ``None`` (unlevelled). Outline level 9 is body text."""
+    if node.level is not None and 0 <= node.level <= 8:
         return node.level + 1
     match = re.fullmatch(r"heading\s*([1-9])", node.style or "", re.IGNORECASE)
-    return int(match.group(1)) if match else 0
+    if match:
+        return int(match.group(1))
+    return 0 if (node.style or "").casefold() == "title" else None
 
 
 def _rebuild(nodes, part_id) -> list:
@@ -97,10 +100,15 @@ def _rebuild(nodes, part_id) -> list:
             if open_sections:
                 open_sections[-1][1].append(node.id)
             continue
-        level = _level(node)
+        stated = _level(node)
+        if stated is None:
+            above = [s for s in open_sections if s[3]]
+            level = above[-1][0] + 1 if above else 1
+        else:
+            level = stated
         while open_sections and open_sections[-1][0] >= level:
             open_sections.pop()
-        section = [level, [], []]
+        section = [level, [], [], stated is not None]
         (open_sections[-1][2] if open_sections else roots).append(section)
         open_sections.append(section)
     return roots
@@ -392,13 +400,14 @@ def _synth(tmp_path, body: str, **parts):
     return _walk(_docx(tmp_path, body, **parts))
 
 
-def test_a_heading_that_names_no_level_is_level_zero(tmp_path):
-    """``Title`` and the all-bold rule name no level, so their section is above every
-    numbered heading -- the alternative would nest a title under a heading after it."""
+def test_title_is_level_zero_and_a_lone_unlevelled_heading_is_level_one(tmp_path):
+    """``Title`` names level 0 -- above every numbered heading. The all-bold rule states no
+    level at all: with nothing levelled open it takes level 1, so a document of bold
+    headings is a flat list of siblings rather than a chain."""
     parsed, _ = _synth(tmp_path, _p("The title", style="Title") + _p("Body text"))
     assert _flatten(parsed.sections) == [("The title", 0)]
     parsed, _ = _synth(tmp_path, _p("Bold heading", bold=True) + _p("Body text"))
-    assert _flatten(parsed.sections) == [("Bold heading", 0)]
+    assert _flatten(parsed.sections) == [("Bold heading", 1)]
 
 
 def test_a_heading_style_that_names_a_level_gives_the_section_that_level(tmp_path):
@@ -598,3 +607,84 @@ def test_build_is_the_forest_assign_assigns_and_covers_the_body_only():
     assert sections_mod.build(parsed.nodes, parsed.union_streams, body) == parsed.sections
     assert sections_mod.build(parsed.nodes, parsed.union_streams, "header:0") == []
     assert sections_mod.build([], parsed.union_streams, body) == []
+
+
+# --- an unlevelled heading nests where it stands; it never resets the outline ---------
+
+
+def _paths(parsed) -> dict[str, list[str]]:
+    stream = parsed.union_streams[0]
+    return {
+        stream.text[node.spans[0].start : node.spans[0].end]: node.section_path
+        for node in parsed.nodes
+        if node.spans and node.part_id == stream.part_id
+    }
+
+
+def test_a_bold_line_mid_section_nests_under_the_innermost_levelled_section(tmp_path):
+    """The defect this pins: a bold 'Important notice' popped every open section and the
+    headings after it landed under it. Hand-typed: Sublimits is Coverage's, Exclusions the
+    Title's, and the notice sits inside Limits."""
+    body = (
+        _p("Policy", style="Title")
+        + _p("Coverage", style="Heading1")
+        + _p("Limits", style="Heading2")
+        + _p("limits text")
+        + _p("Important notice", bold=True)
+        + _p("notice text")
+        + _p("Sublimits", style="Heading2")
+        + _p("sub text")
+        + _p("Exclusions", style="Heading1")
+    )
+    parsed, _ = _synth(tmp_path, body)
+    assert _flatten(parsed.sections) == [
+        ("Policy", 0),
+        ("Coverage", 1),
+        ("Limits", 2),
+        ("Important notice", 3),
+        ("Sublimits", 2),
+        ("Exclusions", 1),
+    ]
+    paths = _paths(parsed)
+    assert paths["notice text"] == ["Policy", "Coverage", "Limits", "Important notice"]
+    assert paths["sub text"] == ["Policy", "Coverage", "Sublimits"]
+    assert paths["Exclusions"] == ["Policy", "Exclusions"]
+
+
+def test_consecutive_unlevelled_headings_are_siblings_not_a_chain(tmp_path):
+    body = (
+        _p("Coverage", style="Heading1")
+        + _p("First notice", bold=True)
+        + _p("one")
+        + _p("Second notice", bold=True)
+        + _p("two")
+    )
+    parsed, _ = _synth(tmp_path, body)
+    assert _flatten(parsed.sections) == [("Coverage", 1), ("First notice", 2), ("Second notice", 2)]
+    (root,) = parsed.sections
+    assert [child.title for child in root.children] == ["First notice", "Second notice"]
+
+
+def test_a_document_of_unlevelled_headings_is_a_flat_list(tmp_path):
+    body = _p("Alpha", bold=True) + _p("a") + _p("Beta", bold=True) + _p("b")
+    parsed, _ = _synth(tmp_path, body)
+    assert [(s.title, s.level) for s in parsed.sections] == [("Alpha", 1), ("Beta", 1)]
+    assert all(not s.children for s in parsed.sections)
+
+
+def test_an_unlevelled_heading_then_a_level_one_heading_are_siblings(tmp_path):
+    body = _p("Preamble heading", bold=True) + _p("x") + _p("Coverage", style="Heading1") + _p("y")
+    parsed, _ = _synth(tmp_path, body)
+    assert [(s.title, s.level) for s in parsed.sections] == [("Preamble heading", 1), ("Coverage", 1)]
+
+
+def test_an_unlevelled_heading_under_a_title_is_its_child(tmp_path):
+    body = _p("Policy", style="Title") + _p("Notice", bold=True) + _p("x")
+    parsed, _ = _synth(tmp_path, body)
+    assert _flatten(parsed.sections) == [("Policy", 0), ("Notice", 1)]
+
+
+def test_a_heading_one_paragraph_set_to_body_text_level_takes_the_level_its_style_names(tmp_path):
+    """Outline level 9 is Word's body text, so it states no level: the style name decides."""
+    parsed, _ = _synth(tmp_path, _p("Demoted", style="Heading1", outline=9) + _p("Body text"))
+    assert _flatten(parsed.sections) == [("Demoted", 1)]

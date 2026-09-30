@@ -78,7 +78,7 @@ def test_lenient_mode_ignores_extra_key():
 
 
 def test_newer_schema_version_raises():
-    blob = to_json(_sample(), schema_version="3")
+    blob = to_json(_sample(), schema_version="4")
     with pytest.raises(CodecError):
         from_json(Outer, blob)
 

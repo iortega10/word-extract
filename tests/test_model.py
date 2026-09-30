@@ -309,3 +309,16 @@ def test_decoding_a_disagreeing_hit_raises():
     blob["record"]["present_in"] = ["superseded"]
     with pytest.raises(ValueError, match="disagrees"):
         from_json(TermHit, json.dumps(blob))
+
+
+def test_a_schema_two_node_blob_without_section_path_is_rejected_not_defaulted():
+    """Node.section_path and ParseResult.sections changed the contract (schema 3): a
+    schema-2 blob would otherwise decode with the new fields silently empty."""
+    import json
+
+    node = Node(id="n", kind=NodeKind.PARA, part_id="p", source_ref="p#0")
+    blob = json.loads(to_json(node))
+    blob["schema_version"] = "2"
+    del blob["record"]["section_path"]
+    with pytest.raises(CodecError, match="older"):
+        from_json(Node, json.dumps(blob))

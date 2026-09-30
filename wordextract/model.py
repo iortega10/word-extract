@@ -245,9 +245,11 @@ class Section:
     that heading's own text **in the accepted view** -- what the section is *called*,
     never an identity: a renamed heading renames its section, which is why
     ``section_path`` is a field and part of no key. ``level`` is Word's own numbering,
-    where a heading at outline level *n* is level *n + 1* and a heading that names no
-    level (``Title``, the all-bold rule) is level 0 -- so a level compares across the
-    tree even where the tree nests a title over a heading.
+    where a heading at outline level *n* is level *n + 1* and ``Title`` is level 0 -- so
+    a level compares across the tree even where the tree nests a title over a heading. A
+    heading that states no level (the all-bold rule) takes the level one below the
+    innermost levelled section open where it stands (1 when none is), so it nests where
+    it is written instead of resetting the outline.
 
     ``node_ids`` are the nodes the section holds directly, in document order;
     containers included, so a consumer filters by ``Node.kind``. Nodes under a
