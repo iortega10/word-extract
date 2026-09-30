@@ -42,8 +42,16 @@ slice that owns them lands; the full list is checked at Turn 9.
   **not** a gap: there is nothing to inherit, as when Word treats the style as Normal
   (docx generators routinely omit `Normal`).
 
+## Owned by the revision walker (Turn 2c)
+
+- **`paragraph_mark_revision`** -- a deleted or inserted paragraph mark
+  (`w:pPr/w:rPr/w:del|ins`) is **not honored**: the break is retained in every view, so
+  the paragraphs on either side are neither merged nor dropped, and Word's own break or
+  merge is not reproduced. The mark itself is still a fact, recorded as a revision of its
+  own. Recorded whenever such a mark is met, even when its `w:id` was already seen.
+
 ## Declared by fixtures, owned by later slices
 
-`paragraph_mark_revision`, `field_result_view_ancestry`, `w_cr_unspecified`,
-`empty_parts_unverified`, `renamed_part_unverified`, `strict_namespaces_unverified`.
-Each will be documented here by the slice that reports it.
+`field_result_view_ancestry`, `w_cr_unspecified`, `empty_parts_unverified`,
+`renamed_part_unverified`, `strict_namespaces_unverified`. Each will be documented here
+by the slice that reports it.

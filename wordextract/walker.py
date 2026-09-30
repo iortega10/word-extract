@@ -1,4 +1,4 @@
-"""Turns 2a-2b: the per-part union stream and the walker's node tree.
+"""Turns 2a-2c: the per-part union stream, the node tree and the revision facts.
 
 2a: this is the production replacement for the ``tools/opc_spike.py`` scaffold. It
 builds one :class:`~wordextract.model.UnionStream` per part that holds at least one
@@ -18,7 +18,7 @@ in the build spec). Nothing here guesses at them:
   emitted only once **every** open field has passed its ``separate`` (a ``w:fldChar``
   depth counter, so nested fields resolve; ``w:fldSimple``'s instruction is its
   attribute and is never read);
-* revision ancestry is the ancestor stack, ``<kind>:<w:id>`` (2c adds the records);
+* revision ancestry is the ancestor stack, ``<kind>:<w:id>``;
 * ``w:txbxContent`` is never entered: text-box text belongs to its own fragment and
   is not part of any part's union stream (a later slice, hence no fragment stream);
   the omission is recorded as the ``textbox`` known gap so it is never silent;
@@ -57,6 +57,20 @@ ordinal counting equal-content nodes in document order; else, for a node with **
 text at all**, its position (``path:``), which renumbers on insertion and is flagged
 ``IdStability.PATH``. Ids are reserved package-wide, in part order, so a repeat
 ``w14:paraId`` falls through to the hash.
+
+2c adds the raw revision facts. Every ``w:ins`` / ``w:del`` / ``w:moveFrom`` /
+``w:moveTo`` met is one :class:`~wordextract.model.Revision` -- ``<kind>:<w:id>``, or
+``<kind>:noid<n>`` when the mark carries no ``w:id`` -- with the mark's ``author``
+(``""`` when absent), its ``date`` (``None`` when absent), the ancestor stack it sat
+in (outermost first, itself excluded) and, for a move, the ``move_group_id``: the
+``w:name`` shared by the ``moveFromRangeStart`` / ``moveToRangeStart`` markers that
+wrap the mark, never the ``w:id`` of the mark or of the markers. The same id met twice
+is **one** record, the first in document order; the mark still opens an ancestor frame
+for the text under it. Nothing is synthesized: a ``w:del`` is never paired with its
+``w:ins``. A deleted or inserted **paragraph mark** (``w:pPr/w:rPr/w:del|ins``) is a
+fact like any other, and because its effect is not honored -- the break is retained in
+every view -- the omission is recorded as the loud ``paragraph_mark_revision`` gap
+(``text-model-spec.md`` section 7).
 """
 from __future__ import annotations
 
@@ -73,6 +87,8 @@ from .model import (
     Node,
     NodeKind,
     ParseResult,
+    Revision,
+    RevisionKind,
     Span,
     UnionStream,
 )
@@ -87,12 +103,30 @@ _VERTICAL_TAB = "\u000b"
 _SOFT_HYPHEN = "\u00ad"
 _NO_BREAK_HYPHEN = "\u2011"
 
-_REVISION_LOCALS = ("ins", "del", "moveFrom", "moveTo")
+_REVISION_KINDS = {
+    "ins": RevisionKind.INS,
+    "del": RevisionKind.DEL,
+    "moveFrom": RevisionKind.MOVE_FROM,
+    "moveTo": RevisionKind.MOVE_TO,
+}
+
+#: The four revision marks, in document order.
+_REVISION_LOCALS = tuple(_REVISION_KINDS)
+
+#: The move-range markers that wrap a move: a ``...RangeStart`` opens a range and
+#: carries the shared ``w:name``, its ``...RangeEnd`` carries only the marker's
+#: ``w:id`` and closes it. A marker is never itself a revision record.
+_MOVE_RANGE_START = {"moveFromRangeStart": "moveFrom", "moveToRangeStart": "moveTo"}
+_MOVE_RANGE_END = frozenset({"moveFromRangeEnd", "moveToRangeEnd"})
+
+#: The revision marks a range wraps, outermost run first.
+_MOVE_MARKS = frozenset(_MOVE_RANGE_START.values())
 
 #: Known-gap ids this module can report (``docs/design/phase1-gaps.md``).
 GAP_TEXTBOX = "textbox"
 GAP_UNRECOGNIZED_CONTAINER = "unrecognized_container"
 GAP_REVISION_MISSING_ID = "revision_missing_id"
+GAP_PARAGRAPH_MARK_REVISION = "paragraph_mark_revision"
 GAP_INLINE_SDT_TRANSPARENT = "inline_sdt_transparent"
 GAP_DUPLICATE_CONTENT_ID = "duplicate_content_id_churn"
 GAP_STYLE_CHAIN_CYCLE = "style_chain_cycle"
@@ -616,7 +650,8 @@ def _spans_of(kind: NodeKind, start: int, end: int, part_id: str) -> list[Span]:
 
 
 class _Walker:
-    """Walks one part's tree into a :class:`_PartStream` and its node tree (2a + 2b)."""
+    """Walks one part's tree into a :class:`_PartStream`, its node tree and its revision
+    facts (2a + 2b + 2c)."""
 
     def __init__(
         self,
@@ -625,6 +660,7 @@ class _Walker:
         numbering: _Numbering | None = None,
         used_ids: set[str] | None = None,
         styles: Styles | None = None,
+        seen_revisions: set[str] | None = None,
     ) -> None:
         self._stream = stream
         self._part = part
@@ -632,13 +668,17 @@ class _Walker:
         self._styles = styles
         self._labels = _LabelCounter(numbering)
         self._used_ids = used_ids if used_ids is not None else set()
+        self._seen_revisions = seen_revisions if seen_revisions is not None else set()
         self._hashes: dict[str, int] = {}
         self._open: list[_Frame] = []
         self._roots: list[_Frame] = []
         self.nodes: list[Node] = []
+        self.revisions: list[Revision] = []
         self.gaps: set[str] = set()
         self._noid = 0
         self._stack: list[str] = []
+        # The open move ranges, outermost first: (marker w:id, shared w:name, mark local).
+        self._move_ranges: list[tuple[str | None, str | None, str]] = []
         # One flag per open field: has that field passed its ``separate``?
         self._fields: list[bool] = []
 
@@ -661,6 +701,9 @@ class _Walker:
                 self._walk_container(child)
             elif is_w(child, local) and local in _BLOCK_CONTAINERS:
                 self._walk_block(child)
+            elif is_w(child, local) and (local in _MOVE_RANGE_START or local in _MOVE_RANGE_END):
+                # A range can bracket whole paragraphs; it carries no text of its own.
+                self._move_range(local, child)
             elif not (is_w(child, local) and local in _SKIP_BLOCK_LOCALS):
                 self._note_skipped(child)
 
@@ -679,6 +722,7 @@ class _Walker:
         label = self._labels.label(*numbered) if numbered is not None else None
         self._stack = []
         self._fields = []
+        self._paragraph_mark_revisions(paragraph)
         self._open_node(kind, paragraph, style=style, level=level, label=label)
         self._walk_inline(paragraph)
         self._close_node()
@@ -700,9 +744,13 @@ class _Walker:
             if local in _SKIP_LOCALS:
                 continue
             if local in _REVISION_LOCALS:
-                self._stack.append(self._revision_id(child, local))
+                ident = self._revision_id(child, local)
+                self._record_revision(child, local, ident)
+                self._stack.append(ident)
                 self._walk_inline(child)
                 self._stack.pop()
+            elif local in _MOVE_RANGE_START or local in _MOVE_RANGE_END:
+                self._move_range(local, child)
             elif local in ("t", "delText"):
                 if all(self._fields):
                     self._emit(_text_of(child))
@@ -845,6 +893,75 @@ class _Walker:
             self.gaps.add(GAP_REVISION_MISSING_ID)
         return f"{local}:{ident}"
 
+    def _record_revision(self, element: etree._Element, local: str, ident: str) -> None:
+        """One raw revision fact: kind, author, date, ancestry and move group (2c).
+
+        The same ``w:id`` recurs whenever a revision spans several runs, so the first
+        occurrence in document order is the record -- the mark still opens its ancestor
+        frame either way.
+        """
+        if ident in self._seen_revisions:
+            return
+        self._seen_revisions.add(ident)
+        self.revisions.append(
+            Revision(
+                id=ident,
+                kind=_REVISION_KINDS[local],
+                author=wattr(element, "author") or "",
+                date=wattr(element, "date"),
+                move_group_id=self._move_group(local),
+                ancestors=list(self._stack),
+            )
+        )
+
+    def _paragraph_mark_revisions(self, paragraph: etree._Element) -> None:
+        """A ``w:pPr/w:rPr`` revision is a fact; its effect is not honored (2c).
+
+        A deleted or inserted paragraph mark would add, remove or merge a terminator.
+        The break is retained in every view, so *deciding* to retain it is the loud
+        ``paragraph_mark_revision`` gap (``text-model-spec.md`` section 7), recorded
+        here whether or not the mark's own id was already seen.
+        """
+        p_pr = _first_w(paragraph, "pPr")
+        r_pr = _first_w(p_pr, "rPr") if p_pr is not None else None
+        if r_pr is None:
+            return
+        for child in r_pr:
+            if not isinstance(child.tag, str):
+                continue
+            local = local_name(child)
+            if is_w(child, local) and local in _REVISION_LOCALS:
+                self.gaps.add(GAP_PARAGRAPH_MARK_REVISION)
+                self._record_revision(child, local, self._revision_id(child, local))
+
+    def _move_range(self, local: str, element: etree._Element) -> None:
+        """Track the markers that wrap a move: the group name lives on the start (2c).
+
+        A ``...RangeStart`` opens a range carrying the shared ``w:name``; its
+        ``...RangeEnd`` carries only the marker's ``w:id`` and closes the innermost open
+        range with it. Markers are not revision records: the ``w:id`` of a range is not
+        the ``w:id`` of the mark inside it.
+        """
+        if local in _MOVE_RANGE_START:
+            self._move_ranges.append(
+                (wattr(element, "id"), wattr(element, "name"), _MOVE_RANGE_START[local])
+            )
+            return
+        marker = wattr(element, "id")
+        for index in reversed(range(len(self._move_ranges))):
+            if self._move_ranges[index][0] == marker:
+                del self._move_ranges[index]
+                return
+
+    def _move_group(self, local: str) -> str | None:
+        """The ``w:name`` of the innermost open range marker of the mark's own kind."""
+        if local not in _MOVE_MARKS:
+            return None
+        for _marker, name, kind in reversed(self._move_ranges):
+            if kind == local:
+                return name
+        return None
+
     def _note_skipped(self, element: etree._Element) -> None:
         """Record what skipping ``element`` loses, if anything."""
         if _holds_textbox(element):
@@ -868,22 +985,24 @@ def _walk(
     numbering: _Numbering | None = None,
     used_ids: set[str] | None = None,
     styles: Styles | None = None,
-) -> tuple[UnionStream | None, set[str], list[Node]]:
-    """One part's union stream, known-gap ids and node tree (2a + 2b)."""
+    seen_revisions: set[str] | None = None,
+) -> tuple[UnionStream | None, set[str], list[Node], list[Revision]]:
+    """One part's union stream, known-gap ids, node tree and revision facts (2a-2c)."""
     if part is None or part.tree is None:
-        return None, set(), []
+        return None, set(), [], []
     stream = _PartStream()
-    walker = _Walker(stream, part, numbering, used_ids, styles)
+    walker = _Walker(stream, part, numbering, used_ids, styles, seen_revisions)
     walker.walk(part.tree)
     if not stream.paragraphs:
         # No ``w:p`` is no address space: neither a stream nor nodes that would address
         # one. Their ids were still spent, so the next part's ids are the same either
         # way.
-        return None, walker.gaps, []
+        return None, walker.gaps, [], walker.revisions
     return (
         UnionStream(part_id=part.part_id, text=stream.text, spans=stream.spans),
         walker.gaps,
         walker.nodes,
+        walker.revisions,
     )
 
 
@@ -901,11 +1020,12 @@ def walk_part(
     does ``None``.
 
     Nodes are not returned per part: a part alone cannot resolve ``numbering.xml``, so
-    the node tree is a package-level product (:func:`walk_document`). Numbering labels
-    never reach the union, so a per-part walk without ``numbering`` streams the same
-    text.
+    the node tree is a package-level product (:func:`walk_document`). Revision facts are
+    package-level too (a ``w:id`` is one revision wherever its parts are met), so they
+    are not returned here either. Numbering labels never reach the union, so a per-part
+    walk without ``numbering`` streams the same text.
     """
-    stream, gaps, _nodes = _walk(part, numbering, used_ids, styles)
+    stream, gaps, _nodes, _revisions = _walk(part, numbering, used_ids, styles)
     return stream, gaps
 
 
@@ -955,26 +1075,36 @@ def walk_package(package: Package) -> tuple[list[UnionStream], list[str]]:
 
 
 def walk_document(package: Package) -> ParseResult:
-    """``package``'s streams, node tree and known-gap ids (2b; 2c-2e fill the rest).
+    """``package``'s streams, node tree, revision facts and known-gap ids (2b-2c).
 
-    Parts are read in the fixed order of :func:`walk_package` and node ids are spent
-    globally across them, so a ``w14:paraId`` is package-unique and the same document
-    always ids its nodes the same way. Revisions (2c) and comments (2d) are not read
-    here yet, and headings (Turn 4) are left to the heading rules.
+    Parts are read in the fixed order of :func:`walk_package`, and node ids and
+    revision ids are spent globally across them, so a ``w14:paraId`` is package-unique
+    and a revision met in two parts is one record. Comments (2d) and headings (Turn 4)
+    are not read here yet.
     """
     numbering = _Numbering(package.numbering)
     styles = Styles(package.styles)
     used_ids: set[str] = set()
+    seen_revisions: set[str] = set()
     streams: list[UnionStream] = []
     nodes: list[Node] = []
+    revisions: list[Revision] = []
     gaps: set[str] = set()
     for part in _parts(package):
-        stream, part_gaps, part_nodes = _walk(part, numbering, used_ids, styles)
+        stream, part_gaps, part_nodes, part_revisions = _walk(
+            part, numbering, used_ids, styles, seen_revisions
+        )
         gaps |= part_gaps
         if stream is not None:
             streams.append(stream)
         nodes.extend(part_nodes)
-    return ParseResult(union_streams=streams, nodes=nodes, known_gaps=sorted(gaps))
+        revisions.extend(part_revisions)
+    return ParseResult(
+        union_streams=streams,
+        nodes=nodes,
+        revisions=revisions,
+        known_gaps=sorted(gaps),
+    )
 
 
 def union_streams(package: Package) -> list[UnionStream]:

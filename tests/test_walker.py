@@ -13,6 +13,10 @@ Turn 2b adds the node tree -- kinds, spans, ``child_ids``, ids and their fallbac
 Every 2b claim is re-derived here either from the node's own ``source_ref`` (the part's
 XML, read through the namespace-canonicalizing helpers) or from the union stream, so a
 check can never agree with the walker by sharing its code.
+
+Turn 2c adds the raw revision facts. Every claim about a record -- its id, kind, author,
+date, ancestor stack and ``move_group_id`` -- is re-derived here from the part's own XML,
+and the paragraphs themselves are still checked against the 0a hand-typed literals.
 """
 from __future__ import annotations
 
@@ -183,8 +187,8 @@ def _gaps(name: str) -> list[str]:
     return walk_document(opc.Package(MODEL / f"{name}.docx")).known_gaps
 
 
-#: The known-gap ids the walker itself can report (2a + 2b). Every other id a sidecar
-#: names belongs to a later slice -- the walker has no code path that produces it.
+#: The known-gap ids the walker itself can report (2a + 2b + 2c). Every other id a
+#: sidecar names belongs to a later slice -- the walker has no code path for it.
 WALKER_OWNED_GAPS = {
     "textbox",
     "unrecognized_container",
@@ -192,6 +196,7 @@ WALKER_OWNED_GAPS = {
     "inline_sdt_transparent",
     "duplicate_content_id_churn",
     "style_chain_cycle",
+    "paragraph_mark_revision",
 }
 
 
@@ -845,6 +850,247 @@ def test_a_block_content_control_is_a_node_and_an_inline_one_is_transparent():
     assert document.text[child.spans[0].start : child.spans[0].end] == "Inside the content control."
 
 
+# --- 2c: the raw revision facts --------------------------------------------------
+
+
+def _read_parts(package: opc.Package) -> list:
+    """The parts a walk reads, in the order their streams are addressed (D2).
+
+    Re-derived here -- document, then headers, footers, footnotes, endnotes, comments, a
+    part reached twice taken once -- so a check on part order never reads the walker's own
+    list of parts.
+    """
+    parts = [package.document, *package.headers(), *package.footers()]
+    parts += [
+        part
+        for part in (package.footnotes, package.endnotes, package.comments)
+        if part is not None
+    ]
+    unique: list = []
+    seen: set[str] = set()
+    for part in parts:
+        if part.name not in seen:
+            seen.add(part.name)
+            unique.append(part)
+    return unique
+
+
+#: The range marker that opens each kind of move range.
+MOVE_RANGE_OF = {"moveFromRangeStart": "moveFrom", "moveToRangeStart": "moveTo"}
+
+
+def _marks_from_xml(part) -> list[tuple]:
+    """Every revision mark in ``part``, re-derived from its XML -- never from the walker.
+
+    Document (pre-)order over the four mark locals; an id-less mark numbered ``noid<n>``
+    in that same order; a mark's ancestors the marks that enclose it; and a move's group
+    read off the innermost open range marker *of the mark's own kind* -- the marker's
+    ``w:name``, never its ``w:id``. Returns ``(id, ancestors, kind, author, date, group)``.
+
+    A whole-part read, so it agrees with the walk only while no mark hides in a container
+    the walk skips (a text box, an unknown container).
+    """
+    marks: list[tuple] = []
+    ranges: list[tuple[str | None, str | None, str]] = []
+    counter = 0
+
+    def visit(element, ancestors: tuple[str, ...]) -> None:
+        nonlocal counter
+        for child in element:
+            if not isinstance(child.tag, str):
+                continue
+            local = opc.local_name(child)
+            if not opc.is_w(child, local):
+                visit(child, ancestors)
+            elif local in REVISION_KINDS:
+                raw = opc.wattr(child, "id")
+                if raw is None:
+                    raw, counter = f"noid{counter}", counter + 1
+                ident = f"{local}:{raw}"
+                marks.append(
+                    (
+                        ident,
+                        ancestors,
+                        local,
+                        opc.wattr(child, "author") or "",
+                        opc.wattr(child, "date"),
+                        next(
+                            (name for _marker, name, kind in reversed(ranges) if kind == local),
+                            None,
+                        ),
+                    )
+                )
+                visit(child, ancestors + (ident,))
+            else:
+                if local in MOVE_RANGE_OF:
+                    ranges.append(
+                        (opc.wattr(child, "id"), opc.wattr(child, "name"), MOVE_RANGE_OF[local])
+                    )
+                elif local in ("moveFromRangeEnd", "moveToRangeEnd"):
+                    marker = opc.wattr(child, "id")
+                    for index in reversed(range(len(ranges))):
+                        if ranges[index][0] == marker:
+                            del ranges[index]
+                            break
+                visit(child, ancestors)
+
+    visit(part.tree, ())
+    return marks
+
+
+@pytest.mark.parametrize("name", MODEL_NAMES)
+def test_model_sidecar_revisions_are_walked_exactly(name):
+    """The fixture's own labels: one record per label, in document order, no others."""
+    sidecar = labels.load_sidecar(MODEL / f"{name}.expected.json")
+    revisions = walk_document(opc.Package(MODEL / f"{name}.docx")).revisions
+    assert [revision.id for revision in revisions] == [
+        label.id for label in sidecar.revisions
+    ], name
+    for revision, label in zip(revisions, sidecar.revisions):
+        assert revision.kind.value == label.kind, (name, revision.id)
+        assert revision.author == label.author, (name, revision.id)
+        assert revision.date == label.date, (name, revision.id)
+        assert revision.move_group_id == label.move_group_id, (name, revision.id)
+
+
+@pytest.mark.parametrize("path", ALL_DOCX, ids=lambda p: p.name)
+def test_every_revision_is_re_derived_from_the_parts_own_xml(path):
+    """The records are the marks the parts hold: id, ancestry, kind, author, date, group.
+
+    One record per id, the first meeting in the order the parts are addressed.
+    """
+    expected: list[tuple] = []
+    seen: set[str] = set()
+    for part in _read_parts(opc.Package(path)):
+        for mark in _marks_from_xml(part):
+            if mark[0] not in seen:
+                seen.add(mark[0])
+                expected.append(mark)
+    got = [
+        (
+            revision.id,
+            tuple(revision.ancestors),
+            revision.kind.value,
+            revision.author,
+            revision.date,
+            revision.move_group_id,
+        )
+        for revision in walk_document(opc.Package(path)).revisions
+    ]
+    assert got == expected, path
+
+
+@pytest.mark.parametrize("path", ALL_DOCX, ids=lambda p: p.name)
+def test_every_id_on_an_ancestor_stack_is_a_revision_record(path):
+    """Turn 2's tiling rule: a stack is spelled out of revision ids, and nothing else."""
+    parsed = walk_document(opc.Package(path))
+    recorded = {revision.id for revision in parsed.revisions}
+    on_stacks = {
+        ident for stream in parsed.union_streams for span in stream.spans for ident in span.stack
+    }
+    assert on_stacks <= recorded, (path, sorted(on_stacks - recorded))
+
+
+def test_a_deleted_paragraph_mark_is_a_record_and_a_loud_gap():
+    """The mark is a fact about the paragraph; honoring it is what Phase 1 declines."""
+    package = opc.Package(MODEL / "deleted_paragraph_mark.docx")
+    parsed = walk_document(package)
+    assert parsed.known_gaps == ["paragraph_mark_revision"]
+    (record,) = parsed.revisions
+    assert (record.id, record.kind.value, record.author) == ("del:9", "del", "A. Ito")
+    assert record.date == "2026-01-01T00:00:00Z"
+    assert record.ancestors == [] and record.move_group_id is None
+    # the break is retained, and the paragraph mark's deletion masks no text
+    document = next(s for s in parsed.union_streams if s.part_id == package.document.part_id)
+    assert document.text == "First half," + TERMINATOR + "second half." + TERMINATOR
+
+
+def test_an_inserted_paragraph_mark_takes_the_same_gap(tmp_path):
+    body = (
+        '<w:p><w:pPr><w:rPr><w:ins w:id="4" w:author="A. Ito"/></w:rPr></w:pPr>'
+        "<w:r><w:t>Kept.</w:t></w:r></w:p>"
+    )
+    parsed = walk_document(opc.Package(_docx(tmp_path, body)))
+    assert parsed.known_gaps == ["paragraph_mark_revision"]
+    (record,) = parsed.revisions
+    assert (record.id, record.kind.value, record.date) == ("ins:4", "ins", None)
+    assert record.ancestors == [] and record.move_group_id is None
+
+
+def test_a_missing_author_is_empty_and_a_missing_date_is_none(tmp_path):
+    """Both are optional in Word: the record says nothing it was not told."""
+    body = '<w:p><w:ins w:id="1"><w:r><w:t>Added.</w:t></w:r></w:ins></w:p>'
+    parsed = walk_document(opc.Package(_docx(tmp_path, body)))
+    (record,) = parsed.revisions
+    assert (record.id, record.kind.value, record.author, record.date) == ("ins:1", "ins", "", None)
+    assert parsed.known_gaps == []
+
+
+def test_a_move_group_is_the_range_markers_name_and_not_an_id(tmp_path):
+    """Word brackets a move with range markers: they hold the shared ``w:name``, and a
+    marker's own ``w:id`` is not the ``w:id`` of the mark inside it."""
+    body = (
+        '<w:moveFromRangeStart w:id="40" w:name="mgA"/>'
+        '<w:p><w:moveFrom w:id="5" w:author="A" w:date="d">'
+        "<w:r><w:delText>Moved here.</w:delText></w:r></w:moveFrom></w:p>"
+        '<w:moveFromRangeEnd w:id="40"/>'
+        '<w:moveToRangeStart w:id="41" w:name="mgA"/>'
+        '<w:p><w:moveTo w:id="6" w:author="A" w:date="d">'
+        "<w:r><w:t>Moved away.</w:t></w:r></w:moveTo></w:p>"
+        '<w:moveToRangeEnd w:id="41"/>'
+    )
+    package = opc.Package(_docx(tmp_path, body))
+    parsed = walk_document(package)
+    assert [(r.id, r.move_group_id) for r in parsed.revisions] == [
+        ("moveFrom:5", "mgA"),
+        ("moveTo:6", "mgA"),
+    ]
+    # the markers are not records of their own, and they are not a lost container
+    assert parsed.known_gaps == []
+    document = next(s for s in parsed.union_streams if s.part_id == package.document.part_id)
+    assert document.text == "Moved here." + TERMINATOR + "Moved away." + TERMINATOR
+
+
+def test_a_move_with_no_range_marker_has_no_group(tmp_path):
+    body = (
+        '<w:p><w:moveFrom w:id="7" w:author="A"><w:r><w:delText>Moved.</w:delText></w:r>'
+        "</w:moveFrom></w:p>"
+    )
+    parsed = walk_document(opc.Package(_docx(tmp_path, body)))
+    (record,) = parsed.revisions
+    assert (record.id, record.move_group_id) == ("moveFrom:7", None)
+
+
+def test_a_revision_id_met_again_is_one_record_first_in_document_order(tmp_path):
+    """Word repeats one ``w:id`` across the runs of one revision."""
+    body = (
+        '<w:p><w:ins w:id="1" w:author="First" w:date="d1"><w:r><w:t>one </w:t></w:r></w:ins>'
+        '<w:ins w:id="1" w:author="First" w:date="d1"><w:r><w:t>two</w:t></w:r></w:ins></w:p>'
+    )
+    package = opc.Package(_docx(tmp_path, body))
+    parsed = walk_document(package)
+    (record,) = parsed.revisions
+    assert (record.id, record.author, record.date) == ("ins:1", "First", "d1")
+    assert parsed.known_gaps == []
+    document = next(s for s in parsed.union_streams if s.part_id == package.document.part_id)
+    assert document.text == "one two" + TERMINATOR
+    assert [span.stack for span in document.spans] == [["ins:1"], []]
+
+
+def test_a_repeated_id_met_in_a_deeper_place_still_carries_its_own_frame(tmp_path):
+    """The record is the first meeting's; the stack still names the id where it nests."""
+    body = (
+        '<w:p><w:ins w:id="1" w:author="A"><w:r><w:t>flat</w:t></w:r></w:ins></w:p>'
+        '<w:p><w:del w:id="2" w:author="A"><w:ins w:id="1" w:author="A">'
+        "<w:r><w:t>nested</w:t></w:r></w:ins></w:del></w:p>"
+    )
+    package = opc.Package(_docx(tmp_path, body))
+    parsed = walk_document(package)
+    assert [revision.id for revision in parsed.revisions] == ["ins:1", "del:2"]
+    document = next(s for s in parsed.union_streams if s.part_id == package.document.part_id)
+    assert ["del:2", "ins:1"] in [span.stack for span in document.spans]
+
+
 # --- determinism ----------------------------------------------------------------
 
 
@@ -855,6 +1101,7 @@ def test_walking_the_same_package_twice_is_identical(path):
     assert first.known_gaps == second.known_gaps
     assert first.union_streams == second.union_streams
     assert first.nodes == second.nodes
+    assert first.revisions == second.revisions
 
 
 # --- the gap doc and the code agree --------------------------------------------
