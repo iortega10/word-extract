@@ -1,0 +1,53 @@
+{
+  "record": {
+    "groups": [
+      {
+        "canonical": "subrogation",
+        "rules": {},
+        "stemming": "porter",
+        "synonyms": [
+          "right of subrogation",
+          "right of recovery",
+          "waiver of subrogation"
+        ],
+        "tags": {
+          "category": "coverage"
+        }
+      },
+      {
+        "canonical": "non-compliance",
+        "rules": {},
+        "stemming": null,
+        "synonyms": [
+          "noncompliance"
+        ],
+        "tags": {
+          "category": "compliance"
+        }
+      },
+      {
+        "canonical": "aggregate limit",
+        "rules": {},
+        "stemming": null,
+        "synonyms": [
+          "policy aggregate"
+        ],
+        "tags": {
+          "category": "limits"
+        }
+      },
+      {
+        "canonical": "named insured",
+        "rules": {},
+        "stemming": null,
+        "synonyms": [
+          "additional insured"
+        ],
+        "tags": {
+          "category": "parties"
+        }
+      }
+    ]
+  },
+  "schema_version": "4"
+}
