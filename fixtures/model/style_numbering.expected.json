@@ -49,7 +49,7 @@
       "style": "Heading1"
     },
     {
-      "kind": "para",
+      "kind": "heading",
       "label": null,
       "level": 1,
       "paragraph": 6,
@@ -161,7 +161,7 @@
       "accepted": "Localized heading",
       "clause": "8",
       "index": 6,
-      "note": "a non-English heading style has no name to match; only its style's outlineLvl (1) identifies it. Kind is paragraph until Turn 4 decides headings.",
+      "note": "a non-English heading style has no name to match; only its style's outlineLvl (1) identifies it, so the outlineLvl rule fires and the paragraph is a heading.",
       "original": "Localized heading",
       "spans": [
         {

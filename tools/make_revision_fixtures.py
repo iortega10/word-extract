@@ -1037,7 +1037,7 @@ def _style_numbering():
         3: "ListNumber2 is basedOn ListNumber: numId inherited, ilvl 1 from its own numPr: label (a).",
         4: "level 0 resumes after a deeper item: label 3.",
         6: "a non-English heading style has no name to match; only its style's outlineLvl (1) "
-           "identifies it. Kind is paragraph until Turn 4 decides headings.",
+           "identifies it, so the outlineLvl rule fires and the paragraph is a heading.",
     }
     sidecar = {
         "fixture": "style_numbering.docx",
@@ -1055,7 +1055,7 @@ def _style_numbering():
             {"paragraph": 3, "kind": "list_item", "style": "ListNumber2", "level": None, "label": "(a)"},
             {"paragraph": 4, "kind": "list_item", "style": "ListNumber", "level": None, "label": "3."},
             {"paragraph": 5, "kind": "heading", "style": "Heading1", "level": 0, "label": "2."},
-            {"paragraph": 6, "kind": "para", "style": "Localized2", "level": 1, "label": None},
+            {"paragraph": 6, "kind": "heading", "style": "Localized2", "level": 1, "label": None},
         ],
     }
     return package(

@@ -32,6 +32,14 @@ as "no replies"; a part that does not name the comment's identity leaves it ``UN
 join is the comment's own ``w14:paraId``, and what is re-derived from the parts' XML here is
 the ``w15:paraId`` -> ``(w15:paraIdParent, w15:done)`` row; the exact flags come from the
 sidecars' hand-typed literals and the constructs a package here can build.
+
+Turn 4a adds the heading decisions. A paragraph's kind is no longer a fact about its own
+XML: an ordered rule list decides it, so the check re-derives the whole verdict -- the facts
+the rules read off the paragraph and its place in the tree, the rules those facts fire in
+order, the winner among them and hence the kind and the decision the walk records -- from
+each node's own ``source_ref``. The guards the corpus cannot exercise (the bold rule's, the
+outline rule's) and the fail-open verdict are pinned by packages built here, and the ruleset
+itself, over facts stated by hand, in ``tests/test_headings.py``.
 """
 from __future__ import annotations
 
@@ -46,7 +54,13 @@ from docextract_core import sha256_json
 
 from wordextract import opc, walker as walker_mod
 from wordextract.evals import labels
-from wordextract.model import IdStability, NodeKind, ThreadingStatus, UnionStream
+from wordextract.model import (
+    HeadingDetection,
+    IdStability,
+    NodeKind,
+    ThreadingStatus,
+    UnionStream,
+)
 from wordextract.walker import (
     TERMINATOR,
     union_stream,
@@ -518,6 +532,22 @@ KIND_BY_LOCAL = {
 
 HEADING_STYLE = re.compile(r"heading\s*([1-9])", re.IGNORECASE)
 
+#: Turn 4a's rules, in the order that decides which fired rule wins, and the two
+#: patterns/thresholds the rules read. Literals here, never imported from
+#: ``wordextract.headings``: a check may not agree with the walker by sharing its code.
+RULES = ("style", "outlineLvl", "outlineIlvl", "boldShort")
+TITLE_STYLE = "title"
+BOLD_MAX_CHARS = 120
+
+#: The elements the walk's inline descent reaches a ``w:r`` through, and the revision marks
+#: whose text the paragraph does not say -- the two things a run's boldness and length turn
+#: on. A ``w:sdt`` is not here: the descent enters only its first ``w:sdtContent``.
+INLINE_DESCENT = frozenset(
+    {"r", "hyperlink", "fldSimple", "smartTag", "customXml", "dir", "bdo",
+     "ins", "del", "moveFrom", "moveTo"}
+)
+HIDDEN_REVISIONS = frozenset({"del", "moveFrom"})
+
 
 def _w_child(element, local: str):
     """The element's own ``w:``-family child of this local name, strict or not."""
@@ -545,44 +575,257 @@ def _element_at(package: opc.Package, source_ref: str):
     return element
 
 
-def _kind_from_xml(element, package: opc.Package) -> NodeKind:
-    """The kind rule read off the element itself, with numbering resolved through its style.
+def _int_or(value: str | None, default: int | None = None) -> int | None:
+    """``value`` as an int, or ``default`` when it is missing or not a number."""
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
 
-    A heading style wins (a numbered heading is a heading); otherwise a non-zero numId,
-    on the paragraph or on its style chain, makes a list item.
+
+def _style_chain_facts(package: opc.Package, style_id: str | None):
+    """A style's ``basedOn`` chain and the nearest definition of each property read here.
+
+    A second reading of ``Styles.resolve``: ``numId``, ``ilvl`` and ``outlineLvl`` each
+    resolve to the nearest style in the chain that states them, an undefined style or
+    ``basedOn`` just ends the chain, and only a cycle is broken.
+    """
+    empty = ((), None, None, None)
+    part = package.styles
+    if style_id is None or part is None or part.tree is None:
+        return empty
+    defined = {
+        opc.wattr(node, "styleId"): node
+        for node in part.tree
+        if isinstance(node.tag, str) and opc.local_name(node) == "style"
+    }
+    chain: list[str] = []
+    num_id = ilvl = outline = None
+    current: str | None = style_id
+    while current is not None and current in defined and current not in chain:
+        node = defined[current]
+        chain.append(current)
+        p_pr = _w_child(node, "pPr")
+        num_pr = _w_child(p_pr, "numPr")
+        if num_id is None:
+            num_id = _w_val(num_pr, "numId")
+        if ilvl is None:
+            ilvl = _int_or(_w_val(num_pr, "ilvl"))
+        if outline is None:
+            outline = _int_or(_w_val(p_pr, "outlineLvl"))
+        current = _w_val(node, "basedOn")
+    return tuple(chain), num_id, ilvl, outline
+
+
+def _numbering_facts(package: opc.Package):
+    """A second reading of ``numbering.xml`` for the two lookups the rules make.
+
+    ``(numId, ilvl) -> w:pStyle`` is what the ``outlineIlvl`` rule reads (a ``w:lvl`` is
+    only a level at all when it states a ``w:lvlText``, and a ``w:lvlOverride`` replaces
+    the level it overrides); ``(abstractNumId, styleId) -> ilvl`` is the level a
+    ``w:lvl/w:pStyle`` links a paragraph style to, which is how a style whose ``w:numPr``
+    gives only a ``w:numId`` gets its ``w:ilvl``.
+    """
+    numbers: dict[str, str] = {}
+    abstracts: dict[str, dict[int, str | None]] = {}
+    overrides: dict[tuple[str, int], str | None] = {}
+    style_levels: dict[tuple[str, str], int] = {}
+    part = package.numbering
+    if part is None or part.tree is None:
+        return numbers, abstracts, overrides, style_levels
+    for child in part.tree:
+        if not isinstance(child.tag, str):
+            continue
+        local = opc.local_name(child)
+        if not opc.is_w(child, local):
+            continue
+        if local == "abstractNum":
+            ident = opc.wattr(child, "abstractNumId")
+            if ident is None:
+                continue
+            levels: dict[int, str | None] = {}
+            for lvl in child:
+                if not opc.is_w(lvl, "lvl"):
+                    continue
+                ilvl = _int_or(opc.wattr(lvl, "ilvl"))
+                if ilvl is None:
+                    continue
+                style = _w_val(lvl, "pStyle")
+                if style is not None:
+                    style_levels[(ident, style)] = ilvl
+                if _w_val(lvl, "lvlText") is not None:
+                    levels[ilvl] = style
+            abstracts[ident] = levels
+        elif local == "num":
+            num_id = opc.wattr(child, "numId")
+            abstract = _w_val(child, "abstractNumId")
+            if num_id is None or abstract is None:
+                continue
+            numbers[num_id] = abstract
+            for override in child:
+                if not opc.is_w(override, "lvlOverride"):
+                    continue
+                ilvl = _int_or(opc.wattr(override, "ilvl"))
+                lvl = _w_child(override, "lvl")
+                if ilvl is None or lvl is None or _w_val(lvl, "lvlText") is None:
+                    continue
+                overrides[(num_id, ilvl)] = _w_val(lvl, "pStyle")
+    return numbers, abstracts, overrides, style_levels
+
+
+def _level_link(numbering, num_id: str, ilvl: int) -> str | None:
+    """The ``w:pStyle`` a ``(numId, ilvl)`` pair's level links, or ``None``."""
+    numbers, abstracts, overrides, _ = numbering
+    abstract = numbers.get(num_id)
+    if abstract is None:
+        return None
+    if (num_id, ilvl) in overrides:
+        return overrides[(num_id, ilvl)]
+    return abstracts.get(abstract, {}).get(ilvl)
+
+
+def _linked_level(numbering, num_id: str, chain: tuple[str, ...]) -> int | None:
+    """The level a style in ``chain`` is linked to by an outline ``w:lvl/w:pStyle``."""
+    numbers, _abstracts, _overrides, style_levels = numbering
+    abstract = numbers.get(num_id)
+    if abstract is None:
+        return None
+    for style_id in chain:
+        ilvl = style_levels.get((abstract, style_id))
+        if ilvl is not None:
+            return ilvl
+    return None
+
+
+def _heading_style(value: str | None) -> bool:
+    """The ``style`` rule's pattern: ``Title``, or ``Heading`` plus a level 1-9."""
+    if value is None:
+        return False
+    return value.casefold() == TITLE_STYLE or HEADING_STYLE.fullmatch(value) is not None
+
+
+def _direct_bold(run) -> bool:
+    """A run's own ``w:rPr/w:b``: a bare ``w:b`` is bold, an off value is not."""
+    r_pr = _w_child(run, "rPr")
+    b = _w_child(r_pr, "b") if r_pr is not None else None
+    if b is None:
+        return False
+    value = opc.wattr(b, "val")
+    return value is None or value.strip().lower() not in ("0", "false", "off")
+
+
+def _scanned_runs(element, visible: bool = True) -> list[tuple[str, bool]]:
+    """The ``(text, bold)`` of every ``w:r`` the walk's inline descent reaches (4a).
+
+    A run is scanned where the descent reaches it -- directly, under an inline wrapper, a
+    revision mark, or a ``w:sdt``'s first ``w:sdtContent`` -- and only its own direct
+    ``w:t`` text counts. Under ``w:del`` / ``w:moveFrom`` the text is not the paragraph's,
+    so the run is not scanned at all.
+    """
+    found: list[tuple[str, bool]] = []
+    for child in element:
+        if not isinstance(child.tag, str) or not opc.is_w(child, opc.local_name(child)):
+            continue
+        local = opc.local_name(child)
+        if local == "sdt":
+            content = _w_child(child, "sdtContent")
+            if content is not None:
+                found.extend(_scanned_runs(content, visible))
+            continue
+        if local not in INLINE_DESCENT:
+            continue
+        text = "".join(grand.text or "" for grand in child if opc.is_w(grand, "t"))
+        if local == "r" and text and visible:
+            found.append((text, _direct_bold(child)))
+        found.extend(_scanned_runs(child, visible and local not in HIDDEN_REVISIONS))
+    return found
+
+
+def _paragraph_facts(element, package: opc.Package, numbering) -> dict:
+    """The facts the ordered rules read off one paragraph and its place in the tree."""
+    p_pr = _w_child(element, "pPr")
+    style = _w_val(p_pr, "pStyle")
+    chain, style_num_id, style_ilvl, style_outline = _style_chain_facts(package, style)
+    level = _int_or(_w_val(p_pr, "outlineLvl"))
+    if level is None:
+        level = style_outline
+    num_pr = _w_child(p_pr, "numPr")
+    num_id = _w_val(num_pr, "numId")
+    if num_id is None:
+        num_id = style_num_id
+    numbered = None
+    if num_id is not None and num_id != "0":
+        ilvl = _int_or(_w_val(num_pr, "ilvl"))
+        if ilvl is None:
+            ilvl = style_ilvl
+        if ilvl is None:
+            ilvl = _linked_level(numbering, num_id, chain)
+        numbered = (num_id, ilvl or 0)
+    runs = _scanned_runs(element)
+    return {
+        "style": style,
+        "outline_level": level,
+        "numbering_level": None if numbered is None else numbered[1],
+        "numbering_style": None if numbered is None else _level_link(numbering, *numbered),
+        "bold_all": bool(runs) and all(bold for _, bold in runs),
+        "chars": sum(len(text) for text, _ in runs),
+        "in_cell": any(opc.is_w(node, "tc") for node in element.iterancestors()),
+    }
+
+
+def _fired_rules(facts: dict, list_continuation: bool) -> tuple[str, ...]:
+    """The rules that fire on these facts, in the ruleset's order (4a)."""
+    fired = []
+    if _heading_style(facts["style"]):
+        fired.append("style")
+    if facts["outline_level"] is not None:
+        fired.append("outlineLvl")
+    if facts["numbering_level"] is not None and _heading_style(facts["numbering_style"]):
+        fired.append("outlineIlvl")
+    if (
+        facts["bold_all"]
+        and 0 < facts["chars"] <= BOLD_MAX_CHARS
+        and not facts["in_cell"]
+        and not list_continuation
+    ):
+        fired.append("boldShort")
+    assert fired == [rule for rule in RULES if rule in fired]
+    return tuple(fired)
+
+
+def _kind_and_rules(element, package: opc.Package, numbering, kinds: dict):
+    """A node's decided kind and the rules behind it, from the part's XML (2b + 4a).
+
+    The fallback kind is the paragraph's own -- a numbered paragraph is a list item,
+    everything else a paragraph -- and only a fired rule makes it a heading. A paragraph's
+    ``list_continuation`` is the decided kind of the nearest preceding sibling block.
     """
     local = opc.local_name(element)
     if local != "p":
-        return KIND_BY_LOCAL[local]
-    properties = _w_child(element, "pPr")
-    style = _w_val(properties, "pStyle")
-    if style is not None and HEADING_STYLE.fullmatch(style):
-        return NodeKind.HEADING
-    num_id = _w_val(_w_child(properties, "numPr"), "numId")
-    if num_id is None:
-        num_id = _style_num_id(package, style)
-    if num_id is not None and num_id != "0":
-        return NodeKind.LIST_ITEM
-    return NodeKind.PARA
-
-
-def _style_num_id(package: opc.Package, style_id: str | None) -> str | None:
-    """A second, independent reading of ``basedOn`` inheritance for ``numId`` only."""
-    if style_id is None or package.styles is None or package.styles.tree is None:
-        return None
-    defined = {
-        opc.wattr(node, "styleId"): node for node in package.styles.tree if isinstance(node.tag, str)
-        and opc.local_name(node) == "style"
-    }
-    seen: set[str] = set()
-    while style_id is not None and style_id in defined and style_id not in seen:
-        seen.add(style_id)
-        node = defined[style_id]
-        num_id = _w_val(_w_child(_w_child(node, "pPr"), "numPr"), "numId")
-        if num_id is not None:
-            return num_id
-        style_id = _w_val(node, "basedOn")
-    return None
+        return KIND_BY_LOCAL[local], None
+    previous = None
+    for sibling in element.getparent():
+        if sibling is element:
+            break
+        if not isinstance(sibling.tag, str) or not opc.is_w(sibling, opc.local_name(sibling)):
+            continue
+        sibling_local = opc.local_name(sibling)
+        if sibling_local == "p":
+            previous = kinds.get(id(sibling))
+            if previous is None:
+                previous = _kind_and_rules(sibling, package, numbering, kinds)[0]
+        elif sibling_local in KIND_BY_LOCAL:
+            previous = KIND_BY_LOCAL[sibling_local]
+    facts = _paragraph_facts(element, package, numbering)
+    fired = _fired_rules(facts, previous is NodeKind.LIST_ITEM)
+    if fired:
+        kind = NodeKind.HEADING
+    else:
+        kind = NodeKind.LIST_ITEM if facts["numbering_level"] is not None else NodeKind.PARA
+    kinds[id(element)] = kind
+    return kind, fired
 
 
 def test_every_node_kind_is_exercised_by_the_corpus():
@@ -593,13 +836,176 @@ def test_every_node_kind_is_exercised_by_the_corpus():
 
 
 @pytest.mark.parametrize("path", ALL_DOCX, ids=lambda p: p.name)
-def test_a_nodes_kind_is_re_derivable_from_its_own_source_ref(path):
+def test_a_nodes_kind_and_heading_decision_are_re_derivable_from_its_part(path):
+    """Turn 4a: the kind and the recorded decision both follow from the paragraph's XML.
+
+    The ruleset decides headings, so a node's kind is no longer a fact about its own XML
+    alone: what is re-derived here is the whole verdict -- the facts the rules read off the
+    paragraph and its place in the tree, the rules those facts fire, in the ruleset's
+    order, the winner among them, and hence the kind and the decision the walk records.
+    """
     package = opc.Package(path)
-    nodes = walk_document(package).nodes
-    assert nodes, path
-    for node in nodes:
+    parsed = walk_document(package)
+    assert parsed.nodes, path
+    numbering = _numbering_facts(package)
+    kinds: dict[int, NodeKind] = {}
+    decisions = {decision.node_id: decision for decision in parsed.heading_decisions}
+    assert len(decisions) == len(parsed.heading_decisions), path
+    paragraphs = set()
+    for node in parsed.nodes:
         element = _element_at(package, node.source_ref)
-        assert node.kind is _kind_from_xml(element, package), node.source_ref
+        kind, fired = _kind_and_rules(element, package, numbering, kinds)
+        assert node.kind is kind, node.source_ref
+        if opc.local_name(element) != "p":
+            assert fired is None, node.source_ref
+            continue
+        paragraphs.add(node.id)
+        decision = decisions[node.id]
+        assert decision.fired_rules == list(fired), node.source_ref
+        assert decision.winner == (fired[0] if fired else None), node.source_ref
+        assert decision.disputed_rules == list(fired[1:]), node.source_ref
+    # Every paragraph-like node carries exactly one decision, and nothing else does.
+    assert paragraphs == set(decisions), path
+
+
+# --- 4a: the ordered heading rules, over the walk -------------------------------
+
+#: An auto-numbered ``Heading1``: the numbering and the outline level both live on the
+#: style, and the ``w:lvl`` its numId names links the style back -- so one paragraph can
+#: fire three of the four rules.
+OUTLINE_HEADING_STYLE = (
+    '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/>'
+    '<w:pPr><w:numPr><w:numId w:val="5"/></w:numPr><w:outlineLvl w:val="0"/></w:pPr></w:style>'
+)
+
+
+def _bold(text: str) -> str:
+    """One directly bold run, in a paragraph of its own."""
+    return f'<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>{text}</w:t></w:r></w:p>'
+
+
+def _outline_numbering(pstyle: str = "Heading1") -> str:
+    """Numbering whose level 0 links ``pstyle``; level 1 is a plain list level."""
+    outline = (
+        f'<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/>'
+        f'<w:pStyle w:val="{pstyle}"/><w:lvlText w:val="%1."/></w:lvl>'
+    )
+    return _abstract_num("0", outline + _lvl(1, "decimal", "%2.")) + _num("5", "0")
+
+
+def _spanned(path) -> list:
+    return [node for node in walk_document(opc.Package(path)).nodes if node.spans]
+
+
+def test_a_title_style_is_a_heading_though_the_style_names_no_level(tmp_path):
+    """``Title`` is the one heading style without a level: kind heading, level ``None``."""
+    nodes = _spanned(_docx(tmp_path, _p("The title", style="Title")))
+    assert [node.kind for node in nodes] == [NodeKind.HEADING]
+    assert nodes[0].level is None
+
+
+def test_an_outline_level_on_the_style_is_a_heading_with_no_english_name(tmp_path):
+    """The only rule that catches ``Titre 2``: no name to match, but an ``w:outlineLvl``."""
+    styles = (
+        '<w:style w:type="paragraph" w:styleId="Localized2"><w:name w:val="Titre 2"/>'
+        '<w:pPr><w:outlineLvl w:val="1"/></w:pPr></w:style>'
+    )
+    parsed = walk_document(opc.Package(_docx(tmp_path, _p("Titre", style="Localized2"), styles=styles)))
+    node = next(node for node in parsed.nodes if node.spans)
+    assert node.kind is NodeKind.HEADING and node.level == 1
+    assert parsed.heading_decisions[0].winner == "outlineLvl"
+
+
+def test_a_level_linking_a_heading_style_is_an_outline_numbered_heading(tmp_path):
+    """The outline rule's whole guard is structural: the level the paragraph sits on links
+    a heading style. The same numId's other level is an ordinary list."""
+    body = _p("Outline", num_id="5") + _p("List", num_id="5", ilvl=1)
+    path = _docx(tmp_path, body, numbering=_outline_numbering(), styles=_style_xml("Heading1"))
+    parsed = walk_document(opc.Package(path))
+    assert [node.kind for node in parsed.nodes if node.spans] == [
+        NodeKind.HEADING,
+        NodeKind.LIST_ITEM,
+    ]
+    assert [decision.winner for decision in parsed.heading_decisions] == ["outlineIlvl", None]
+
+
+def test_a_list_level_that_links_no_heading_style_is_not_a_heading(tmp_path):
+    numbering = _abstract_num("0", _lvl(0, "decimal", "%1.")) + _num("5", "0")
+    nodes = _spanned(_docx(tmp_path, _p("Item", num_id="5"), numbering=numbering))
+    assert [node.kind for node in nodes] == [NodeKind.LIST_ITEM]
+
+
+def test_the_walk_records_every_fired_rule_the_winner_and_the_disagreements(tmp_path):
+    """One decision per paragraph, in document order: an auto-numbered ``Heading1`` fires
+    three rules, so the kind is a heading under a style the rule list agreed with twice."""
+    body = _p("Numbered heading", style="Heading1") + _p("plain text")
+    path = _docx(tmp_path, body, numbering=_outline_numbering(), styles=OUTLINE_HEADING_STYLE)
+    parsed = walk_document(opc.Package(path))
+    nodes = [node for node in parsed.nodes if node.spans]
+    assert [node.kind for node in nodes] == [NodeKind.HEADING, NodeKind.PARA]
+    assert nodes[0].numbering_label == "1." and nodes[0].level == 0
+    assert [decision.node_id for decision in parsed.heading_decisions] == [n.id for n in nodes]
+    first, second = parsed.heading_decisions
+    assert first.fired_rules == ["style", "outlineLvl", "outlineIlvl"]
+    assert first.winner == "style"
+    assert first.disputed_rules == ["outlineLvl", "outlineIlvl"]
+    assert (second.fired_rules, second.winner, second.disputed_rules) == ([], None, [])
+    assert parsed.heading_detection is HeadingDetection.NORMAL
+
+
+def test_an_earlier_rule_beats_a_later_one_whatever_the_evidence(tmp_path):
+    """``outlineLvl`` beats ``boldShort``: the order decides, not which fact looks stronger."""
+    body = (
+        '<w:p><w:pPr><w:outlineLvl w:val="2"/></w:pPr>'
+        '<w:r><w:rPr><w:b/></w:rPr><w:t>Bold</w:t></w:r></w:p>'
+    )
+    decision = walk_document(opc.Package(_docx(tmp_path, body))).heading_decisions[0]
+    assert decision.fired_rules == ["outlineLvl", "boldShort"]
+    assert decision.winner == "outlineLvl"
+    assert decision.disputed_rules == ["boldShort"]
+
+
+def test_an_all_bold_short_paragraph_is_a_heading(tmp_path):
+    parsed = walk_document(opc.Package(_docx(tmp_path, _bold("Bold heading"))))
+    node = next(node for node in parsed.nodes if node.spans)
+    assert node.kind is NodeKind.HEADING
+    assert parsed.heading_decisions[0].winner == "boldShort"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Bold</w:t></w:r><w:r><w:t> and plain</w:t></w:r></w:p>",
+        f'<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>{"x" * 200}</w:t></w:r></w:p>',
+        '<w:p><w:r><w:rPr><w:b w:val="0"/></w:rPr><w:t>Not bold</w:t></w:r></w:p>',
+        "<w:p/>",
+        '<w:p><w:del w:id="1" w:author="A" w:date="2020-01-01T00:00:00Z">'
+        '<w:r><w:rPr><w:b/></w:rPr><w:t>Bold but deleted</w:t></w:r></w:del></w:p>',
+        '<w:tbl><w:tr><w:tc><w:p><w:r><w:rPr><w:b/></w:rPr>'
+        "<w:t>Bold label</w:t></w:r></w:p></w:tc></w:tr></w:tbl>",
+    ],
+    ids=["one-run-plain", "over-the-limit", "b-off", "empty", "hidden-as-deleted", "in-a-cell"],
+)
+def test_the_all_bold_rule_does_not_fire(tmp_path, body):
+    """Every guard of the bold rule, one package each: none of these is a heading."""
+    assert NodeKind.HEADING not in {node.kind for node in _spanned(_docx(tmp_path, body))}
+
+
+def test_a_bold_paragraph_continuing_a_list_is_not_a_heading(tmp_path):
+    """A bold line under a list item continues that list; the guard is positional."""
+    numbering = _abstract_num("0", _lvl(0, "decimal", "%1.")) + _num("5", "0")
+    after = _spanned(_docx(tmp_path, _p("One", num_id="5") + _bold("Bold"), numbering=numbering))
+    assert [node.kind for node in after] == [NodeKind.LIST_ITEM, NodeKind.PARA]
+    before = _spanned(_docx(tmp_path, _bold("Bold") + _p("One", num_id="5"), numbering=numbering))
+    assert [node.kind for node in before] == [NodeKind.HEADING, NodeKind.LIST_ITEM]
+
+
+def test_a_walk_that_finds_no_heading_at_all_is_degraded(tmp_path):
+    """Fail open: no rule fired, so the verdict is the flat fallback -- never a failure."""
+    parsed = walk_document(opc.Package(_docx(tmp_path, _p("Just text"))))
+    assert parsed.heading_detection is HeadingDetection.DEGRADED
+    assert [node.kind for node in parsed.nodes] == [NodeKind.PARA]
+    assert [decision.winner for decision in parsed.heading_decisions] == [None]
 
 
 # --- spans ---------------------------------------------------------------------

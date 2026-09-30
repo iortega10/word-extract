@@ -33,14 +33,14 @@ The union is only an address space: view text and the view/union offset maps are
 derived on demand from it (Turn 3), and the union itself is never matched or
 summarized.
 
-2b adds the nodes over that address space. A paragraph is a **heading** when its own
-``w:pStyle`` is ``heading`` plus a level 1-9 (case-insensitive) -- a numbered heading is
-still a heading, and carries its label -- else a **list item** when it is numbered, by
-its own ``w:numPr`` or by the numbering its style defines (``styles.py``: ``basedOn``
-chain, nearest definition wins). ``style`` is the paragraph's own ``w:pStyle`` and
-``level`` its own ``w:outlineLvl``, else the one its style chain defines (never a
-resolved font or spacing cascade). The numbering label comes from a small counter over
-``numbering.xml``. ``table``, ``row`` and a block ``w:sdt`` are containers: their text
+2b adds the nodes over that address space. A paragraph's own kind is the *fallback* one:
+a **list item** when it is numbered, by its own ``w:numPr`` or by the numbering its style
+defines (``styles.py``: ``basedOn`` chain, nearest definition wins), else a paragraph --
+headings are decided by the Turn 4a ruleset and promoted here (see below), so a numbered
+paragraph keeps its label whichever kind it ends up with. ``style`` is the paragraph's own
+``w:pStyle`` and ``level`` its own ``w:outlineLvl``, else the one its style chain defines
+(never a resolved font or spacing cascade). The numbering label comes from a small counter
+over ``numbering.xml``. ``table``, ``row`` and a block ``w:sdt`` are containers: their text
 belongs to the nodes under them, so they carry no span and list ``child_ids``.
 ``header``, ``footer`` and ``footnote`` are the same kind of container -- a part's own
 node, whose text is addressed by the paragraph nodes under it -- and every
@@ -101,6 +101,19 @@ is not stated); a comment the part cannot name -- no ``w14:paraId``, or one the 
 not list -- is ``UNKNOWN`` and carries neither. Threading is the body's own fact, so an
 unanchored comment is threaded exactly the same way. ``commentsExtended`` is not a union
 or addressed stream: it holds no ``w:p``, so it contributes no text and no nodes.
+
+4a adds the heading decisions. Every paragraph-like node -- a paragraph, a list item or a
+heading, in the body, a note or a comment -- carries one
+:class:`~wordextract.model.HeadingDecision`: the rules that fired on it, in the ruleset's
+order, and the winner among them (``headings.py`` holds the rule list itself). The facts
+the rules read are read *here*, off the XML, and they are the paragraph's own ``w:pStyle``,
+its outline level, the ``w:ilvl``/``w:lvl/w:pStyle`` pair that numbers it, whether every
+**visible** run of it is directly bold, its visible length in characters, whether it sits
+in a ``w:tc`` and whether the block before it was a list item -- so the walk has to know
+which runs are hidden *and* what the previous block was. A rule that fires makes the node
+a ``heading`` (its ``level`` stays the outline level the walk read); no rule firing leaves
+the fallback kind, and a walk whose decisions found no heading at all reports
+``heading_detection: degraded`` (:func:`~wordextract.headings.summarize`).
 """
 from __future__ import annotations
 
@@ -111,9 +124,11 @@ from lxml import etree
 
 from docextract_core import sha256_json
 
+from .headings import ParagraphFacts, RuleFiring, decide, summarize
 from .model import (
     Comment,
     ElementarySpan,
+    HeadingDecision,
     IdStability,
     Node,
     NodeKind,
@@ -144,6 +159,11 @@ _REVISION_KINDS = {
 
 #: The four revision marks, in document order.
 _REVISION_LOCALS = tuple(_REVISION_KINDS)
+
+#: The revision marks whose text the paragraph does not say (4a): text under them is
+#: deleted or moved away, so a run inside one is not visible -- neither as the paragraph's
+#: length nor as bold evidence. Text under ``w:ins`` / ``w:moveTo`` is visible.
+_HIDDEN_REVISIONS = frozenset({"del", "moveFrom"})
 
 #: Tracked *formatting or structure* changes. None of them changes text, so none is a
 #: :class:`~wordextract.model.Revision` here, but silently ignoring them would hide that
@@ -191,10 +211,6 @@ GAP_DUPLICATE_CONTENT_ID = "duplicate_content_id_churn"
 GAP_STYLE_CHAIN_CYCLE = "style_chain_cycle"
 GAP_UNANCHORED_COMMENT = "unanchored_comment"
 GAP_DANGLING_COMMENT_PARENT = "dangling_comment_parent"
-
-#: A paragraph's own ``w:pStyle`` is a heading style when it is ``heading`` plus one
-#: level 1-9; the style name is matched, never a resolved style definition.
-_HEADING_STYLE = re.compile(r"heading\s*([1-9])", re.IGNORECASE)
 
 #: ``w:lvlText``'s ``%N`` placeholder: the counter of level ``N - 1``.
 _PLACEHOLDER = re.compile(r"%([1-9]|1[0-9])")
@@ -421,11 +437,16 @@ class _PartStream:
 
 @dataclass(frozen=True)
 class _Level:
-    """One ``w:lvl``: its number format, its label template and its start value."""
+    """One ``w:lvl``: its number format, its label template, its start value and the
+
+    style it links (``w:pStyle``) -- how the ``outlineIlvl`` rule tells an outline-numbered
+    level from a list level (4a).
+    """
 
     format: str
     text: str
     start: int | None
+    style: str | None = None
 
 
 class _Numbering:
@@ -455,7 +476,20 @@ class _Numbering:
         level = self._levels.get((num_id, ilvl)) or self._abstracts.get(abstract, {}).get(ilvl)
         if level is None:
             return None
-        return _Level(level.format, level.text, self._starts.get((num_id, ilvl), level.start))
+        return _Level(level.format, level.text, self._starts.get((num_id, ilvl), level.start), level.style)
+
+    def level_style(self, num_id: str, ilvl: int) -> str | None:
+        """The style a ``(numId, ilvl)`` pair's level links by ``w:pStyle``, or ``None``.
+
+        The same lookup as :meth:`level`: a ``w:lvlOverride`` replaces the abstract level --
+        including when its own ``w:lvl`` states no ``w:pStyle``, which then clears the link
+        rather than falling back to the level it replaced.
+        """
+        abstract = self._numbers.get(num_id)
+        if abstract is None:
+            return None
+        level = self._levels.get((num_id, ilvl)) or self._abstracts.get(abstract, {}).get(ilvl)
+        return level.style if level is not None else None
 
     def style_level(self, num_id: str, chain: tuple[str, ...]) -> int | None:
         """The level a style in ``chain`` is linked to by a ``w:lvl/w:pStyle``, if any."""
@@ -526,6 +560,7 @@ def _level_of(element: etree._Element | None) -> _Level | None:
         format=_child_val(element, "numFmt") or "decimal",
         text=text,
         start=_int_or(_child_val(element, "start"), None),
+        style=_child_val(element, "pStyle"),
     )
 
 
@@ -663,7 +698,14 @@ def _paragraph_facts(
     styles: Styles | None = None,
     numbering: _Numbering | None = None,
 ) -> tuple[NodeKind, str | None, int | None, tuple[str, int] | None, bool]:
-    """A paragraph's kind, style, level, numbering and whether its style chain has a cycle."""
+    """A paragraph's fallback kind, style, level, numbering and whether its style chain has
+    a cycle.
+
+    The kind is the fallback one -- a numbered paragraph is a list item, everything else a
+    paragraph -- because a heading is not a fact about the paragraph's own XML alone: the
+    Turn 4a ruleset decides it, and :func:`~wordextract.headings.decide` is the only
+    producer of :attr:`~wordextract.model.NodeKind.HEADING`.
+    """
     p_pr = _first_w(paragraph, "pPr")
     style = _child_val(p_pr, "pStyle")
     facts = styles.resolve(style) if styles is not None else StyleFacts()
@@ -671,13 +713,26 @@ def _paragraph_facts(
     if level is None:
         level = facts.outline_level
     numbered = _resolve_numbering(p_pr, facts, numbering)
-    if style is not None and _HEADING_STYLE.fullmatch(style):
-        kind = NodeKind.HEADING
-    elif numbered is not None:
+    if numbered is not None:
         kind = NodeKind.LIST_ITEM
     else:
         kind = NodeKind.PARA
     return kind, style, level, numbered, facts.broken
+
+
+@dataclass
+class _RunScan:
+    """One paragraph's run facts, as the all-bold rule needs them (4a).
+
+    The runs counted are the paragraph's **visible** ones -- the runs of a ``w:del`` or a
+    ``w:moveFrom`` are not text the paragraph says, so they are neither bold evidence nor
+    length. ``chars`` of 0 is the paragraph that says nothing visible, which no bold
+    evidence can make a heading.
+    """
+
+    runs: int = 0
+    chars: int = 0
+    all_bold: bool = True
 
 
 @dataclass
@@ -688,6 +743,10 @@ class _Frame:
     whole text, and its occurrence ordinal counts *document* order, not the order nodes
     happen to close in. So the walk collects frames -- text, spans, children -- and a
     second pass materializes the records, in document order, container before children.
+
+    ``firing`` is set on the paragraph-like frames only (4a): the ruleset's outcome for
+    that paragraph, in document order, which is what the heading decisions are recorded
+    from. Set is not "fired": a paragraph no rule claims still carries one.
     """
 
     kind: NodeKind
@@ -702,6 +761,7 @@ class _Frame:
     ident: str = ""
     stability: IdStability = IdStability.PATH
     occurrence: int = 0
+    firing: RuleFiring | None = None
 
     @property
     def own_text(self) -> str:
@@ -807,6 +867,23 @@ def _on_off(value: str | None) -> bool | None:
     if lowered in _OFF_VALUES:
         return False
     return None
+
+
+def _bold_run(run: etree._Element) -> bool:
+    """Whether a ``w:r`` is **directly** bold: its own ``w:rPr/w:b``, no style cascade (4a).
+
+    The paragraph's style, and the run's own ``w:rStyle``, are never resolved: D1 excludes
+    the character-style cascade, so ``w:b`` on the run is the only bold evidence there is.
+    A bare ``w:b`` is bold, and so is one whose ``w:val`` is not a stated ``ST_OnOff`` --
+    a producer that wrote ``w:b`` meant bold, and an unparsable value is not a denial.
+    ``w:bCs`` (the complex-script twin) and a ``w:b`` under ``w:rPrChange`` are not the
+    run's own direct bold: neither is matched.
+    """
+    r_pr = _first_w(run, "rPr")
+    b = _first_w(r_pr, "b") if r_pr is not None else None
+    if b is None:
+        return False
+    return _on_off(wattr(b, "val")) is not False
 
 
 def _read_comments_extended(part: Part | None) -> dict[str, _CommentEx] | None:
@@ -942,9 +1019,13 @@ class _Walker:
         self._roots: list[_Frame] = []
         self.nodes: list[Node] = []
         self.revisions: list[Revision] = []
+        # The heading decisions of this part's paragraph-like nodes, in document order (4a).
+        self.decisions: list[HeadingDecision] = []
         self.gaps: set[str] = set()
         self._noid = 0
         self._stack: list[str] = []
+        # The open paragraph's run scan, while its content is walked (4a).
+        self._scan: _RunScan | None = None
         # The open move ranges, outermost first: (marker w:id, shared w:name, mark local).
         self._move_ranges: list[tuple[str | None, str | None, str]] = []
         # One flag per open field: has that field passed its ``separate``?
@@ -960,12 +1041,23 @@ class _Walker:
         self.nodes = self._materialize()
 
     def _walk_block(self, element: etree._Element) -> None:
+        """Walk a block container's children, threading the block before each paragraph (4a).
+
+        ``previous`` is the kind of the nearest preceding block that *is* one: a paragraph
+        (its decided kind, so a promoted heading is a heading for the paragraph after it), or
+        a container that opens a node. The block markers -- a comment range, a move range --
+        and a skipped element leave it alone, and descending into a plain block container
+        (``w:sdtContent``) starts its own block, so the thread never crosses a boundary.
+        """
+        previous: NodeKind | None = None
         for child in element:
             if not isinstance(child.tag, str):
                 continue
             local = local_name(child)
             if is_w(child, "p"):
-                self._walk_paragraph(child)
+                previous = self._walk_paragraph(
+                    child, list_continuation=previous is NodeKind.LIST_ITEM
+                )
             elif is_w(child, "comment"):
                 self._walk_comment(child)
             elif is_w(child, local) and local in _COMMENT_MARKERS:
@@ -973,6 +1065,7 @@ class _Walker:
                 self._comment_marker(local, child)
             elif is_w(child, local) and local in _KINDS_BY_LOCAL:
                 self._walk_container(child)
+                previous = _KINDS_BY_LOCAL[local]
             elif is_w(child, local) and local in _BLOCK_CONTAINERS:
                 self._walk_block(child)
             elif is_w(child, local) and (local in _MOVE_RANGE_START or local in _MOVE_RANGE_END):
@@ -987,7 +1080,16 @@ class _Walker:
         self._walk_block(element)
         self._close_node()
 
-    def _walk_paragraph(self, paragraph: etree._Element) -> None:
+    def _walk_paragraph(
+        self, paragraph: etree._Element, *, list_continuation: bool = False
+    ) -> NodeKind:
+        """Walk one ``w:p`` and decide its kind (2b + 4a).
+
+        The node opens with the paragraph's fallback kind and is promoted to a heading once
+        the ruleset has seen it, because two of the facts it reads -- an all-bold short
+        paragraph's boldness and length -- are only known after its runs are walked. The
+        kind returned is the decided one: the block after a paragraph reads it.
+        """
         kind, style, level, numbered, broken = _paragraph_facts(
             paragraph, self._styles, self._numbering
         )
@@ -996,18 +1098,66 @@ class _Walker:
         label = self._labels.label(*numbered) if numbered is not None else None
         self._stack = []
         self._fields = []
+        self._scan = _RunScan()
         self._paragraph_mark_revisions(paragraph)
         self._open_node(kind, paragraph, style=style, level=level, label=label)
         self._walk_inline(paragraph)
+        frame = self._open[-1]
+        frame.firing = decide(
+            ParagraphFacts(
+                style=style,
+                outline_level=level,
+                numbering_level=numbered[1] if numbered is not None else None,
+                numbering_style=self._numbering_style(numbered),
+                bold_all=self._scan.all_bold,
+                chars=self._scan.chars,
+                in_cell=any(open_frame.kind is NodeKind.CELL for open_frame in self._open),
+                list_continuation=list_continuation,
+            )
+        )
+        if frame.firing.is_heading:
+            frame.kind = NodeKind.HEADING
         self._close_node()
         self._stack = []
         self._fields = []
+        self._scan = None
         self._stream.terminate()
         # The paragraph is closed, so its terminator reaches its ancestors only: a
         # paragraph's own text excludes its own terminator, a cell's includes it.
         self._feed(TERMINATOR)
+        return frame.kind
 
-    def _walk_inline(self, element: etree._Element) -> None:
+    def _numbering_style(self, numbered: tuple[str, int] | None) -> str | None:
+        """The heading style the paragraph's numbering level links by ``w:pStyle`` (4a)."""
+        if numbered is None or self._numbering is None:
+            return None
+        return self._numbering.level_style(*numbered)
+
+    def _note_run(self, run: etree._Element, visible: bool) -> None:
+        """Count one ``w:r`` into the open paragraph's run scan (4a).
+
+        A hidden run -- one under ``w:del`` or ``w:moveFrom`` -- says nothing, so it is not
+        noted at all; its text still reaches the union, because the walk records what the
+        part holds. A run with no direct ``w:t`` text (an ``w:instrText`` or an ``w:tab``
+        alone) is not text-bearing and is not noted either.
+        """
+        scan = self._scan
+        if scan is None or not visible:
+            return
+        text = "".join(child.text or "" for child in run if is_w(child, "t"))
+        if not text:
+            return
+        scan.runs += 1
+        scan.chars += len(text)
+        if not _bold_run(run):
+            scan.all_bold = False
+
+    def _walk_inline(self, element: etree._Element, visible: bool = True) -> None:
+        """Walk inline content, threading whether it is text the paragraph says (4a).
+
+        ``visible`` is False only under a ``w:del`` or a ``w:moveFrom``: the run scan is the
+        one place it matters, and it is read *and* threaded here, so no caller can forget it.
+        """
         for child in element:
             if not isinstance(child.tag, str):
                 continue
@@ -1022,7 +1172,7 @@ class _Walker:
                 if is_new:
                     self._record_revision(child, local, ident)
                 self._stack.append(ident)
-                self._walk_inline(child)
+                self._walk_inline(child, visible and local not in _HIDDEN_REVISIONS)
                 self._stack.pop()
             elif local in _MOVE_RANGE_START or local in _MOVE_RANGE_END:
                 self._move_range(local, child)
@@ -1043,15 +1193,20 @@ class _Walker:
                 self._emit(_NO_BREAK_HYPHEN)
             elif local == "sym":
                 self._emit(_sym_text(child))
+            elif local == "r":
+                # A run is ordinary content, so it is only *scanned* here: a run under a
+                # chained container (a hyperlink, a field) is still a run of this paragraph.
+                self._note_run(child, visible)
+                self._walk_inline(child, visible)
             elif local in _INLINE_CONTAINERS:
-                self._walk_inline(child)
+                self._walk_inline(child, visible)
             elif local == "sdt":
                 # Transparent: no node, no boundary, no ancestor. What the content
                 # control *was* is not in the union, so the loss is reported.
                 self.gaps.add(GAP_INLINE_SDT_TRANSPARENT)
                 content = _first_w(child, "sdtContent")
                 if content is not None:
-                    self._walk_inline(content)
+                    self._walk_inline(content, visible)
             else:
                 # A drawing, w:txbxContent or an unknown w: container is skipped,
                 # never guessed at -- and never lost silently.
@@ -1124,6 +1279,17 @@ class _Walker:
                 occurrence_index=frame.occurrence,
             )
         )
+        if frame.firing is not None:
+            # Every paragraph-like frame carries one decision, in document order -- the order
+            # the records are materialized in -- whether or not a rule fired (4a).
+            self.decisions.append(
+                HeadingDecision(
+                    node_id=frame.ident,
+                    fired_rules=list(frame.firing.fired),
+                    winner=frame.firing.winner,
+                    disputed_rules=list(frame.firing.disputed),
+                )
+            )
         for child in frame.children:
             self._record(child, nodes)
 
@@ -1349,27 +1515,29 @@ def _walk(
     styles: Styles | None = None,
     seen_revisions: dict[str, list[tuple[tuple[str, str | None], str]]] | None = None,
     comments: _Comments | None = None,
-) -> tuple[UnionStream | None, set[str], list[Node], list[Revision]]:
-    """One part's union stream, known-gap ids, node tree and revision facts (2a-2c).
+) -> tuple[UnionStream | None, set[str], list[Node], list[Revision], list[HeadingDecision]]:
+    """One part's union stream, known-gap ids, node tree, revision facts and heading
+    decisions (2a-2c + 4a).
 
     Comment markers and bodies are collected into ``comments`` when one is given (2d):
     they are package-level facts, joined after every part has been walked.
     """
     if part is None or part.tree is None:
-        return None, set(), [], []
+        return None, set(), [], [], []
     stream = _PartStream()
     walker = _Walker(stream, part, numbering, used_ids, styles, seen_revisions, comments)
     walker.walk(part.tree)
     if not stream.paragraphs:
         # No ``w:p`` is no address space: neither a stream nor nodes that would address
         # one. Their ids were still spent, so the next part's ids are the same either
-        # way.
-        return None, walker.gaps, [], walker.revisions
+        # way -- and with no ``w:p`` there is no paragraph to decide a heading on.
+        return None, walker.gaps, [], walker.revisions, walker.decisions
     return (
         UnionStream(part_id=part.part_id, text=stream.text, spans=stream.spans),
         walker.gaps,
         walker.nodes,
         walker.revisions,
+        walker.decisions,
     )
 
 
@@ -1393,7 +1561,7 @@ def walk_part(
     one part is joined to a range in another. Numbering labels never reach the union, so
     a per-part walk without ``numbering`` streams the same text.
     """
-    stream, gaps, _nodes, _revisions = _walk(part, numbering, used_ids, styles)
+    stream, gaps, _nodes, _revisions, _decisions = _walk(part, numbering, used_ids, styles)
     return stream, gaps
 
 
@@ -1449,8 +1617,9 @@ def walk_document(package: Package) -> ParseResult:
     revision ids are spent globally across them, so a ``w14:paraId`` is package-unique
     and a revision met in two parts is one record. Comments (2d) are joined from the
     markers met while walking the parts and the bodies off ``word/comments.xml``, and
-    threaded (2e) from ``commentsExtended``;
-    headings (Turn 4) are not read here yet.
+    threaded (2e) from ``commentsExtended``; the heading decisions (4a) are the parts'
+    decisions concatenated in that same order, and the detection verdict is what
+    :func:`~wordextract.headings.summarize` reads off them.
     """
     numbering = _Numbering(package.numbering)
     styles = Styles(package.styles)
@@ -1460,9 +1629,10 @@ def walk_document(package: Package) -> ParseResult:
     streams: list[UnionStream] = []
     nodes: list[Node] = []
     revisions: list[Revision] = []
+    decisions: list[HeadingDecision] = []
     gaps: set[str] = set()
     for part in _parts(package):
-        stream, part_gaps, part_nodes, part_revisions = _walk(
+        stream, part_gaps, part_nodes, part_revisions, part_decisions = _walk(
             part, numbering, used_ids, styles, seen_revisions, comments
         )
         gaps |= part_gaps
@@ -1470,6 +1640,7 @@ def walk_document(package: Package) -> ParseResult:
             streams.append(stream)
         nodes.extend(part_nodes)
         revisions.extend(part_revisions)
+        decisions.extend(part_decisions)
     records, comment_gaps = _assemble_comments(
         comments,
         {stream.part_id: stream.text for stream in streams},
@@ -1481,6 +1652,8 @@ def walk_document(package: Package) -> ParseResult:
         nodes=nodes,
         revisions=revisions,
         comments=records,
+        heading_decisions=decisions,
+        heading_detection=summarize(decisions).detection,
         known_gaps=sorted(gaps),
     )
 
