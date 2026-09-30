@@ -64,6 +64,18 @@ slice that owns them lands; the full list is checked at Turn 9.
   document has them, so "who changed what" is known to be incomplete. A deleted row's
   *text* is still captured whenever its runs sit inside `w:del`.
 
+## Owned by the comment walker (Turn 2d)
+
+- **`unanchored_comment`** -- a comment could not be anchored to a span of union text.
+  Its `w:commentRangeStart` / `w:commentRangeEnd` pair has to open and close in the
+  **same** part (a range is one part's `Span`), so a range that never closes, one whose
+  end marker is in another part, or a bare `w:commentReference` with no range at all
+  leaves the comment with `anchor = None` and **no `anchor_text`**. A marker naming a
+  `w:comment` body the comments part does not hold -- a range whose comment was dropped --
+  is reported the same way, since a marker that anchors nothing is the same loss. The
+  comment is still a record: its author, date and body text are known, only the text it
+  was made about is not.
+
 ## Declared by fixtures, owned by later slices
 
 `field_result_view_ancestry`, `w_cr_unspecified`, `empty_parts_unverified`,

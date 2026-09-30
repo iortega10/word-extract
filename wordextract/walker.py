@@ -71,6 +71,23 @@ for the text under it. Nothing is synthesized: a ``w:del`` is never paired with 
 fact like any other, and because its effect is not honored -- the break is retained in
 every view -- the omission is recorded as the loud ``paragraph_mark_revision`` gap
 (``text-model-spec.md`` section 7).
+
+2d adds the comment facts. A comment's **anchor** is the union span its
+``w:commentRangeStart`` ... ``w:commentRangeEnd`` pair brackets -- by document position,
+never by ``w:id`` order, so a ``w:id`` met before still anchors at the range it names.
+A range is a span in *one* part's union, so a pair that opens and closes in the same
+part anchors there -- a range that crosses a section boundary is still that part's span;
+anything else -- a range that never closes, or closes in another part, or a
+``w:commentReference`` with no range at all -- leaves the comment with ``anchor = None``
+and is reported as the ``unanchored_comment`` gap, as is a marker naming no ``w:comment``
+body at all. ``anchor_text`` is the anchor's union text *clamped* at both edges: a
+terminator at either edge is a boundary rather than text the comment covers, while the
+terminators between a multi-paragraph comment's paragraphs stay, so its anchor text
+contains ``"\\n"``. Comment bodies are read off ``word/comments.xml``: a comment is a
+container addressed by the ordinary paragraph nodes under it (there is no comment node
+kind), and its own text excludes the terminator after its last paragraph. A comment's
+identity is its last paragraph's ``w14:paraId``, else a content hash -- never its
+``w:id``, which Word renumbers (D4).
 """
 from __future__ import annotations
 
@@ -82,6 +99,7 @@ from lxml import etree
 from docextract_core import sha256_json
 
 from .model import (
+    Comment,
     ElementarySpan,
     IdStability,
     Node,
@@ -139,6 +157,11 @@ _UNRECORDED_REVISION_LOCALS = frozenset(
 _MOVE_RANGE_START = {"moveFromRangeStart": "moveFrom", "moveToRangeStart": "moveTo"}
 _MOVE_RANGE_END = frozenset({"moveFromRangeEnd", "moveToRangeEnd"})
 
+#: The comment markers (2d). Neither range marker holds text -- they bracket a comment's
+#: anchor at their own document position -- and a ``w:commentReference`` names its comment
+#: where it sits without bracketing anything. None of them is a revision.
+_COMMENT_MARKERS = frozenset({"commentRangeStart", "commentRangeEnd", "commentReference"})
+
 #: The revision marks a range wraps, outermost run first.
 _MOVE_MARKS = frozenset(_MOVE_RANGE_START.values())
 
@@ -152,6 +175,7 @@ GAP_UNRECORDED_REVISION_KIND = "unrecorded_revision_kind"
 GAP_INLINE_SDT_TRANSPARENT = "inline_sdt_transparent"
 GAP_DUPLICATE_CONTENT_ID = "duplicate_content_id_churn"
 GAP_STYLE_CHAIN_CYCLE = "style_chain_cycle"
+GAP_UNANCHORED_COMMENT = "unanchored_comment"
 
 #: A paragraph's own ``w:pStyle`` is a heading style when it is ``heading`` plus one
 #: level 1-9; the style name is matched, never a resolved style definition.
@@ -220,7 +244,8 @@ _SKIP_BLOCK_LOCALS = frozenset(
     }
 )
 
-#: Elements that never contribute text and are never descended into.
+#: Elements that never contribute text and are never descended into. The comment markers
+#: are not listed: they are handled explicitly, for their document position (2d).
 _SKIP_LOCALS = frozenset(
     {
         "pPr",
@@ -228,9 +253,6 @@ _SKIP_LOCALS = frozenset(
         "proofErr",
         "bookmarkStart",
         "bookmarkEnd",
-        "commentRangeStart",
-        "commentRangeEnd",
-        "commentReference",
         "lastRenderedPageBreak",
         "instrText",
     }
@@ -270,6 +292,14 @@ def _first_w(element: etree._Element, local: str) -> etree._Element | None:
         if is_w(child, local):
             return child
     return None
+
+
+def _last_w(element: etree._Element, local: str) -> etree._Element | None:
+    found = None
+    for child in element:
+        if is_w(child, local):
+            found = child
+    return found
 
 
 def _child_val(element: etree._Element | None, local: str) -> str | None:
@@ -671,9 +701,113 @@ def _spans_of(kind: NodeKind, start: int, end: int, part_id: str) -> list[Span]:
     return [Span(part_id=part_id, start=start, end=end)]
 
 
+@dataclass(frozen=True)
+class _CommentBody:
+    """One ``w:comment``: the facts 2d reads off it, before the anchor join (2d)."""
+
+    w_id: str | None
+    author: str
+    initials: str
+    date: str | None
+    para_id: str | None
+    text: str
+
+
+@dataclass
+class _Comments:
+    """The package-level comment facts one walk collects for :func:`walk_document` (2d).
+
+    The join can only be made once every part has been walked: a marker anchors into its
+    own part's union text, and the comment bodies live in another part (``word/comments.xml``).
+    So the walk records the markers it meets and the bodies it walks, and
+    :func:`_assemble_comments` joins them.
+    """
+
+    #: The open ``commentRangeStart`` markers by ``w:id``: ``(part_id, start offset)``.
+    open_ranges: dict[str, tuple[str, int]] = field(default_factory=dict)
+    #: The closed ranges by ``w:id``: ``(part_id, start offset, end offset)``.
+    ranges: dict[str, tuple[str, int, int]] = field(default_factory=dict)
+    #: Every marker's ``w:id``, ``None`` for a marker that carries none.
+    markers: set[str | None] = field(default_factory=set)
+    #: The comment bodies, in the comments part's document order.
+    bodies: list[_CommentBody] = field(default_factory=list)
+
+
+def _clamp_anchor(text: str, start: int, end: int) -> tuple[int, int]:
+    """A range's offsets clamped to the text a comment actually covers (2d).
+
+    A marker can land on a paragraph terminator -- Word writes the end marker after the
+    paragraph mark of a comment that covers whole paragraphs -- and a terminator at
+    either edge is a boundary, not covered text. Interior terminators stay: a comment
+    over several paragraphs does contain the breaks between them.
+    """
+    while start < end and text[start] == TERMINATOR:
+        start += 1
+    while end > start and text[end - 1] == TERMINATOR:
+        end -= 1
+    return start, end
+
+
+def _comment_identity(body: _CommentBody, hashes: dict[str, int]) -> tuple[str, IdStability]:
+    """A comment's identity and how it was derived (2d, D4).
+
+    The ``w14:paraId`` of the comment's last paragraph when it has one; else a content
+    hash over the canonical ``(author, date, text)`` triple -- ``None`` serialized
+    deterministically -- plus the ordinal among equal hashes in document order. The
+    anchor start is deliberately not folded in: it is a union offset, so it would churn
+    with ``textmodel_version``.
+    """
+    if body.para_id is not None:
+        return body.para_id, IdStability.PARAID
+    digest = sha256_json([body.author, body.date, body.text])
+    occurrence = hashes.get(digest, 0)
+    hashes[digest] = occurrence + 1
+    return f"hash:{digest}:{occurrence}", IdStability.CONTENT_HASH
+
+
+def _assemble_comments(
+    comments: _Comments, text_by_part: dict[str, str]
+) -> tuple[list[Comment], set[str]]:
+    """Join the comment bodies with the ranges their markers bracketed (2d).
+
+    A comment *is* its body, so the records come in body order. A body whose range never
+    closed in one part, or whose part has no union text to anchor into, carries no anchor
+    and reports the ``unanchored_comment`` gap; so does a marker naming no body at all --
+    there no record can carry it, so the gap is reported on its own.
+    """
+    named = {body.w_id for body in comments.bodies if body.w_id is not None}
+    gaps = {GAP_UNANCHORED_COMMENT} if any(m not in named for m in comments.markers) else set()
+    hashes: dict[str, int] = {}
+    records: list[Comment] = []
+    for body in comments.bodies:
+        span = comments.ranges.get(body.w_id) if body.w_id is not None else None
+        text = text_by_part.get(span[0]) if span is not None else None
+        anchor: Span | None = None
+        anchor_text = ""
+        if span is not None and text is not None:
+            start, end = _clamp_anchor(text, span[1], span[2])
+            anchor = Span(part_id=span[0], start=start, end=end)
+            anchor_text = text[start:end]
+        if anchor is None:
+            gaps.add(GAP_UNANCHORED_COMMENT)
+        para_id, stability = _comment_identity(body, hashes)
+        records.append(
+            Comment(
+                para_id=para_id,
+                author=body.author,
+                initials=body.initials,
+                id_stability=stability,
+                date=body.date,
+                anchor=anchor,
+                anchor_text=anchor_text,
+            )
+        )
+    return records, gaps
+
+
 class _Walker:
     """Walks one part's tree into a :class:`_PartStream`, its node tree and its revision
-    facts (2a + 2b + 2c)."""
+    and comment facts (2a + 2b + 2c + 2d)."""
 
     def __init__(
         self,
@@ -683,6 +817,7 @@ class _Walker:
         used_ids: set[str] | None = None,
         styles: Styles | None = None,
         seen_revisions: dict[str, list[tuple[tuple[str, str | None], str]]] | None = None,
+        comments: _Comments | None = None,
     ) -> None:
         self._stream = stream
         self._part = part
@@ -690,6 +825,10 @@ class _Walker:
         self._styles = styles
         self._labels = _LabelCounter(numbering)
         self._used_ids = used_ids if used_ids is not None else set()
+        # The package-level comment facts (2d), when the walk is a document walk: a
+        # comment's range anchors into a part's union, so it can only be joined once every
+        # part has been walked. ``None`` walks the part's text without joining anything.
+        self._comments = comments
         # w:id-based id -> [((author, date), final id)], shared across parts: one w:id is
         # one revision only while it carries one author and date.
         self._seen_revisions = seen_revisions if seen_revisions is not None else {}
@@ -722,6 +861,11 @@ class _Walker:
             local = local_name(child)
             if is_w(child, "p"):
                 self._walk_paragraph(child)
+            elif is_w(child, "comment"):
+                self._walk_comment(child)
+            elif is_w(child, local) and local in _COMMENT_MARKERS:
+                # A comment range can bracket whole paragraphs; it holds no text.
+                self._comment_marker(local, child)
             elif is_w(child, local) and local in _KINDS_BY_LOCAL:
                 self._walk_container(child)
             elif is_w(child, local) and local in _BLOCK_CONTAINERS:
@@ -777,6 +921,8 @@ class _Walker:
                 self._stack.pop()
             elif local in _MOVE_RANGE_START or local in _MOVE_RANGE_END:
                 self._move_range(local, child)
+            elif local in _COMMENT_MARKERS:
+                self._comment_marker(local, child)
             elif local in ("t", "delText"):
                 if all(self._fields):
                     self._emit(_text_of(child))
@@ -993,6 +1139,58 @@ class _Walker:
                 if is_new:
                     self._record_revision(child, local, ident)
 
+    def _walk_comment(self, comment: etree._Element) -> None:
+        """One ``w:comment``: its content as ordinary nodes, and its own text (2d).
+
+        There is no comment node kind: a comment body is addressed by the paragraph nodes
+        under it, exactly as a header's is. The comment's own text excludes the terminator
+        after its **last** paragraph -- that terminator separates the comment from the next
+        one, as a paragraph's own text excludes its own terminator -- which is what a
+        ``w14:paraId``-less body hashes to.
+        """
+        start = self._stream.length
+        self._walk_block(comment)
+        end = self._stream.length
+        if end > start and self._stream.text[end - 1] == TERMINATOR:
+            end -= 1
+        if self._comments is None:
+            return
+        last = _last_w(comment, "p")
+        self._comments.bodies.append(
+            _CommentBody(
+                w_id=wattr(comment, "id"),
+                author=wattr(comment, "author") or "",
+                initials=wattr(comment, "initials") or "",
+                date=wattr(comment, "date"),
+                para_id=_para_id(last) if last is not None else None,
+                text=self._stream.text[start:end],
+            )
+        )
+
+    def _comment_marker(self, local: str, marker: etree._Element) -> None:
+        """Record one comment marker at its own document position (2d).
+
+        A ``...RangeStart`` opens a range at the current offset and its ``...RangeEnd``
+        closes it at the current offset: the range is by document position, so the
+        ``w:id`` is only the key that joins a body to its range, never an order. A range
+        is one part's span, so a marker that closes a range opened in *another* part does
+        not close it -- nothing anchors, and the comment reports ``unanchored_comment``.
+        """
+        if self._comments is None:
+            return
+        w_id = wattr(marker, "id")
+        self._comments.markers.add(w_id)
+        if w_id is None:
+            return
+        if local == "commentRangeStart":
+            # Nested, repeated and overlapping ranges are legal; the first start wins.
+            self._comments.open_ranges.setdefault(w_id, (self._part.part_id, self._stream.length))
+        elif local == "commentRangeEnd":
+            opened = self._comments.open_ranges.get(w_id)
+            if opened is not None and opened[0] == self._part.part_id:
+                del self._comments.open_ranges[w_id]
+                self._comments.ranges[w_id] = (opened[0], opened[1], self._stream.length)
+
     def _move_range(self, local: str, element: etree._Element) -> None:
         """Track the markers that wrap a move: the group name lives on the start (2c).
 
@@ -1045,12 +1243,17 @@ def _walk(
     used_ids: set[str] | None = None,
     styles: Styles | None = None,
     seen_revisions: dict[str, list[tuple[tuple[str, str | None], str]]] | None = None,
+    comments: _Comments | None = None,
 ) -> tuple[UnionStream | None, set[str], list[Node], list[Revision]]:
-    """One part's union stream, known-gap ids, node tree and revision facts (2a-2c)."""
+    """One part's union stream, known-gap ids, node tree and revision facts (2a-2c).
+
+    Comment markers and bodies are collected into ``comments`` when one is given (2d):
+    they are package-level facts, joined after every part has been walked.
+    """
     if part is None or part.tree is None:
         return None, set(), [], []
     stream = _PartStream()
-    walker = _Walker(stream, part, numbering, used_ids, styles, seen_revisions)
+    walker = _Walker(stream, part, numbering, used_ids, styles, seen_revisions, comments)
     walker.walk(part.tree)
     if not stream.paragraphs:
         # No ``w:p`` is no address space: neither a stream nor nodes that would address
@@ -1081,8 +1284,9 @@ def walk_part(
     Nodes are not returned per part: a part alone cannot resolve ``numbering.xml``, so
     the node tree is a package-level product (:func:`walk_document`). Revision facts are
     package-level too (a ``w:id`` is one revision wherever its parts are met), so they
-    are not returned here either. Numbering labels never reach the union, so a per-part
-    walk without ``numbering`` streams the same text.
+    are not returned here either, and neither are comment facts (2d): a comment body in
+    one part is joined to a range in another. Numbering labels never reach the union, so
+    a per-part walk without ``numbering`` streams the same text.
     """
     stream, gaps, _nodes, _revisions = _walk(part, numbering, used_ids, styles)
     return stream, gaps
@@ -1134,34 +1338,41 @@ def walk_package(package: Package) -> tuple[list[UnionStream], list[str]]:
 
 
 def walk_document(package: Package) -> ParseResult:
-    """``package``'s streams, node tree, revision facts and known-gap ids (2b-2c).
+    """``package``'s streams, node tree, revision and comment facts, gap ids (2b-2d).
 
     Parts are read in the fixed order of :func:`walk_package`, and node ids and
     revision ids are spent globally across them, so a ``w14:paraId`` is package-unique
-    and a revision met in two parts is one record. Comments (2d) and headings (Turn 4)
-    are not read here yet.
+    and a revision met in two parts is one record. Comments (2d) are joined from the
+    markers met while walking the parts and the bodies off ``word/comments.xml``;
+    headings (Turn 4) are not read here yet.
     """
     numbering = _Numbering(package.numbering)
     styles = Styles(package.styles)
     used_ids: set[str] = set()
     seen_revisions: dict[str, list[tuple[tuple[str, str | None], str]]] = {}
+    comments = _Comments()
     streams: list[UnionStream] = []
     nodes: list[Node] = []
     revisions: list[Revision] = []
     gaps: set[str] = set()
     for part in _parts(package):
         stream, part_gaps, part_nodes, part_revisions = _walk(
-            part, numbering, used_ids, styles, seen_revisions
+            part, numbering, used_ids, styles, seen_revisions, comments
         )
         gaps |= part_gaps
         if stream is not None:
             streams.append(stream)
         nodes.extend(part_nodes)
         revisions.extend(part_revisions)
+    records, comment_gaps = _assemble_comments(
+        comments, {stream.part_id: stream.text for stream in streams}
+    )
+    gaps |= comment_gaps
     return ParseResult(
         union_streams=streams,
         nodes=nodes,
         revisions=revisions,
+        comments=records,
         known_gaps=sorted(gaps),
     )
 

@@ -17,6 +17,14 @@ check can never agree with the walker by sharing its code.
 Turn 2c adds the raw revision facts. Every claim about a record -- its id, kind, author,
 date, ancestor stack and ``move_group_id`` -- is re-derived here from the part's own XML,
 and the paragraphs themselves are still checked against the 0a hand-typed literals.
+
+Turn 2d adds the comment facts. A record is a ``w:comment`` body; its anchor is the union
+span its own ``commentRangeStart`` ... ``commentRangeEnd`` pair brackets, *clamped* at a
+terminator edge, and ``anchor_text`` is the text of that span. What anchors is re-derived
+from the parts' XML, the exact offsets and strings come from the sidecars' hand-typed
+literals, and the shapes that cannot anchor -- a bare reference, a range that never
+closes, a range closed in another part, a marker naming no body -- are pinned by packages
+built here.
 """
 from __future__ import annotations
 
@@ -31,7 +39,7 @@ from docextract_core import sha256_json
 
 from wordextract import opc, walker as walker_mod
 from wordextract.evals import labels
-from wordextract.model import IdStability, NodeKind, UnionStream
+from wordextract.model import IdStability, NodeKind, ThreadingStatus, UnionStream
 from wordextract.walker import (
     TERMINATOR,
     union_stream,
@@ -187,7 +195,7 @@ def _gaps(name: str) -> list[str]:
     return walk_document(opc.Package(MODEL / f"{name}.docx")).known_gaps
 
 
-#: The known-gap ids the walker itself can report (2a + 2b + 2c). Every other id a
+#: The known-gap ids the walker itself can report (2a + 2b + 2c + 2d). Every other id a
 #: sidecar names belongs to a later slice -- the walker has no code path for it.
 WALKER_OWNED_GAPS = {
     "textbox",
@@ -199,6 +207,7 @@ WALKER_OWNED_GAPS = {
     "paragraph_mark_revision",
     "revision_id_collision",
     "unrecorded_revision_kind",
+    "unanchored_comment",
 }
 
 
@@ -298,13 +307,16 @@ def _docx(
     *,
     numbering: str | None = None,
     styles: str | None = None,
+    comments: str | None = None,
+    header: str | None = None,
     name: str = "synth.docx",
 ):
     """A minimal, valid package: only the parts the walker reads, nothing else.
 
     A part is resolved by relationship type plus existence and XML is parsed by its
-    extension, so ``word/numbering.xml`` needs no ``[Content_Types].xml`` override --
-    and nothing beyond this body can influence what a walk does.
+    extension, so ``word/numbering.xml`` and ``word/comments.xml`` need no
+    ``[Content_Types].xml`` override -- and nothing beyond this body can influence what a
+    walk does.
     """
     members = {
         "[Content_Types].xml": (
@@ -331,6 +343,16 @@ def _docx(
                 if styles is not None
                 else ""
             )
+            + (
+                f'<Relationship Id="rId4" Type="{opc.RT_COMMENTS}" Target="comments.xml"/>'
+                if comments is not None
+                else ""
+            )
+            + (
+                f'<Relationship Id="rId5" Type="{opc.RT_HEADER}" Target="header1.xml"/>'
+                if header is not None
+                else ""
+            )
             + "</Relationships>"
         ),
         "word/document.xml": f"<w:document {W_ATTRS}><w:body>{body}</w:body></w:document>",
@@ -339,6 +361,10 @@ def _docx(
         members["word/numbering.xml"] = f"<w:numbering {W_ATTRS}>{numbering}</w:numbering>"
     if styles is not None:
         members["word/styles.xml"] = f"<w:styles {W_ATTRS}>{styles}</w:styles>"
+    if comments is not None:
+        members["word/comments.xml"] = comments
+    if header is not None:
+        members["word/header1.xml"] = f"<w:hdr {W_ATTRS}>{header}</w:hdr>"
     path = tmp_path / name
     with zipfile.ZipFile(path, "w") as archive:
         for member, data in members.items():
@@ -1103,6 +1129,421 @@ def test_a_repeated_id_met_in_a_deeper_place_still_carries_its_own_frame(tmp_pat
     assert ["del:2", "ins:1"] in [span.stack for span in document.spans]
 
 
+# --- 2d: the comment facts -------------------------------------------------------
+
+#: The marker locals 2d reads: the pair brackets a range, a reference only names one.
+COMMENT_MARKERS = ("commentRangeStart", "commentRangeEnd", "commentReference")
+COMMENT_AUTHOR = "C. Oster"
+COMMENT_DATE = "2026-03-04T05:06:07Z"
+
+
+def _run(text: str) -> str:
+    return f'<w:r><w:t xml:space="preserve">{text}</w:t></w:r>'
+
+
+def _range_start(ident: str) -> str:
+    return f'<w:commentRangeStart w:id="{ident}"/>'
+
+
+def _range_end(ident: str) -> str:
+    return f'<w:commentRangeEnd w:id="{ident}"/>'
+
+
+def _reference(ident: str) -> str:
+    return f'<w:r><w:commentReference w:id="{ident}"/></w:r>'
+
+
+def _comment(
+    ident: str,
+    *paragraphs: str,
+    para_id: str | None = None,
+    author: str = COMMENT_AUTHOR,
+    initials: str = "CO",
+    date: str | None = COMMENT_DATE,
+) -> str:
+    """One ``w:comment``: one ``w:p`` per argument, ``para_id`` on the last of them."""
+    built = ""
+    for index, text in enumerate(paragraphs):
+        last = index == len(paragraphs) - 1
+        attrs = f' w14:paraId="{para_id}"' if para_id is not None and last else ""
+        built += f"<w:p{attrs}>{_run(text)}</w:p>"
+    head = "".join(
+        f' w:{name}="{value}"'
+        for name, value in (("author", author), ("initials", initials), ("date", date))
+        if value is not None
+    )
+    return f'<w:comment w:id="{ident}"{head}>{built}</w:comment>'
+
+
+def _comments(*bodies: str) -> str:
+    return f"<w:comments {W_ATTRS}>{''.join(bodies)}</w:comments>"
+
+
+def _walk_synth(tmp_path: Path, body: str, *, comments=None, header=None):
+    package = opc.Package(_docx(tmp_path, body, comments=comments, header=header))
+    return walk_document(package)
+
+
+#: Every sidecar that labels at least one comment: the 2d ground truth of the corpus.
+COMMENT_SIDECARS = [
+    path
+    for path in sorted(FIXTURES.rglob("*.expected.json"))
+    if labels.load_sidecar(path).comments
+]
+
+
+@pytest.mark.parametrize(
+    "sidecar_path", COMMENT_SIDECARS, ids=lambda path: f"{path.parent.name}/{path.name}"
+)
+def test_comment_anchors_are_the_sidecars_hand_typed_literals(sidecar_path):
+    """One record per labelled comment, in body order, with the label's own facts.
+
+    The ``anchor``/``anchor_text`` literals are 2d's ground truth across the corpus: a
+    range spanning runs, one inside a table cell, one inside a deletion (so the anchor is
+    deletion text), two comments on one range, a ``w14:paraId``-less body, and the
+    fixture whose labels are deliberately unanchored.
+    """
+    sidecar = labels.load_sidecar(sidecar_path)
+    parsed = walk_document(opc.Package(sidecar_path.with_name(sidecar.fixture)))
+    assert len(parsed.comments) == len(sidecar.comments), sidecar.fixture
+    for record, label in zip(parsed.comments, sidecar.comments):
+        where = (sidecar.fixture, label.id)
+        assert (record.author, record.initials) == (label.author, label.initials), where
+        assert record.anchor_text == label.anchor_text, where
+        assert (record.anchor is None) == (label.anchor_text == ""), where
+        if label.anchor is not None:
+            assert (record.anchor.start, record.anchor.end) == (
+                label.anchor.start,
+                label.anchor.end,
+            ), where
+        if label.para_id is None:
+            assert record.id_stability == IdStability.CONTENT_HASH, where
+        else:
+            assert (record.para_id, record.id_stability) == (
+                label.para_id,
+                IdStability.PARAID,
+            ), where
+
+
+def test_the_renamed_comments_extended_part_is_left_to_2e():
+    """``commentsExtended`` is 2e's: a 2d record is the body and its anchor, nothing more.
+
+    The fixture's labels name the threading facts, so this pins the slice boundary: the
+    part is resolved (a renamed path, by relationship type) and reported unverified, but
+    it never reaches a 2d record.
+    """
+    sidecar = labels.load_sidecar(MODEL / "renamed_comments_extended.expected.json")
+    comments = walk_document(opc.Package(MODEL / "renamed_comments_extended.docx")).comments
+    assert [label.threading_status for label in sidecar.comments] == ["verified"] * 2
+    assert [comment.threading_status for comment in comments] == [ThreadingStatus.UNKNOWN] * 2
+    assert [comment.parent_id for comment in comments] == [None, None]
+    assert [comment.resolved for comment in comments] == [None, None]
+    assert [comment.resolved_identity for comment in comments] == [None, None]
+
+
+def _markers_from_xml(part) -> list[tuple[str, str | None]]:
+    """Every comment marker in ``part`` as ``(local, w:id)``, in document order.
+
+    A whole-part read, so it agrees with the walk only while no marker hides in a
+    container the walk skips (a text box, an unknown container).
+    """
+    found: list[tuple[str, str | None]] = []
+
+    def visit(element) -> None:
+        for child in element:
+            if not isinstance(child.tag, str):
+                continue
+            local = opc.local_name(child)
+            if opc.is_w(child, local) and local in COMMENT_MARKERS:
+                found.append((local, opc.wattr(child, "id")))
+            visit(child)
+
+    visit(part.tree)
+    return found
+
+
+def _comment_facts_from_xml(package: opc.Package):
+    """The 2d facts of ``package``, re-derived from the parts' own XML -- never from the
+    walker.
+
+    Returns ``(bodies, ranges, named)``: every ``w:comment`` of the comments part in
+    document order as ``(w:id, author, initials, date, last paragraph's w14:paraId)``; the
+    ``w:id`` a ``commentRangeStart`` ... ``commentRangeEnd`` pair brackets *in one part*,
+    mapped to that part; and every ``w:id`` any marker names.
+    """
+    bodies: list[tuple] = []
+    if package.comments is not None:
+        for element in package.comments.tree.iter():
+            if not (isinstance(element.tag, str) and opc.is_w(element, "comment")):
+                continue
+            last = None
+            for child in element:
+                if opc.is_w(child, "p"):
+                    last = child
+            para_id = last.get(f"{{{opc.W14_NS}}}paraId") if last is not None else None
+            bodies.append(
+                (
+                    opc.wattr(element, "id"),
+                    opc.wattr(element, "author") or "",
+                    opc.wattr(element, "initials") or "",
+                    opc.wattr(element, "date"),
+                    para_id or None,
+                )
+            )
+    ranges: dict[str, str] = {}
+    opened: dict[str, str] = {}
+    named: set[str | None] = set()
+    for part in _read_parts(package):
+        for local, ident in _markers_from_xml(part):
+            named.add(ident)
+            if ident is None:
+                continue
+            if local == "commentRangeStart":
+                opened.setdefault(ident, part.part_id)
+            elif local == "commentRangeEnd" and opened.get(ident) == part.part_id:
+                del opened[ident]
+                ranges[ident] = part.part_id
+    return bodies, ranges, named
+
+
+@pytest.mark.parametrize("path", ALL_DOCX, ids=lambda p: p.name)
+def test_every_comment_is_re_derived_from_the_parts_own_xml(path):
+    """The records are the comment bodies; an anchor is what its markers bracket.
+
+    Records, their order, their metadata and their identity kind come from
+    ``word/comments.xml``; an anchor exists exactly when one part brackets the body's
+    ``w:id`` between its own start and end markers, and then it is that part's span over
+    anchored text -- the offsets themselves are pinned by the sidecar literals. A marker
+    naming no body, or a body left unanchored, is the ``unanchored_comment`` gap.
+    """
+    package = opc.Package(path)
+    parsed = walk_document(package)
+    bodies, ranges, named = _comment_facts_from_xml(package)
+    body_ids = {body[0] for body in bodies}
+    assert len(parsed.comments) == len(bodies), path
+    texts = {stream.part_id: stream.text for stream in parsed.union_streams}
+    for record, (w_id, author, initials, date, para_id) in zip(parsed.comments, bodies):
+        where = (path, w_id)
+        assert (record.author, record.initials, record.date) == (author, initials, date), where
+        if para_id is None:
+            assert record.id_stability == IdStability.CONTENT_HASH, where
+            assert record.para_id.startswith("hash:"), where
+        else:
+            assert (record.para_id, record.id_stability) == (para_id, IdStability.PARAID), where
+        part_id = ranges.get(w_id) if w_id is not None else None
+        assert (record.anchor is None) == (part_id is None), where
+        assert (record.anchor is None) == (record.anchor_text == ""), where
+        if part_id is None:
+            continue
+        assert record.anchor.part_id == part_id, where
+        text = texts[part_id]
+        assert record.anchor_text == text[record.anchor.start : record.anchor.end], where
+        assert record.anchor_text[0] != TERMINATOR, where
+        assert record.anchor_text[-1] != TERMINATOR, where
+    unanchored = any(record.anchor is None for record in parsed.comments) or any(
+        ident not in body_ids for ident in named
+    )
+    assert (walker_mod.GAP_UNANCHORED_COMMENT in parsed.known_gaps) == unanchored, path
+
+
+def test_a_range_bracketing_whole_paragraphs_clamps_both_edges(tmp_path):
+    """A marker at a paragraph boundary is a boundary, not text the comment covers."""
+    body = (
+        f"<w:p>{_run('preamble')}{_range_start('1')}</w:p>"
+        f"<w:p>{_run('covered')}</w:p>"
+        f"<w:p>{_range_end('1')}{_reference('1')}{_run('trailing')}</w:p>"
+    )
+    parsed = _walk_synth(tmp_path, body, comments=_comments(_comment("1", "Body")))
+    stream = parsed.union_streams[0]
+    assert stream.text == "preamble\ncovered\ntrailing\n"
+    (record,) = parsed.comments
+    assert (record.anchor.part_id, record.anchor.start, record.anchor.end) == (
+        stream.part_id,
+        9,
+        16,
+    )
+    assert record.anchor_text == "covered"
+    assert parsed.known_gaps == []
+
+
+def test_a_range_over_several_paragraphs_keeps_the_breaks_between_them(tmp_path):
+    """An interior terminator is covered text, so the anchor text carries a ``\\n``."""
+    body = (
+        f"<w:p>{_range_start('1')}{_run('first')}{_run(' line')}</w:p>"
+        f"<w:p>{_run('second')}{_range_end('1')}{_reference('1')}</w:p>"
+    )
+    parsed = _walk_synth(tmp_path, body, comments=_comments(_comment("1", "Body")))
+    assert parsed.union_streams[0].text == "first line\nsecond\n"
+    (record,) = parsed.comments
+    assert record.anchor_text == "first line\nsecond"
+    assert (record.anchor.start, record.anchor.end) == (0, 17)
+    assert parsed.known_gaps == []
+
+
+def test_a_range_inside_a_deletion_anchors_at_the_deleted_text(tmp_path):
+    """The anchor is a span of the union, so it is the text of whatever it covers."""
+    body = (
+        f"<w:p>{_run('Keep ')}{_range_start('1')}"
+        f'<w:del w:id="7" w:author="A. Author" w:date="{COMMENT_DATE}">'
+        f"<w:r><w:delText>gone</w:delText></w:r></w:del>"
+        f"{_range_end('1')}{_reference('1')}{_run(' rest')}</w:p>"
+    )
+    parsed = _walk_synth(tmp_path, body, comments=_comments(_comment("1", "Body")))
+    stream = parsed.union_streams[0]
+    assert stream.text == "Keep gone rest\n"
+    (record,) = parsed.comments
+    assert (record.anchor.start, record.anchor.end) == (5, 9)
+    assert record.anchor_text == "gone"
+    covered = [span for span in stream.spans if span.start >= 5 and span.end <= 9]
+    assert [tuple(span.stack) for span in covered] == [("del:7",)]
+    assert parsed.known_gaps == []
+
+
+def test_a_range_inside_a_table_cell_anchors_in_the_document_part(tmp_path):
+    """A cell is addressed by the document's union: the anchor is that part's span."""
+    body = (
+        f"<w:tbl><w:tr><w:tc><w:p>{_range_start('1')}{_run('cell text')}"
+        f"{_range_end('1')}{_reference('1')}</w:p></w:tc></w:tr></w:tbl>"
+    )
+    parsed = _walk_synth(tmp_path, body, comments=_comments(_comment("1", "Body")))
+    (record,) = parsed.comments
+    assert record.anchor.part_id == parsed.union_streams[0].part_id
+    assert record.anchor_text == "cell text"
+    assert parsed.known_gaps == []
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        "bare_reference",
+        "never_closed",
+        "end_without_start",
+        "end_before_start",
+    ],
+)
+def test_a_range_that_never_brackets_text_is_the_unanchored_gap(tmp_path, shape):
+    """Nothing anchors: no record is dropped, and the lost anchor is a loud gap."""
+    opened = _range_start("1") if shape != "bare_reference" else ""
+    if shape == "never_closed":
+        body = f"<w:p>{opened}{_run('Opened and left open.')}{_reference('1')}</w:p>"
+    elif shape == "end_without_start":
+        body = f"<w:p>{_run('Closed, never opened.')}{_range_end('1')}{_reference('1')}</w:p>"
+    elif shape == "end_before_start":
+        body = (
+            f"<w:p>{_range_end('1')}{_run('Text.')}{_range_start('1')}{_reference('1')}</w:p>"
+        )
+    else:
+        body = f"<w:p>{_run('Bare reference.')}{_reference('1')}</w:p>"
+    parsed = _walk_synth(tmp_path, body, comments=_comments(_comment("1", "Body")))
+    (record,) = parsed.comments
+    assert record.anchor is None and record.anchor_text == "", shape
+    assert parsed.known_gaps == [walker_mod.GAP_UNANCHORED_COMMENT], shape
+
+
+def test_a_repeated_start_marker_anchors_from_the_first_one(tmp_path):
+    """Repeated and nested ranges are legal, and the first ``commentRangeStart`` wins."""
+    body = (
+        f"<w:p>{_run('before ')}{_range_start('1')}{_run('A ')}{_range_start('1')}"
+        f"{_run('B')}{_range_end('1')}{_reference('1')}</w:p>"
+    )
+    parsed = _walk_synth(tmp_path, body, comments=_comments(_comment("1", "Body")))
+    (record,) = parsed.comments
+    assert (record.anchor.start, record.anchor.end) == (7, 10)
+    assert record.anchor_text == "A B"
+    assert parsed.known_gaps == []
+
+
+def test_a_marker_naming_no_body_reports_the_gap_on_its_own(tmp_path):
+    """A marker whose comment has no body has no record to carry the gap."""
+    body = (
+        f"<w:p>{_range_start('9')}{_run('Text.')}{_range_end('9')}{_reference('9')}</w:p>"
+    )
+    parsed = _walk_synth(tmp_path, body, comments=_comments())
+    assert parsed.comments == []
+    assert parsed.known_gaps == [walker_mod.GAP_UNANCHORED_COMMENT]
+
+
+def test_a_range_closed_in_another_part_does_not_anchor(tmp_path):
+    """A range is one part's span: another part's end marker cannot close it."""
+    body = f"<w:p>{_range_start('1')}{_run('Opened here.')}</w:p>"
+    header = f"<w:p>{_run('Closed there.')}{_range_end('1')}</w:p>"
+    package = opc.Package(
+        _docx(
+            tmp_path,
+            body,
+            comments=_comments(_comment("1", "Body")),
+            header=header,
+        )
+    )
+    parsed = walk_document(package)
+    assert [stream.part_id for stream in parsed.union_streams] == [
+        package.document.part_id,
+        package.headers()[0].part_id,
+        package.comments.part_id,
+    ]
+    (record,) = parsed.comments
+    assert record.anchor is None and record.anchor_text == ""
+    assert parsed.known_gaps == [walker_mod.GAP_UNANCHORED_COMMENT]
+
+
+def test_one_unanchored_comment_costs_no_other_comment_its_anchor(tmp_path):
+    """The gap is document-level: an anchored comment beside it still anchors."""
+    body = (
+        f"<w:p>{_range_start('1')}{_run('Anchored.')}{_range_end('1')}{_reference('1')}"
+        f"{_run(' Bare.')}{_reference('2')}</w:p>"
+    )
+    parsed = _walk_synth(
+        tmp_path,
+        body,
+        comments=_comments(_comment("1", "First"), _comment("2", "Second")),
+    )
+    assert [record.anchor_text for record in parsed.comments] == ["Anchored.", ""]
+    assert parsed.known_gaps == [walker_mod.GAP_UNANCHORED_COMMENT]
+
+
+def test_a_comment_identity_is_its_last_paragraphs_para_id(tmp_path):
+    """The ``w14:paraId`` of the **last** paragraph is the comment's identity (D4)."""
+    comments = _comments(
+        f'<w:comment w:id="1" w:author="{COMMENT_AUTHOR}" w:initials="CO" '
+        f'w:date="{COMMENT_DATE}">'
+        f'<w:p w14:paraId="000000AB">{_run("first")}</w:p>'
+        f'<w:p w14:paraId="000000CD">{_run("second")}</w:p>'
+        f"</w:comment>"
+    )
+    body = f"<w:p>{_range_start('1')}{_run('T.')}{_range_end('1')}{_reference('1')}</w:p>"
+    parsed = _walk_synth(tmp_path, body, comments=comments)
+    (record,) = parsed.comments
+    assert (record.para_id, record.id_stability) == ("000000CD", IdStability.PARAID)
+    assert record.anchor_text == "T."
+
+
+def test_a_comment_without_a_para_id_hashes_its_own_body_text(tmp_path):
+    """No ``w14:paraId``: the id hashes ``(author, date, text)`` in document order.
+
+    ``text`` is the comment's own text -- the breaks *between* its paragraphs stay, the
+    terminator after its last one does not -- so an identical triple shares a digest and
+    is told apart by its ordinal.
+    """
+    body = f"<w:p>{_reference('1')}{_reference('2')}{_reference('3')}</w:p>"
+    comments = _comments(
+        _comment("1", "Same."), _comment("2", "Same."), _comment("3", "one", "two")
+    )
+    parsed = _walk_synth(tmp_path, body, comments=comments)
+    same = sha256_json([COMMENT_AUTHOR, COMMENT_DATE, "Same."])
+    split = sha256_json([COMMENT_AUTHOR, COMMENT_DATE, "one\ntwo"])
+    assert [record.para_id for record in parsed.comments] == [
+        f"hash:{same}:0",
+        f"hash:{same}:1",
+        f"hash:{split}:0",
+    ]
+    assert {record.id_stability for record in parsed.comments} == {IdStability.CONTENT_HASH}
+    # the two identical bodies also churn the *node* ids of their own paragraphs
+    assert set(parsed.known_gaps) == {
+        walker_mod.GAP_DUPLICATE_CONTENT_ID,
+        walker_mod.GAP_UNANCHORED_COMMENT,
+    }
+
+
 # --- determinism ----------------------------------------------------------------
 
 
@@ -1114,6 +1555,7 @@ def test_walking_the_same_package_twice_is_identical(path):
     assert first.union_streams == second.union_streams
     assert first.nodes == second.nodes
     assert first.revisions == second.revisions
+    assert first.comments == second.comments
 
 
 # --- the gap doc and the code agree --------------------------------------------

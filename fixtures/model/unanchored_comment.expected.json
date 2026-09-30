@@ -1,0 +1,117 @@
+{
+  "clauses": [
+    "8"
+  ],
+  "comments": [
+    {
+      "anchor": {
+        "end": 21,
+        "start": 10
+      },
+      "anchor_text": "pinned text",
+      "author": "N. Frost",
+      "id": "1",
+      "initials": "NF",
+      "note": "the only anchored comment: the rest carry anchor=None",
+      "para_id": "5000001A"
+    },
+    {
+      "anchor_text": "",
+      "author": "N. Frost",
+      "id": "2",
+      "initials": "NF",
+      "note": "a bare w:commentReference brackets nothing: never opened, anchor=None",
+      "para_id": "5000002A"
+    },
+    {
+      "anchor_text": "",
+      "author": "N. Frost",
+      "id": "3",
+      "initials": "NF",
+      "note": "a w:commentRangeStart with no end never closes: anchor=None",
+      "para_id": "5000003A"
+    }
+  ],
+  "fixture": "unanchored_comment.docx",
+  "known_gaps": [
+    "unanchored_comment"
+  ],
+  "labels_provenance": "spec",
+  "paragraphs": [
+    {
+      "accepted": "Anchored: pinned text.",
+      "clause": "8",
+      "index": 0,
+      "original": "Anchored: pinned text.",
+      "spans": [
+        {
+          "end": 22,
+          "stack": [],
+          "start": 0,
+          "text": "Anchored: pinned text."
+        }
+      ],
+      "superseded": "",
+      "union": "Anchored: pinned text."
+    },
+    {
+      "accepted": "Bare reference: .",
+      "clause": "8",
+      "index": 1,
+      "original": "Bare reference: .",
+      "spans": [
+        {
+          "end": 17,
+          "stack": [],
+          "start": 0,
+          "text": "Bare reference: ."
+        }
+      ],
+      "superseded": "",
+      "union": "Bare reference: ."
+    },
+    {
+      "accepted": "A range that never closes.",
+      "clause": "8",
+      "index": 2,
+      "note": "w:id=3 is still open when the part ends: no range, no anchor",
+      "original": "A range that never closes.",
+      "spans": [
+        {
+          "end": 26,
+          "stack": [],
+          "start": 0,
+          "text": "A range that never closes."
+        }
+      ],
+      "superseded": "",
+      "union": "A range that never closes."
+    },
+    {
+      "accepted": "Marker with no body: .",
+      "clause": "8",
+      "index": 3,
+      "note": "w:id=9 is named by a marker but has no w:comment body at all",
+      "original": "Marker with no body: .",
+      "spans": [
+        {
+          "end": 22,
+          "stack": [],
+          "start": 0,
+          "text": "Marker with no body: ."
+        }
+      ],
+      "superseded": "",
+      "union": "Marker with no body: ."
+    }
+  ],
+  "parts": [
+    {
+      "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml",
+      "path": "word/comments.xml",
+      "rel_type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments"
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

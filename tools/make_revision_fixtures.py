@@ -2,7 +2,8 @@
 
 One fixture per construct the text model has to survive (nested revisions, a move,
 hyperlinks and fields, content controls, breaks and special characters, a comment
-whose range starts inside a deleted run, a deleted paragraph mark, mixed
+whose range starts inside a deleted run, a comment nothing brackets (an unanchored
+one), a deleted paragraph mark, mixed
 ``w14:paraId``, a strict-namespace variant, a renamed ``commentsExtended`` part,
 empty parts, a text box). python-docx cannot author any of these, so the package is
 assembled part by part and written with pinned zip timestamps (byte-reproducible).
@@ -495,6 +496,65 @@ def _comment_in_deletion():
         ct_overrides=[("/word/comments.xml", CT["comments"]),
                       ("/word/commentsExtended.xml", CT["commentsExtended"])],
         prefixes=("w", "w14", "w15", "r"),
+    )
+
+
+def _unanchored_comment():
+    body = (
+        _p(_r("Anchored: ") + '<w:commentRangeStart w:id="1"/>' + _r("pinned text")
+           + '<w:commentRangeEnd w:id="1"/>' + _comment_ref(1) + _r("."), para_id="50000001")
+        + _p(_r("Bare reference: ") + _comment_ref(2) + _r("."), para_id="50000002")
+        + _p('<w:commentRangeStart w:id="3"/>' + _r("A range that never closes.")
+             + _comment_ref(3), para_id="50000003")
+        + _p(_r("Marker with no body: ") + _comment_ref(9) + _r("."), para_id="50000004")
+    )
+    comments = XML_DECL + (
+        f'<w:comments {_nsdecl(NS, ("w", "w14"))}>'
+        + _comment(1, "N. Frost", "NF", "5000001A", "Only this one is anchored.")
+        + _comment(2, "N. Frost", "NF", "5000002A", "Named but never bracketed.")
+        + _comment(3, "N. Frost", "NF", "5000003A", "Bracketed but never closed.")
+        + "</w:comments>"
+    )
+    sidecar = {
+        "fixture": "unanchored_comment.docx",
+        "labels_provenance": "spec",
+        "clauses": ["8"],
+        "known_gaps": ["unanchored_comment"],
+        "parts": [
+            {"rel_type": RT["comments"], "path": "word/comments.xml",
+             "content_type": CT["comments"]},
+        ],
+        "comments": [
+            {"id": "1", "para_id": "5000001A", "author": "N. Frost", "initials": "NF",
+             "anchor": {"start": 10, "end": 21}, "anchor_text": "pinned text",
+             "note": "the only anchored comment: the rest carry anchor=None"},
+            {"id": "2", "para_id": "5000002A", "author": "N. Frost", "initials": "NF",
+             "anchor_text": "",
+             "note": "a bare w:commentReference brackets nothing: never opened, "
+                     "anchor=None"},
+            {"id": "3", "para_id": "5000003A", "author": "N. Frost", "initials": "NF",
+             "anchor_text": "",
+             "note": "a w:commentRangeStart with no end never closes: anchor=None"},
+        ],
+        "paragraphs": [
+            _para(0, [("Anchored: pinned text.", [])], accepted="Anchored: pinned text.",
+                  original="Anchored: pinned text.", superseded="", clause="8"),
+            _para(1, [("Bare reference: .", [])], accepted="Bare reference: .",
+                  original="Bare reference: .", superseded="", clause="8"),
+            _para(2, [("A range that never closes.", [])], accepted="A range that never closes.",
+                  original="A range that never closes.", superseded="", clause="8",
+                  note="w:id=3 is still open when the part ends: no range, no anchor"),
+            _para(3, [("Marker with no body: .", [])], accepted="Marker with no body: .",
+                  original="Marker with no body: .", superseded="", clause="8",
+                  note="w:id=9 is named by a marker but has no w:comment body at all"),
+        ],
+    }
+    return package(
+        "unanchored_comment.docx", body, sidecar=sidecar, title="Unanchored comments",
+        doc_rels=[("rId1", RT["comments"], "comments.xml", None)],
+        extra_parts={"word/comments.xml": comments},
+        ct_overrides=[("/word/comments.xml", CT["comments"])],
+        prefixes=("w", "w14", "r"),
     )
 
 
@@ -1038,6 +1098,7 @@ BUILDERS = [
     _content_controls,
     _breaks_and_specials,
     _comment_in_deletion,
+    _unanchored_comment,
     _deleted_paragraph_mark,
     _mixed_para_ids,
     _strict_namespaces,
