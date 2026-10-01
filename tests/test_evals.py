@@ -1,21 +1,27 @@
-"""Turn 4: eval harness skeleton -- empty metrics table, labels loaded independently."""
+"""Turn 4 + Turn 9: the eval harness -- the empty table's shape, and the real one's gates."""
 from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
+import tempfile
 import textwrap
 from pathlib import Path
 
 import pytest
 
+from wordextract.evals import harness
+from wordextract.evals import l1
 from wordextract.evals import labels as labels_mod
 from wordextract.evals.harness import build_metrics_table, gate_failures, run
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "fixtures"
 LABELS_PATH = ROOT / "wordextract" / "evals" / "labels.py"
+GAPS_DOC = ROOT / "docs" / "design" / "phase1-gaps.md"
+OPEN_INPUTS = ROOT / "docs" / "design" / "open-inputs.md"
 
 
 def test_metrics_table_shape_and_gates():
@@ -75,16 +81,84 @@ def test_empty_table_passes_and_a_failed_gate_does_not():
     assert gate_failures(table) == ["L1"]
 
 
-def test_run_reads_labels_but_reports_no_metrics():
+def test_an_l1_that_compared_nothing_fails_the_gate_end_to_end(tmp_path):
+    """L1's corpus is the committed fixtures, so comparing nothing is a broken run (a wrong
+    path, missing fixtures), never an unmeasured layer: the table fails it, as the report
+    does. (L2 is the layer that is legitimately "not evaluated": human labels do not exist.)"""
+    report = l1.score_fixtures(tmp_path)  # no sidecar, so no fact was compared
+    assert report.facts == () and report.result is False
+    table = build_metrics_table(l1=report)
+    (layer,) = [row for row in table["quality"] if row["layer"] == "L1"]
+    assert layer["result"] is False
+    assert layer["note"].startswith("FAILED") and "--fixtures" in layer["note"]
+    assert layer["coverage"]["vacuous"] is True
+    assert gate_failures(table) == ["L1"]
+
+
+def test_an_l1_that_was_never_asked_to_score_is_not_a_failure():
+    """No corpus given at all (the empty table) is the one case L1 is simply not run."""
+    table = build_metrics_table()
+    (layer,) = [row for row in table["quality"] if row["layer"] == "L1"]
+    assert layer["result"] is None
+    assert gate_failures(table) == []
+
+
+def test_the_cli_exits_non_zero_on_an_empty_fixtures_directory(tmp_path, capsys):
+    from wordextract.evals.__main__ import main
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert main(["--fixtures", str(empty)]) == 1
+    captured = capsys.readouterr()
+    assert "gated layers failed: L1" in captured.err
+
+
+def test_the_cli_exits_non_zero_on_a_fixtures_path_that_does_not_exist(tmp_path, capsys):
+    from wordextract.evals.__main__ import main
+
+    assert main(["--fixtures", str(tmp_path / "no-such-directory")]) == 1
+    assert "gated layers failed: L1" in capsys.readouterr().err
+
+
+def test_run_scores_l1_green_and_leaves_l2_not_evaluated():
     table = run(FIXTURES)
     # every committed sidecar, root and fixtures/model alike, is counted
     assert table["labels"] == {"generator": 3, "spec": 24, "human": 0}
-    assert all(layer["rows"] == [] for layer in table["quality"])
-    # no test is tagged @producer_verified yet, so the per-path tally is empty
+
+    layers = {layer["layer"]: layer for layer in table["quality"]}
+    assert layers["L1"]["result"] is True
+    assert layers["L1"]["metrics"]["exact_fact_accuracy"] == 1.0
+    assert layers["L1"]["n"] > 0 and layers["L1"]["coverage"]["vacuous"] is False
+    # no human must-find labels exist, so L2 measured nothing and is not a gate failure
+    assert layers["L2"]["rows"] == [] and layers["L2"]["result"] is None
+    assert layers["L2"]["metrics"] == {}
+    assert layers["L2"]["note"].startswith("not evaluated")
+    assert layers["L3"]["result"] is None
+    assert gate_failures(table) == []
+
+    # the roster is populated, and every path on it is False until a Word doc lands
     cov = table["producer_verified_coverage"]
-    assert cov["producer_verified"] == {} and cov["coverage"] == 0.0
+    assert cov["producer_verified"] and not any(cov["producer_verified"].values())
+    assert (cov["verified_paths"], cov["coverage"]) == (0, 0.0)
     # the real fixtures need a producer doc that does not exist yet
     assert cov["documents"] == 0
+
+
+def test_run_is_json_serializable_and_l1_is_per_family():
+    table = run(FIXTURES)
+    json.dumps(table)
+    rows = {row["family"]: row for row in table["quality"][0]["rows"]}
+    # every labelled family is scored, tiling included: a green L1 must not be vacuous
+    assert set(rows) == {
+        "comments",
+        "revisions",
+        "sections",
+        "paragraphs",
+        "tables",
+        "tiling",
+    }
+    assert all(row["result"] is True and row["failed"] == 0 for row in rows.values())
+    assert rows["tiling"]["compared"] > 0
 
 
 def test_labels_module_imports_no_implementation_code():
@@ -218,7 +292,7 @@ def test_sidecar_validation_rejects_bad_input():
     assert labels_mod.sidecar_from_dict(good).name == "x"
 
 
-def test_cli_emits_empty_metrics_table():
+def test_cli_emits_the_metrics_table_as_pure_stdout_json():
     env = {
         **os.environ,
         "PYTHONPATH": os.pathsep.join([str(ROOT), str(ROOT / "docextract-core"), os.environ.get("PYTHONPATH", "")]),
@@ -228,7 +302,102 @@ def test_cli_emits_empty_metrics_table():
         cwd=ROOT, capture_output=True, text=True, env=env,
     )
     assert proc.returncode == 0, proc.stderr
+    # strict: json.loads rejects a trailing diagnostic line, so this is the purity check
     table = json.loads(proc.stdout)
     assert [layer["layer"] for layer in table["quality"]] == ["L1", "L2", "L3"]
-    assert all(layer["rows"] == [] for layer in table["quality"])
+    assert table["quality"][0]["result"] is True
     assert table["labels"]["spec"] == 24
+    # the "L2 was not evaluated" diagnostic is stderr's, never stdout's
+    assert proc.stdout.strip().startswith("{")
+    assert "not gated this run" in proc.stderr
+
+
+def test_cli_writes_the_table_to_a_file_without_narrowing_stdout():
+    """`--out` moves the table off stdout and leaves stdout empty, diagnostics and all."""
+    env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join([str(ROOT), str(ROOT / "docextract-core"), os.environ.get("PYTHONPATH", "")]),
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "table.json"
+        proc = subprocess.run(
+            [sys.executable, "-m", "wordextract.evals", "--fixtures", str(FIXTURES), "--out", str(out)],
+            cwd=ROOT, capture_output=True, text=True, env=env,
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout == ""
+        table = json.loads(out.read_text(encoding="utf-8"))
+        assert table["quality"][0]["result"] is True
+
+
+def test_every_gap_id_a_sidecar_names_is_documented():
+    """`known_gaps` is a closed vocabulary: an id a sidecar names is in the gap list.
+
+    The walker's own ids are checked against ``WALKER_OWNED_GAPS`` in ``test_walker.py``;
+    this is the corpus-level half -- the ids the fixtures declare but the walker does not
+    report (a hazard a document is *about* rather than one its content triggers) are still
+    entries here, so no sidecar can name an id no reviewer can look up.
+    """
+    documented = set(re.findall(r"`([a-z0-9_]+)`", GAPS_DOC.read_text(encoding="utf-8")))
+    named = {
+        gap for sidecar in labels_mod.iter_sidecars(FIXTURES).values() for gap in sidecar.known_gaps
+    }
+    assert named, "no sidecar names a known gap: this test would be vacuous"
+    assert named <= documented, f"gap ids no entry documents: {sorted(named - documented)}"
+
+
+def test_the_gap_list_documents_the_ids_it_says_the_walker_owns():
+    """The id list and the prose list agree: no id is documented only in a test."""
+    documented = set(re.findall(r"`([a-z0-9_]+)`", GAPS_DOC.read_text(encoding="utf-8")))
+    assert set(harness._walker_gaps().values()) <= documented
+
+
+def test_the_unverified_constructs_are_the_ones_open_inputs_records():
+    """The roster reads its spellings off ``open-inputs.md`` section 2, not from memory."""
+    section = OPEN_INPUTS.read_text(encoding="utf-8").split("## 2.")[1].split("## 3.")[0]
+    listed = section.split("Specifically unverified:")[1].split(".")[0]
+    records = [item.strip().replace("`", "") for item in listed.split(",")]
+    assert records == list(harness.UNVERIFIED_CONSTRUCTS)
+
+
+def test_the_producer_verified_roster_is_fixed_and_all_false_without_a_word_doc():
+    """The roster is the stage paths, the unverified constructs and every walker gap."""
+    names = harness.producer_verified_names()
+    roster = harness.producer_verified_roster()
+    assert sorted(roster) == list(names)
+    assert set(roster.values()) == {False}  # no test is tagged @producer_verified yet
+    assert set(harness.STAGE_PATHS) <= set(names)
+    assert {f"open-inputs#2: {name}" for name in harness.UNVERIFIED_CONSTRUCTS} <= set(names)
+    assert {f"gap: {gap}" for gap in harness._walker_gaps().values()} <= set(names)
+
+
+def test_naming_a_path_outside_the_roster_is_an_error():
+    """A tally can only grow a row a test stands behind, never a typo'd path."""
+    assert harness.producer_verified_roster(["wordextract/walker.py"])["wordextract/walker.py"]
+    with pytest.raises(KeyError):
+        harness.producer_verified_roster(["wordextract/not_a_module.py"])
+
+
+def test_the_cli_refuses_a_must_find_set_that_is_not_human_labelled_with_a_clean_error(tmp_path, capsys):
+    import json
+    import shutil
+
+    from wordextract.evals.__main__ import main
+
+    fixtures = tmp_path / "fx"
+    shutil.copytree(FIXTURES, fixtures)
+    (fixtures / "evals").mkdir(exist_ok=True)
+    (fixtures / "evals" / "generated.json").write_text(
+        json.dumps(
+            {
+                "label_set": "generated",
+                "labels_provenance": "generator",
+                "term_list": "terms/synthetic.example.json",
+                "documents": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert main(["--fixtures", str(fixtures)]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("error:") and "human" in err and "Traceback" not in err

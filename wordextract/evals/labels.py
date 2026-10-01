@@ -29,6 +29,12 @@ import json
 SIDECAR_SUFFIX = ".expected.json"
 PROVENANCES = ("human", "generator", "spec")
 
+#: The families a sidecar can label. **Presence is an assertion**: a sidecar with no
+#: ``revisions`` key says nothing about revisions, while ``"revisions": []`` claims there
+#: are none -- and a checker that read both as "no labels" could not tell a pass from a
+#: question never asked.
+FAMILY_KEYS = ("comments", "revisions", "sections", "tables", "paragraphs")
+
 
 @dataclass(frozen=True)
 class SpanLabel:
@@ -130,6 +136,8 @@ class Sidecar:
     span_rule: str | None = None
     terminator: str | None = None
     known_gaps: tuple[str, ...] = ()
+    #: Which label families this sidecar actually carries, from :data:`FAMILY_KEYS`.
+    families: tuple[str, ...] = ()
     annotations: dict[str, object] = field(default_factory=dict)
     path: Path | None = None
 
@@ -209,6 +217,7 @@ def sidecar_from_dict(data: dict, path: Path | None = None) -> Sidecar:
         span_rule=data.get("span_rule"),
         terminator=data.get("terminator"),
         known_gaps=tuple(data.get("known_gaps", ())),
+        families=tuple(key for key in FAMILY_KEYS if key in data),
         annotations={k: data[k] for k in ANNOTATION_KEYS if k in data},
         path=path,
     )

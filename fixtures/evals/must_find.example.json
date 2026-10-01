@@ -1,0 +1,41 @@
+{
+  "_comment": [
+    "FORMAT DOCUMENTATION ONLY -- this file is never scored.",
+    "iter_must_find skips every '*.example.json': the phrases below are invented placeholders,",
+    "and a must-find phrase is only ever a string a human copied out of a real document",
+    "(docs/design/open-inputs.md section 3; design D11). Copy this file to",
+    "fixtures/evals/<your-set>.json, replace every placeholder with something you actually",
+    "read in the document, and put the document in fixtures/real/."
+  ],
+  "label_set": "must-find.example",
+  "labels_provenance": "human",
+  "term_list": "terms/real_term_list.json",
+  "documents": {
+    "real/the-document-you-labelled.docx": {
+      "source": "where the document came from, and why it may be used",
+      "must_find": [
+        {
+          "term": "a phrase you copied verbatim out of the document",
+          "note": "where in the document it is, so a reader can find it without the labels"
+        }
+      ],
+      "expected_extra": [
+        {
+          "term": "a hit the must-find phrases do not account for, but which is real text",
+          "classification": "true_positive",
+          "note": "true_positive: legitimate text the term list also matched"
+        },
+        {
+          "term": "a hit that is a different inflection of a must-find phrase",
+          "classification": "stem_match",
+          "note": "stem_match: the same term, stemmed"
+        },
+        {
+          "term": "a hit you judge to be a real precision bug",
+          "classification": "false_positive",
+          "note": "false_positive: the term list matched something it should not have"
+        }
+      ]
+    }
+  }
+}

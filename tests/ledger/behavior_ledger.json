@@ -1,0 +1,18 @@
+{
+  "_comment": "Append-only behavior fingerprints (build spec, Turn 9): {component: {version_string: sha256}}. A component's fingerprint is a sha256 over its output on the committed fixture corpus (every .docx under fixtures/ except the git-ignored, machine-local fixtures/real/, plus fixtures/terms/synthetic.example.json, default chunker params). The history before this file is not reconstructed: it was started from the code that added it, so it does not read as full history. Add a line with tools/update_behavior_ledger.py in the same commit as the behavior change that caused it, and bump that component's version constant (tools/behavior_ledger.py names it) in that same commit.",
+  "chunks": {
+    "1": "a2d29abbd528b87afafe0be1c13dfb5bdd4001bd19b8b603684d518d9714cfe9"
+  },
+  "contracts": {
+    "5": "71b8844454af7b5b03b165aa12e88798124470f0fa91a30c2d87afc19f9ca436"
+  },
+  "matcher": {
+    "5+porter-2": "974ba3d32756816a4f8a37e97f64cf802ba770b7a78626a50da8265fa2aae99f"
+  },
+  "parse": {
+    "1|2|2": "b8ba0e47d9bc11f8fda6db16a3636bb5228b507b5ed8443d5acb9971ad2d82cc"
+  },
+  "views": {
+    "2": "14e272608713a63d7a8026781a7987ff9f6bb2082f13dcab804bba74405b31ec"
+  }
+}
