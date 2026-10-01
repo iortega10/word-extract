@@ -69,7 +69,8 @@ before writing anything and reuse them.
 
 0a fixtures + literals; **0b spike, report, STOP**; 0.5 contracts;
 1 OPC; 2a-2e walker; 3 views; 4a-4b headings; 5 chunker; 6a-6e terms;
-7 store/run record; 8 FTS5; 9 CLI + L1 + gaps + exit check.
+7 store/run record; 8 FTS5 (**deferred**, see Turn 8); 9 CLI + L1 + gaps + version
+ledger + exit check.
 
 ## Layout to create
 
@@ -435,7 +436,15 @@ flip one hashed input and the key changes; hits reproducible **offline from
 `UnionStream` + views projection + registry** (delete the docx, re-derive,
 compare).
 
-## Turn 8: FTS5 (minimal, last)
+## Turn 8: FTS5 (minimal, last) -- DEFERRED (decision, 2026-10-01)
+
+**Do not build this in Phase 1.** At roughly 25 documents (about a thousand chunks) an
+in-memory scan of the stored chunks and hits is instant, so the index is a convenience,
+not a need. It can be added later with no change to the store, since the index is
+derived and rebuildable. If it is built later, index `section_path` alongside chunk text
+(an unmerged section's heading lives only in the path), and the original description
+below still applies.
+
 
 One FTS5 table over chunk view text, keyed `(chunk_id, view_id)`, plus a
 manifest (`index_schema_version`, source record hashes, SQLite and FTS5
@@ -461,6 +470,43 @@ Cut from Phase 1: separate comment indexing, rank-time dedupe, any fused score
   Word-produced doc exists).
 - Reduce the python-docx "smoke oracle" to the single eyeball diff design D1
   allows; never an equality check.
+- **Version-bump guard (the behavior ledger).** Store keys are built from version
+  constants (`SPEC_PARSER_VERSION`, `TEXTMODEL_VERSION`, `HEADING_RULESET_VERSION`,
+  `CHUNKER_VERSION`, `MATCHER_VERSION`, `STEM_ALGORITHM_VERSION`, the codec
+  `SCHEMA_VERSION`). A behavior change that does not bump its constant lets an old store
+  serve stale artifacts, and this project has already made many such changes (the walker
+  has been fixed repeatedly while `SPEC_PARSER_VERSION` stayed `"1"`; two contract changes
+  shipped without a schema bump). Make the discipline a failing test, not a habit:
+  - `tests/ledger/behavior_ledger.json` is an **append-only** map
+    `{component: {version_string: fingerprint}}`. A fingerprint is a sha256 over a
+    canonical serialization of that component's output on the fixture corpus (all
+    `fixtures/**/*.docx`, the synthetic registry, default chunker params):
+    * **parse**, version string `SPEC_PARSER_VERSION|TEXTMODEL_VERSION|HEADING_RULESET_VERSION`:
+      the full `ParseResult` of every fixture, encoded by the strict codec;
+    * **views**, `TEXTMODEL_VERSION`: every part's accepted/original/superseded projection
+      text and offset runs;
+    * **chunks**, `CHUNKER_VERSION`: every fixture's chunks (ids, hashes, paths, node ids);
+    * **matcher**, `MATCHER_VERSION`: `match_document` hits over the corpus with the
+      synthetic registry (unfolded, in output order);
+    * **contracts**, codec `SCHEMA_VERSION`: for every dataclass in `wordextract.model`
+      (and the core's records), its name and its field names, types and defaults. A field
+      added, removed, renamed or retyped changes this fingerprint, which is exactly the
+      contract change that needs a schema bump.
+  - A test recomputes each fingerprint and requires: (1) the **current** version string is
+    in the ledger, and (2) the recomputed fingerprint **equals** the one recorded for that
+    version. So changing behavior without bumping the version fails (the fingerprint no
+    longer matches the recorded one), and bumping without recording fails (the version is
+    missing from the ledger).
+  - `tools/update_behavior_ledger.py` appends the current version and fingerprint. It
+    **refuses to overwrite** an existing version with a different fingerprint and says
+    which constant to bump. A reviewer sees the ledger line added in the same commit as
+    the behavior change.
+  - Start the ledger from the current code: it records today's fingerprints under today's
+    versions. The history before the ledger is not reconstructed; say so in the ledger's
+    header comment (a `_comment` key) so nobody reads it as full history.
+  - Tests for the guard itself: monkeypatch one constant and show the matching ledger
+    check fails; add a dataclass field in a test double and show the contracts
+    fingerprint changes; show the update tool refuses a same-version overwrite.
 
 ## Blocked on the user (do not fake)
 
@@ -475,7 +521,9 @@ Cut from Phase 1: separate comment indexing, rank-time dedupe, any fused score
   must-find list; **not evaluated** (conditional close) if it does not exist.
 - Determinism (byte-level) and offline reproduction green.
 - Unchanged re-ingest is a no-op.
-- FTS5 delete-and-rebuild reproduces manifest and query results.
+- (FTS5 criteria are void: Turn 8 is deferred.)
+- The behavior ledger test is green: every component's fingerprint matches the one
+  recorded for its current version, and the guard's own tests prove it can fail.
 - `commentsExtended`, `paraId` identity and strict namespaces recorded
   **unverified** unless a Word-produced doc validates them.
 - `docs/design/phase1-gaps.md` lists every known gap (table-cell boundaries as
@@ -489,6 +537,8 @@ Cut from Phase 1: separate comment indexing, rank-time dedupe, any fused score
 
 - Codec strictness: no silent key-dropping; any contract change bumps
   `schema_version` with a test.
+- A change to what a component *outputs* bumps that component's version constant in the
+  same commit, with a ledger line (Turn 9). Store keys trust those constants.
 - Spec-conformance is not Word-conformance: repo-authored literals prove the
   code implements the spec, not that the spec matches Word. Say so in reports.
 - L2 label circularity: labels come from humans and real documents only.
