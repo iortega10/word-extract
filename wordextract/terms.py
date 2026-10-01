@@ -57,6 +57,21 @@ that a stem is a *derived* reading, so its forms live in their own tables
 (:attr:`TermIndex.stem_forms`) and the exact/synonym tables stay exactly what the term list
 wrote.
 
+**Where a hit is (6c).** A whole document is matched part by part: the body, headers,
+footers, footnotes, endnotes and the comment bodies, each hit saying which
+:class:`~wordextract.model.LocationKind` it sits in -- the part it was walked in, the table
+cell that encloses it, or the text-box fragment that addresses it. A part is matched
+**paragraph by paragraph per view** (D6): each paragraph-like node is offered to the
+whole-part projection as its own range, so a paragraph the view elided is no range and
+yields nothing, a hit's ``view_spans`` are whole-part view offsets while its ``spans``
+stay union addresses, and the same group at the same node in the same union span is **one**
+hit present in every view that found it. Comments are the exception that proves the rule: a
+comment's own words are text of their own part, held in no view and addressed by no node,
+so a comment hit is **view-less** -- ``present_in`` empty, no ``view_spans`` at all -- and
+is named ``comment:<para_id>``, which is how a caller reaches the ``Comment`` record. Text
+boxes are the one location not matched: their text is its own fragment, and no fragment
+stream exists yet, so their words are a known gap rather than a hit.
+
 The registry itself is a codec record, persisted as content-addressed JSON through the
 core ``Collection`` with the record **id equal to** :func:`term_list_hash`: the term list
 is the identity, so a re-save is a no-op and two runs of the same terms share one file.
@@ -64,15 +79,28 @@ is the identity, so a re-save is a no-op and two runs of the same terms share on
 from __future__ import annotations
 
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Iterable, Iterator
 
 from docextract_core import Collection, encode, from_json, sha256_json, to_json
 
-from .model import LocationKind, MatchType, TermGroup, TermHit, ViewSpan
+from .model import (
+    Comment,
+    LocationKind,
+    MatchType,
+    Node,
+    NodeKind,
+    ParseResult,
+    Span,
+    TermGroup,
+    TermHit,
+    UnionStream,
+    View,
+    ViewSpan,
+)
 from .stem import stemmer
-from .views import Projection
+from .views import Projection, project
 
 #: The hyphen family: hyphen-minus, soft hyphen, hyphen, non-breaking hyphen. Deleted in
 #: normalization, so a hyphen **joins** two character runs into one token.
@@ -228,6 +256,28 @@ def load_registry_text(text: str) -> TermRegistry:
 
 
 # --- the matcher -------------------------------------------------------------------
+
+#: The parts a package streams and the :class:`LocationKind` their text sits in, keyed by
+#: the relationship type local name a ``part_id`` starts with (Turn 1's
+#: ``<relationship type local name>:<ordinal>``). The *part* decides the kind, not the node:
+#: a footnote and an endnote are both ``FOOTNOTE`` nodes, and only the parts tell them apart.
+_PART_KINDS: dict[str, LocationKind] = {
+    "officeDocument": LocationKind.BODY,
+    "header": LocationKind.HEADER,
+    "footer": LocationKind.FOOTER,
+    "footnotes": LocationKind.FOOTNOTE,
+    "endnotes": LocationKind.ENDNOTE,
+    "comments": LocationKind.COMMENT,
+}
+
+#: The paragraph-like nodes -- the matching unit (D6). A container has no text of its own and
+#: is not a location; a cell's paragraph is matched as a cell by :func:`_location`.
+_MATCH_UNITS = frozenset({NodeKind.HEADING, NodeKind.PARA, NodeKind.LIST_ITEM})
+
+#: The views a hit is *matched* in. D6's ``superseded`` is a mask and a fixture only: it is
+#: never a matcher target, so text that was inserted and then deleted is in no hit.
+_MATCH_VIEWS: tuple[View, ...] = (View.ACCEPTED, View.ORIGINAL)
+
 
 @dataclass(frozen=True)
 class TermMatch:
@@ -420,12 +470,12 @@ def match_projection(
     hits are addressed in, so ``view_spans`` are offsets in the whole-part view text with
     terminators kept, as D6 requires, and ``spans`` are the union addresses the hit is
     made of -- never the text the view elided between them. ``[start, end)`` is the
-    location's range in that projection, one node per call (6c loops over the tree); the
-    default whole range suits a location that is the whole part, such as a comment body.
+    location's range in that projection, one location per call; the default whole range
+    suits a caller with no range to name, such as a text that is one range.
 
     One hit per group per occurrence: a group's overlapping forms are resolved per group
-    and ``match_type`` is settled there, before any dedupe. ``location`` defaults to
-    ``body``; 6c assigns the real kind (table cell, header, footnote, comment).
+    and ``match_type`` is settled there, before any dedupe. ``location`` is the kind of
+    place the range is, which 6c's :func:`match_part` derives per node.
     """
     stop = len(projection.text) if end is None else end
     hits: list[TermHit] = []
@@ -444,6 +494,170 @@ def match_projection(
             )
         )
     return hits
+
+
+def match_part(
+    index: TermIndex,
+    parsed: ParseResult,
+    part_id: str,
+    *,
+    view: View = View.ACCEPTED,
+) -> list[TermHit]:
+    """Every hit of ``index`` in one part of ``parsed`` in one view, in document order.
+
+    A part is matched **paragraph by paragraph** (D6): one whole-part projection per call,
+    and every paragraph-like node of the part offered to it as its own range. The range is
+    the node's union span read *into* the view
+    (:meth:`~wordextract.views.Projection.retained_before`), so a paragraph this view
+    elided entirely is no range at all and its words are not matched -- the view's
+    paragraphs are what matching sees, never the union's.
+
+    Only real parts are matched. The comments part is not one: a comment's own words are
+    read off the ``Comment`` record by :func:`match_comments`, never off the node tree
+    (6c), so the part has no locations here. A text box is not matched either: its words
+    are its own fragment's, and no fragment streams yet, so the gap is a gap rather than a
+    hit addressed in the part it happens to sit in. A ``part_id`` that did not stream
+    raises ``ValueError`` instead of matching nothing: there is no union text of it to
+    address a hit in, which is a different thing from a part with no hits.
+    """
+    stream = _stream_of(parsed, part_id)
+    if _part_kind(part_id) is LocationKind.COMMENT:
+        return []
+    projection = project(stream, view)
+    by_id = {node.id: node for node in parsed.nodes}
+    parents = _parents(parsed)
+    hits: list[TermHit] = []
+    for node in parsed.nodes:
+        if node.part_id != part_id or node.kind not in _MATCH_UNITS:
+            continue
+        location = _location(node, by_id, parents)
+        if location is LocationKind.TEXTBOX:
+            continue  # a fragment is not this part's text (the ``textbox`` known gap)
+        for span in node.spans:
+            if span.part_id != part_id:
+                continue
+            start = projection.retained_before(span.start)
+            end = projection.retained_before(span.end)
+            if start == end:
+                continue  # this view kept none of this paragraph
+            hits.extend(
+                match_projection(
+                    index,
+                    projection,
+                    node_id=node.id,
+                    start=start,
+                    end=end,
+                    location=location,
+                )
+            )
+    return hits
+
+
+def match_document(index: TermIndex, parsed: ParseResult) -> list[TermHit]:
+    """Every hit of ``index`` in a whole parsed document, parts in the walker's order.
+
+    Every part that streamed is matched in every view a hit can be in (:data:`_MATCH_VIEWS`;
+    D6 leaves ``superseded`` to masks and fixtures), and one group found at one node in the
+    same union spans is **one** hit, whichever of the views hold it: that fold is what makes
+    ``present_in`` a set and ``view_spans`` the hit's range per view. A hit's position is
+    where it was first met, so it does not move when the other view stops holding it.
+
+    The comment bodies follow the parts, being the one text a package streams that is in no
+    view (see :func:`match_comments`).
+    """
+    hits: list[TermHit] = []
+    for stream in parsed.union_streams:
+        for view in _MATCH_VIEWS:
+            hits.extend(match_part(index, parsed, stream.part_id, view=view))
+    return _merge_views(hits) + match_comments(index, parsed)
+
+
+def match_comments(index: TermIndex, parsed: ParseResult) -> list[TermHit]:
+    """Every hit of ``index`` in a comment's own words, in comment order: view-less hits.
+
+    A comment body is text like any other and matched like any other, but it belongs to no
+    view and no node: the comment's own part streams on its own and the views are masks
+    over the document's parts, so a comment hit carries ``present_in = set()`` and no
+    ``view_spans`` at all (D6). Its ``spans`` are in the comments part's union stream --
+    the range the group's tokens occupy there, which is the comment's
+    :attr:`~wordextract.model.Comment.text_span` offset by where the tokens sit in the
+    comment's ``text`` -- and ``node_id`` is ``comment:<para_id>``, so a caller reaches the
+    ``Comment`` record from the hit and can fall back on the identity the walker resolved
+    (``w14:paraId``, or its ``hash:`` fallback). ``context_node_id`` is the node the
+    comment is anchored to, which is the "where" a comment hit has instead of a location of
+    its own.
+
+    A comment with no ``text_span`` is one whose part did not stream: its words are in no
+    address space, so nothing about it is claimed.
+    """
+    by_id = {node.id: node for node in parsed.nodes}
+    parents = _parents(parsed)
+    streams = {stream.part_id: stream for stream in parsed.union_streams}
+    hits: list[TermHit] = []
+    for comment in parsed.comments:
+        address = comment.text_span
+        if address is None:
+            continue
+        context = _anchor_node(parsed, comment.anchor, by_id, parents)
+        for match_type, spans, group in _comment_matches(index, comment, address, streams):
+            hits.append(
+                TermHit(
+                    group=group,
+                    spans=spans,
+                    node_id=f"comment:{comment.para_id}",
+                    location=LocationKind.COMMENT,
+                    match_type=match_type,
+                    context_node_id=context,
+                )
+            )
+    return hits
+
+
+def _comment_matches(
+    index: TermIndex,
+    comment: Comment,
+    address: Span,
+    streams: dict[str, UnionStream],
+) -> list[tuple[MatchType, list[Span], str]]:
+    """One comment's matches as ``(match_type, union spans, group)``, never over the raw union.
+
+    A comment body is union text like any part's: a tracked change inside it holds the
+    deleted *and* the inserted words, which read together are an adjacency no reading of the
+    comment asserts (``right of recovery`` deleted, ``subrogation`` inserted: the union is
+    ``recoverysubrogation``). So when the comment's part streamed, its range is matched
+    through each view's text -- gap-closed, and the hit's spans one per retained run, never
+    the elided text between them -- and a hit found in both readings is one hit. The hit stays
+    view-less (``present_in`` empty), as a comment's words are in no view of the document.
+    A comment with no stream to project through has its plain text matched, which is the
+    same thing for text with no revisions in it.
+    """
+    stream = streams.get(address.part_id)
+    if stream is None:
+        return [
+            (
+                match.match_type,
+                [
+                    Span(
+                        part_id=address.part_id,
+                        start=address.start + match.start,
+                        end=address.start + match.end,
+                        fragment_id=address.fragment_id,
+                    )
+                ],
+                match.group,
+            )
+            for match in match_text(index, comment.text)
+        ]
+    found: dict[tuple[str, tuple[Span, ...]], tuple[MatchType, list[Span], str]] = {}
+    for view in _MATCH_VIEWS:
+        projection = project(stream, view, address.start, address.end)
+        for match in match_text(index, projection.text):
+            spans = projection.union_spans(match.start, match.end)
+            key = (match.group, tuple(spans))
+            known = found.get(key)
+            if known is None or _RANK[match.match_type] < _RANK[known[0]]:
+                found[key] = (match.match_type, spans, match.group)
+    return list(found.values())
 
 
 def dedupe_hits(hits: Iterable[TermHit]) -> list[TermHit]:
@@ -562,3 +776,155 @@ def _segments(text: str) -> Iterator[tuple[int, str]]:
     for segment in text.split(PARAGRAPH_BOUNDARY):
         yield base, segment
         base += len(segment) + 1
+
+
+# --- where a hit is (6c) --------------------------------------------------------------
+
+
+def _merge_views(hits: Iterable[TermHit]) -> list[TermHit]:
+    """Fold the hits of one group at one node in one set of spans into one hit.
+
+    Two views are two texts, so the same group at the same node can be found in either,
+    both, or neither -- and a hit is that group at that node **in those union spans**, with
+    ``present_in`` the views that hold it (D6). The keys are the same three facts
+    :func:`dedupe_hits` keys a view-less hit by, so two hits that address the same text are
+    one hit here rather than two. A hit keeps the position it was first met at, and takes
+    the strongest of the ``match_type``\\ s -- the precedence the forms were resolved by, so
+    a word that is a ``stem`` hit in one view and an ``exact`` hit in the other is one
+    ``exact`` hit.
+    """
+    order: list[tuple[str, str, tuple[Span, ...]]] = []
+    folded: dict[tuple[str, str, tuple[Span, ...]], TermHit] = {}
+    for hit in hits:
+        key = (hit.group, hit.node_id, tuple(hit.spans))
+        found = folded.get(key)
+        if found is None:
+            order.append(key)
+            folded[key] = hit
+            continue
+        folded[key] = replace(
+            found,
+            present_in=found.present_in | hit.present_in,
+            view_spans=sorted(
+                [*found.view_spans, *hit.view_spans], key=lambda span: span.view.value
+            ),
+            match_type=MATCH_PRECEDENCE[min(_RANK[found.match_type], _RANK[hit.match_type])],
+        )
+    return [folded[key] for key in order]
+
+
+def _stream_of(parsed: ParseResult, part_id: str) -> UnionStream:
+    """The part's union stream, or a ``ValueError``: a part that did not stream has no text.
+
+    Every part the walker streams is in ``parsed.union_streams``, so a caller naming a part
+    that is not -- a header a document does not have, or a part the package holds but
+    nothing reaches -- asked for a text that does not exist, which is not the same as a
+    text with no hits in it.
+    """
+    for stream in parsed.union_streams:
+        if stream.part_id == part_id:
+            return stream
+    raise ValueError(f"part {part_id!r} has no union stream in this document")
+
+
+def _part_kind(part_id: str) -> LocationKind:
+    """The kind of part a ``part_id`` names, from its relationship type local name."""
+    kind = _PART_KINDS.get(part_id.split(":", 1)[0])
+    if kind is None:
+        raise ValueError(
+            f"part {part_id!r} is not a part a package streams text in: a part id is "
+            f"'<relationship type local name>:<ordinal>' (Turn 1)"
+        )
+    return kind
+
+
+def _parents(parsed: ParseResult) -> dict[str, str]:
+    """Each node's parent, from the ``child_ids`` edges. Node ids are package-unique."""
+    parents: dict[str, str] = {}
+    for node in parsed.nodes:
+        for child in node.child_ids:
+            parents[child] = node.id
+    return parents
+
+
+def _depth(node_id: str, parents: dict[str, str]) -> int:
+    """How deep ``node_id`` sits in the ``child_ids`` tree; a root is 0.
+
+    ``parents`` is a map, not a tree -- a malformed one could point back into itself -- so
+    the walk carries the ids it has seen and stops rather than looping.
+    """
+    seen = {node_id}
+    depth = 0
+    current = parents.get(node_id)
+    while current is not None and current not in seen:
+        seen.add(current)
+        depth += 1
+        current = parents.get(current)
+    return depth
+
+
+def _ancestor_of_kind(
+    node_id: str,
+    by_id: dict[str, Node],
+    parents: dict[str, str],
+    kind: NodeKind,
+) -> Node | None:
+    """The innermost ancestor of ``node_id`` of ``kind``, or None. Cycle-guarded."""
+    seen = {node_id}
+    current = parents.get(node_id)
+    while current is not None and current not in seen:
+        seen.add(current)
+        node = by_id.get(current)
+        if node is None:
+            break
+        if node.kind is kind:
+            return node
+        current = parents.get(current)
+    return None
+
+
+def _location(node: Node, by_id: dict[str, Node], parents: dict[str, str]) -> LocationKind:
+    """Where ``node``'s text sits: a text box, a table cell, or the kind of part it is in.
+
+    A fragment address is a text box before anything else -- its text is the fragment's,
+    which is why a text box inside a cell is not a table cell. A paragraph inside a ``CELL``
+    is a table cell rather than body text; everything else is its part's own kind, since
+    only the part distinguishes the footnote nodes from the endnote ones.
+    """
+    if any(span.fragment_id is not None for span in node.spans):
+        return LocationKind.TEXTBOX  # no fragment streams yet: text boxes are a known gap
+    if _ancestor_of_kind(node.id, by_id, parents, NodeKind.CELL) is not None:
+        return LocationKind.TABLE_CELL
+    return _part_kind(node.part_id)
+
+
+def _anchor_node(
+    parsed: ParseResult,
+    anchor: Span | None,
+    by_id: dict[str, Node],
+    parents: dict[str, str],
+) -> str | None:
+    """The node a comment is anchored to: the innermost one whose span holds its start.
+
+    A range comment belongs to the place it **starts** -- the containment the chunker
+    attaches the comment to a chunk by -- so a range over three paragraphs has the node it
+    opens in as its context. None where no node holds that offset: a comment anchored on a
+    paragraph terminator, or one whose part (or the anchor's) did not stream, has no node to
+    point at, and says so.
+    """
+    if anchor is None:
+        return None
+    best: Node | None = None
+    best_depth = -1
+    for node in parsed.nodes:
+        if not any(
+            span.part_id == anchor.part_id
+            and span.fragment_id == anchor.fragment_id
+            and span.start <= anchor.start < span.end
+            for span in node.spans
+        ):
+            continue
+        depth = _depth(node.id, parents)
+        if depth > best_depth:
+            best, best_depth = node, depth
+    return None if best is None else best.id

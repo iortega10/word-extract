@@ -491,6 +491,54 @@ def test_union_spans_cover_exactly_the_text_of_the_view_range(path):
                 assert got == projection.text[start:end], (path.name, view, start, end)
 
 
+# --- retained_before: a union offset read into the view -----------------------------
+
+
+def test_retained_before_maps_a_union_offset_to_where_the_view_kept_it():
+    """Hand-typed on the tracked-deletion paragraph: both views keep union 662..673, then
+    the deleted 673..694 leaves the accepted view 21 characters left of the union, while
+    the original view keeps all of it and elides the inserted run instead."""
+    stream, _ = _pollution()
+    accepted = project(stream, View.ACCEPTED)
+    original = project(stream, View.ORIGINAL)
+    assert accepted.retained_before(662) == 662
+    assert accepted.retained_before(673) == 673
+    assert accepted.retained_before(694) == 673  # 21 elided characters behind it
+    assert accepted.retained_before(700) == 679
+    assert accepted.retained_before(734) == 713
+    assert accepted.retained_before(len(stream.text)) == len(accepted.text)
+    assert accepted.text[662:713] == "Pollution: excluded except for hostile-fire release"
+    assert original.retained_before(694) == 694
+    assert original.retained_before(734) == 694  # the inserted run is not in this view
+    assert original.retained_before(len(stream.text)) == len(original.text)
+
+
+def test_retained_before_maps_a_range_this_view_elided_to_one_offset():
+    """Which is how a caller tells an elided location from a kept one: its two ends agree."""
+    stream, _ = _pollution()
+    original = project(stream, View.ORIGINAL)
+    # union 694..734 is one inserted span, and this view kept none of it
+    assert original.retained_before(694) == original.retained_before(734)
+    assert original.retained_before(0) == 0
+    # while the accepted view, which kept it, maps it to 40 characters
+    accepted = project(stream, View.ACCEPTED)
+    assert accepted.retained_before(734) - accepted.retained_before(694) == 40
+
+
+@pytest.mark.parametrize("path", ALL_DOCX, ids=lambda p: p.name)
+def test_retained_before_inverts_the_runs_of_every_projection(path):
+    """Every run's union start maps back to that run's own view offset, and the part's end
+    to the view text's -- the inverse of what ``union_spans`` states forwards."""
+    for stream in union_streams(opc.Package(path)):
+        for view in VIEWS:
+            projection = project(stream, view)
+            for run in projection.runs:
+                assert projection.retained_before(run.union_start) == run.view_start
+                width = run.view_end - run.view_start
+                assert projection.retained_before(run.union_start + width) == run.view_end
+            assert projection.retained_before(len(stream.text)) == len(projection.text)
+
+
 # --- the range search is the linear scan, faster ------------------------------------
 
 

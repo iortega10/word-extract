@@ -139,6 +139,28 @@ class Projection:
             index += 1
         return spans
 
+    def retained_before(self, union_offset: int) -> int:
+        """The view offset ``union_offset`` maps to: how much this view kept before it.
+
+        The inverse of the map :meth:`union_range` states forwards, for a caller that has
+        union offsets and wants the view's (6c's ``view_spans`` are whole-part view offsets,
+        so a node's union span has to be read *into* the view it is matched in). A run's
+        ``view_start`` is already the count of retained characters before it -- the runs
+        tile the view text -- so the answer is that count plus the run's own part before
+        the offset.
+
+        An offset **no run covers** -- text this view elided -- maps to where the view
+        resumes: gap-closing is a concatenation, so the offset where elided text was is the
+        offset the text after it now sits at. That makes a range's two ends map to equal
+        view offsets exactly when the view kept nothing of it, which is how a caller tells
+        an elided location (nothing to match) from a kept one.
+        """
+        index = bisect_right(self.runs, union_offset, key=lambda run: run.union_start)
+        if index == 0:
+            return 0
+        run = self.runs[index - 1]
+        return run.view_start + min(union_offset - run.union_start, run.view_end - run.view_start)
+
     def _run_at(self, offset: int) -> Run:
         index = bisect_right(self.runs, offset, key=lambda run: run.view_end)
         if index < len(self.runs) and self.runs[index].view_start <= offset:

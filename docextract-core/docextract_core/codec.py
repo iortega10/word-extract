@@ -17,11 +17,11 @@ from dataclasses import fields, is_dataclass
 from enum import Enum
 from typing import Any, TypeVar, Union, get_args, get_origin, get_type_hints
 
-SCHEMA_VERSION = "4"
+SCHEMA_VERSION = "5"
 #: Oldest schema a persisted record may carry. Older blobs are rejected, not decoded
 #: with new fields silently defaulted (design Open risk #1: version skew that
 #: produces a wrong identity or a false cache hit).
-MIN_SUPPORTED_VERSION = "4"
+MIN_SUPPORTED_VERSION = "5"
 
 T = TypeVar("T")
 

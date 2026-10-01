@@ -786,6 +786,13 @@ class _CommentBody:
     date: str | None
     para_id: str | None
     text: str
+    #: Where ``text`` sits in the union of the part it was walked in -- ``word/comments.xml``,
+    #: not the document body. A body is walked by the part's own :class:`_Walker`, so the
+    #: part is only known there; the raw offsets travel with the text and
+    #: :func:`_assemble_comments` makes the :class:`Span` out of them.
+    part_id: str
+    start: int
+    end: int
 
 
 @dataclass
@@ -963,6 +970,14 @@ def _assemble_comments(
             anchor_text = text[start:end]
         if anchor is None:
             gaps.add(GAP_UNANCHORED_COMMENT)
+        # The comment's own words are addressed in the comments part, which no document
+        # node addresses: the span is the body's own recorded union range, and it is only
+        # made when the part actually streamed (the same guard the anchor above applies).
+        text_span = (
+            Span(part_id=body.part_id, start=body.start, end=body.end)
+            if body.part_id in text_by_part
+            else None
+        )
         para_id, stability = _comment_identity(body, hashes)
         threading_status, parent_id, resolved = _threading(body, extended)
         records.append(
@@ -975,6 +990,7 @@ def _assemble_comments(
                 anchor=anchor,
                 anchor_text=anchor_text,
                 text=body.text,
+                text_span=text_span,
                 parent_id=parent_id,
                 threading_status=threading_status,
                 resolved=resolved,
@@ -1418,7 +1434,9 @@ class _Walker:
         under it, exactly as a header's is. The comment's own text excludes the terminator
         after its **last** paragraph -- that terminator separates the comment from the next
         one, as a paragraph's own text excludes its own terminator -- which is what a
-        ``w14:paraId``-less body hashes to.
+        ``w14:paraId``-less body hashes to. The offsets that text occupies in the part's
+        union travel with it (``_CommentBody``) and become the record's ``text_span``, so
+        the comment's own words are addressable in a part no document node addresses.
         """
         start = self._stream.length
         self._walk_block(comment)
@@ -1436,6 +1454,9 @@ class _Walker:
                 date=wattr(comment, "date"),
                 para_id=_para_id(last) if last is not None else None,
                 text=self._stream.text[start:end],
+                part_id=self._part.part_id,
+                start=start,
+                end=end,
             )
         )
 

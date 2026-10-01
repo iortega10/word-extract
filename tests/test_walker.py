@@ -2552,3 +2552,49 @@ def test_a_multi_paragraph_comment_text_joins_its_paragraphs_with_a_newline(tmp_
     body = '<w:p><w:r><w:commentReference w:id="1"/></w:r><w:r><w:t>x</w:t></w:r></w:p>'
     parsed = _walk_synth(tmp_path, body, comments=f"<w:comments {W_ATTRS}>{comments}</w:comments>")
     assert parsed.comments[0].text == "first\nsecond"
+
+
+def test_a_comment_text_span_is_where_its_words_sit_in_the_comments_part(tmp_path):
+    """The address 6c reports a match in the reviewer's own words at: the body's range in
+    the comments part's union, which no document node addresses and no view holds. The
+    terminator that separates one body from the next stays outside it, as it does for
+    ``text`` -- so the two are the same slice of the part."""
+    body = f"<w:p>{_run('a')}{_reference('1')}</w:p><w:p>{_run('b')}{_reference('2')}</w:p>"
+    parsed = _walk_synth(
+        tmp_path, body, comments=_comments(_comment("1", "first"), _comment("2", "second"))
+    )
+    part = next(stream for stream in parsed.union_streams if stream.part_id.startswith("comments:"))
+    first, second = parsed.comments
+    assert part.part_id != parsed.union_streams[0].part_id
+    for record in (first, second):
+        assert record.text_span.part_id == part.part_id
+        assert part.text[record.text_span.start : record.text_span.end] == record.text
+    assert (first.text_span.start, first.text_span.end) == (0, 5)
+    assert part.text[first.text_span.end] == TERMINATOR
+    assert (second.text_span.start, second.text_span.end) == (6, 12)
+
+
+def test_a_multi_paragraph_comment_text_span_covers_the_breaks_inside_it(tmp_path):
+    """Interior terminators are inside the span, the one after the last paragraph is not."""
+    parsed = _walk_synth(
+        tmp_path,
+        f"<w:p>{_run('a')}{_reference('1')}</w:p>",
+        comments=_comments(_comment("1", "first", "second")),
+    )
+    (record,) = parsed.comments
+    part = next(stream for stream in parsed.union_streams if stream.part_id.startswith("comments:"))
+    assert (record.text_span.start, record.text_span.end) == (0, 12)
+    assert part.text[record.text_span.start : record.text_span.end] == "first\nsecond"
+    assert part.text[record.text_span.end] == TERMINATOR
+
+
+@pytest.mark.parametrize("path", COMMENT_SIDECARS, ids=lambda p: f"{p.parent.name}/{p.name}")
+def test_every_comment_text_span_slices_its_own_text(path):
+    sidecar = labels.load_sidecar(path)
+    parsed = walk_document(opc.Package(path.with_name(sidecar.fixture)))
+    texts = {stream.part_id: stream.text for stream in parsed.union_streams}
+    assert parsed.comments
+    for record in parsed.comments:
+        span = record.text_span
+        assert span.part_id.startswith("comments:"), sidecar.fixture
+        assert texts[span.part_id][span.start : span.end] == record.text, sidecar.fixture

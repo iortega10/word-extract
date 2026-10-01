@@ -187,6 +187,10 @@ class Comment:
     #: (``anchor_text``). The body's paragraphs joined by ``"\n"``, without the terminator
     #: after the last one.
     text: str = ""
+    #: The union range ``text`` was read from, in the **comments** part's own stream -- so
+    #: the comment's words are addressable like any other text, even though no document
+    #: node addresses them and no view holds them. ``None`` when that part did not stream.
+    text_span: Span | None = None
     parent_id: str | None = None
     threading_status: ThreadingStatus = ThreadingStatus.UNKNOWN
     resolved: bool | None = None
