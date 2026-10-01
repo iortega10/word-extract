@@ -20,6 +20,15 @@ Every chunk that *is* called is archived with core's
 and the summary records those two refs, so a stored summary can be replayed against the
 archived answer.
 
+**Pending revisions travel with the record.** Each new summary record carries
+``pending_changes``: the chunk's :func:`~wordextract.pending.pending_changes`, computed at
+write time from the same parse the manifest is rendered from, so "which revisions does this
+summary describe?" is answered by the record itself (D5 -- whatever the prose omitted sits
+beside it). A **hit** returns the stored record untouched -- one written before Turn 2 keeps
+its ``None``, *not computed*, and is never back-filled on read -- and
+``record.has_pending`` is the tri-state flag (True, False, or None). Rejections carry no
+pending list: the model's answer was refused, so there is no record to amend.
+
 **A rejected answer is recorded, never decoded.** An answer that is not the requested JSON
 (or is built on a different output schema) is stored as a
 :class:`~wordextract.model.SummaryRejection` under the key the summary would have taken, with
@@ -65,6 +74,7 @@ from .model import (
     SummaryRejection,
     View,
 )
+from .pending import pending_changes
 from .pipeline import stored_chunks, stored_parse
 from .render import render_union_markup
 from .store import Store, find_stored, summary_key
@@ -221,6 +231,7 @@ def summarize(
             store,
             chunk,
             render_union_markup(parsed, chunk),
+            parsed=parsed,
             client=client,
             model=model,
             parameters=parameters,
@@ -262,6 +273,7 @@ def _summarize_chunk(
     chunk,
     rendering: str,
     *,
+    parsed,
     client: LLMClient,
     model: str,
     parameters: dict[str, Any],
@@ -269,7 +281,12 @@ def _summarize_chunk(
     params_digest: str,
     document_id: str,
 ) -> SummaryOutcome:
-    """One chunk: the stored record under its key, or the call that produced one."""
+    """One chunk: the stored record under its key, or the call that produced one.
+
+    ``parsed`` is only read on a miss -- a hit returns the stored record byte for byte, and
+    a record written before Turn 2 keeps ``pending_changes=None`` (*not computed*) rather
+    than being back-filled here, so "when was this written?" stays legible.
+    """
     key = summary_key(
         input_hash(rendering),
         model_id=model,
@@ -319,6 +336,7 @@ def _summarize_chunk(
         topics=answer.topics,
         open_questions=answer.open_questions,
         tokens=response.tokens,
+        pending_changes=pending_changes(parsed, chunk),
         **provenance,
     )
     _store_one(store, key, summary)

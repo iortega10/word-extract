@@ -33,20 +33,22 @@ Formats (fixed -- they are what a versioned prompt is written against):
 * the revision manifest follows that: one line per revision touching the chunk, ordered by
   its first span's union offset and then its id,
   ``[[revision id="..." kind="..." author="..." date="..." group="..."]]<text_excerpt>
-  [[/revision]]``.
+  [[/revision]]``, where ``<text_excerpt>`` is the entry's excerpt exactly as
+  ``pending_changes`` computed it -- union text under the revision, cut to
+  ``pending.EXCERPT_LIMIT`` characters with ``pending.TRUNCATION_MARKER`` appended when
+  longer (the marker is part of the format and pinned by ``RENDER_VERSION``).
 
 Only attribute **values** are escaped (``"`` as ``&quot;``, ``]`` as ``&#93;``); the text
 between the wrappers is the document's own, unaltered -- a summary is keyed by these bytes,
 so escaping the text would change what "the document says" means. The three parts are joined
 by ``"\\n"``, and an empty part (a chunk with no comments, an empty paragraph) adds no line.
 
-The manifest's derivation is **provisional**: the fields are Turn 2's ``pending_changes``
-(``revision_id``, ``kind``, ``author``, ``date``, ``spans``, ``text_excerpt``,
-``move_group_id``) and ``pending.py`` owns them. This module derives them here only because
-a chunk's rendering has to be complete before Turn 1 keys a summary on it. An id with no
-record can be rendered but not attributed, so it is **not** counted here: counting the
-revisions no chunk accounts for is Turn 2's, and its document-level half cannot be answered
-by one chunk.
+The manifest's entries are Turn 2's ``pending_changes`` (``revision_id``, ``kind``,
+``author``, ``date``, ``spans``, ``text_excerpt``, ``move_group_id``), owned and derived by
+``pending.py`` and consumed here, so the summarizer's ``pending_changes`` and this manifest
+are one derivation and cannot drift. An id with no record is rendered but not attributed:
+counting the revisions no chunk accounts for is ``pending.document_pending``'s document
+level -- one chunk cannot answer it, and this module does not try.
 
 No version constant gates a *key* here: a summary is keyed by these bytes, so a format change
 invalidates summaries by changing the bytes. ``RENDER_VERSION`` exists so that change is
@@ -66,10 +68,10 @@ from .model import (
     NodeKind,
     ParseResult,
     Revision,
-    Span,
     UnionStream,
     View,
 )
+from .pending import pending_changes
 from .versions import RENDER_VERSION
 from .views import project
 from .walker import TERMINATOR
@@ -123,7 +125,7 @@ def render_union_markup(
     parts = [
         _JOIN.join(_leaf_markup(stream, leaf, revisions) for leaf in leaves),
         *(_comment_line(comment) for comment in _comments_in(parsed, leaves, stream, comments)),
-        *(_manifest_line(entry) for entry in _pending(parsed, leaves, stream)),
+        *(_manifest_line(entry) for entry in pending_changes(parsed, chunk)),
     ]
     return _JOIN.join(part for part in parts if part)
 
@@ -317,57 +319,7 @@ def _comment_line(comment: Comment) -> str:
     )
 
 
-# --- the revision manifest (Turn 2's derivation, in its provisional form) --------------
-
-
-def _pending(
-    parsed: ParseResult, leaves: Sequence[Node], stream: UnionStream
-) -> list[dict[str, Any]]:
-    """The revisions touching these leaves, in Turn 2's ``pending_changes`` shape.
-
-    A revision record has no span and no text, so "touching the chunk" is derived: the ids on
-    the ancestor stacks of the elementary spans the chunk's leaves cover, taken in order of
-    first sighting, each with the union text of the spans whose stacks carry it -- and with
-    the union addresses ``spans`` it was read from. A nested revision's excerpt therefore
-    includes the text its descendants cover: the text *under* it, which is what the manifest
-    is about. ``text_excerpt`` is the whole of that text here; truncating it to a fixed
-    length with an explicit marker is Turn 2's, as is the document-level count of revisions
-    no chunk can account for.
-    """
-    revisions = {revision.id: revision for revision in parsed.revisions}
-    first: dict[str, int] = {}
-    spans: dict[str, list[Span]] = {}
-    text: dict[str, list[str]] = {}
-    for leaf in leaves:
-        if not leaf.spans:
-            continue
-        leaf_span = leaf.spans[0]
-        for span in _overlapping(stream, leaf_span.start, leaf_span.end):
-            low, high = max(span.start, leaf_span.start), min(span.end, leaf_span.end)
-            if low >= high:
-                continue
-            for ident in span.stack:
-                if ident not in first:
-                    first[ident] = span.start
-                    spans[ident] = []
-                    text[ident] = []
-                spans[ident].append(Span(part_id=stream.part_id, start=low, end=high))
-                text[ident].append(stream.text[low:high])
-    entries: list[dict[str, Any]] = []
-    for ident in sorted(first, key=lambda ident: (first[ident], ident)):
-        record = revisions.get(ident)
-        entries.append(
-            {
-                "revision_id": ident,
-                "kind": record.kind.value if record is not None else _kind_of(ident),
-                "author": record.author if record is not None else "",
-                "date": record.date if record is not None else None,
-                "spans": spans[ident],
-                "text_excerpt": "".join(text[ident]),
-                "move_group_id": record.move_group_id if record is not None else None,
-            }
-        )
-    return entries
+# --- the revision manifest line (the entries themselves come from pending.py) ----------
 
 
 def _manifest_line(entry: Mapping[str, Any]) -> str:

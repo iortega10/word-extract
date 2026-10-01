@@ -22,11 +22,19 @@ CHUNKER_VERSION = "1"
 MATCHER_VERSION = f"5+{STEM_ALGORITHM_VERSION}"
 SUMMARIZER_VERSION = "1"
 OUTPUT_SCHEMA_VERSION = "1"
-#: The version of the rendering **format** below (Phase 2, Turn 1): the wrapper syntax, the
-#: comment line, the manifest line. Bump it when the format changes; it is not part of a
-#: summary key (the bytes are), so the bump is a signal to the ledger and to a reviewer, not a
-#: key member.
-RENDER_VERSION = "1"
+#: The version of the rendering **format** (Phase 2, Turn 1, bumped in Turn 2): the wrapper
+#: syntax, the comment line, the manifest line. Turn 2 changed the manifest's derivation --
+#: entries now come from ``pending.py`` and ``text_excerpt`` is truncated to
+#: ``pending.EXCERPT_LIMIT`` with ``pending.TRUNCATION_MARKER`` -- so the format version
+#: moves with it, even where the corpus bytes are unchanged. Bump it when the format
+#: changes; it is not part of a summary key (the bytes are), so the bump is a signal to the
+#: ledger and to a reviewer, not a key member.
+RENDER_VERSION = "2"
+#: The version of the ``pending_changes`` derivation itself (Phase 2, Turn 2): which
+#: revisions a chunk's entries list, in what order, with what excerpt truncation. Like
+#: ``RENDER_VERSION`` it is a ledger/reviewer signal, not a key member -- a summary's key is
+#: taken over the rendered bytes, so the derivation reaches a key only through them.
+PENDING_VERSION = "1"
 
 
 @dataclass(frozen=True)

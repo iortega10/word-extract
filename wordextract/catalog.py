@@ -39,6 +39,16 @@ half-known states are reported rather than rounded off: a document in the archiv
 ``latest_run_id``, and a run whose bytes are no longer archived carries the empty title. A run
 record that cannot be *decoded* -- written under an older schema, the codec rejecting it rather
 than defaulting new fields -- is not a run this code can use, so it is skipped outright.
+
+A row also answers what **no** chunk accounts for (Phase 2, Turn 2): ``unattributed_revisions``
+and ``unattributed_gaps`` are ``pending.document_pending`` over the parse and chunk sets the row
+names, so the query layer can report a paragraph-mark revision (a record on no stack) or a
+formatting-only change (not a record at all) instead of showing zero pending revisions.
+Loaded best-effort, read-only: both are ``None`` when the parse key or blob is unavailable --
+*unknown*, never ``0`` -- chunk sets that will not decode simply contribute no attribution, and
+the loads use ``Collection.find`` (a missing blob returns ``None``, an undecodable one raises
+``CodecError``), never ``find_stored``, which would **evict** what it cannot decode and the
+catalog writes nothing.
 """
 from __future__ import annotations
 
@@ -48,6 +58,7 @@ from pathlib import Path
 from docextract_core import CodecError
 
 from .model import RunRecord
+from .pending import document_pending
 from .store import Store
 
 
@@ -73,12 +84,20 @@ class DocumentEntry:
     identity -- the same bytes under two names are still one ``document_id``, and the name
     the *archive* recorded is the one reported. ``views`` holds one entry per view ingested,
     sorted by view id.
+
+    ``unattributed_revisions`` and ``unattributed_gaps`` (Phase 2, Turn 2) are the revisions
+    no view's chunks can account for: paragraph-mark revisions (a record, but on no stack)
+    and tracked formatting changes (a gap id, not a record). Both default to ``None`` --
+    *not computed*, the row's parse or chunk sets could not be read -- and a document whose
+    revisions all touch chunks answers ``0`` with an empty list, never ``None``.
     """
 
     document_id: str
     title: str
     latest_run_id: str
     views: list[ViewArtifacts] = field(default_factory=list)
+    unattributed_revisions: int | None = None
+    unattributed_gaps: list[str] | None = None
 
 
 def list_documents(store: Store) -> list[DocumentEntry]:
@@ -97,6 +116,7 @@ def list_documents(store: Store) -> list[DocumentEntry]:
                 "title": archived.get(document_id, {}).get("original_filename", ""),
                 "latest_run_id": "",
                 "views": {},
+                "parse": "",
             },
         )
 
@@ -107,6 +127,7 @@ def list_documents(store: Store) -> list[DocumentEntry]:
         row = row_of(record.hashed_inputs.source_content_hash)
         row["latest_run_id"] = run_id  # oldest first, so the last one wins
         keys = {artifact.artifact_id: artifact.recomputed_key for artifact in record.artifact_cache}
+        row["parse"] = keys.get("parse", row["parse"])
         view = row["views"].setdefault(record.hashed_inputs.view_id, {"chunks": "", "hits": {}})
         view["chunks"] = keys.get("chunks", view["chunks"])
         if "hits" in keys:
@@ -125,9 +146,51 @@ def list_documents(store: Store) -> list[DocumentEntry]:
                 )
                 for view_id, view in sorted(row["views"].items())
             ],
+            **_pending_of(store, row),
         )
         for document_id, row in sorted(rows.items(), key=lambda item: (item[1]["title"], item[0]))
     ]
+
+
+def _pending_of(store: Store, row: dict) -> dict:
+    """The row's two pending fields as ``DocumentEntry`` keyword arguments.
+
+    ``(None, None)`` when the parse is not loadable -- no parse key, or the blob is missing
+    or undecodable -- because the count would then be "no revisions" when the truth is "did
+    not read". Otherwise the parse decides: ``document_pending`` over the chunk sets every
+    view names, each loaded best-effort (a missing or undecodable chunk set contributes no
+    attribution, not an error). Every load is ``Collection.find`` -- never
+    ``find_stored``, whose eviction of an undecodable blob is a write, and the catalog
+    promises not to write.
+
+    This reads each document's whole parse blob, so ``list_documents`` costs time linear in
+    the store's size (about 15 ms per small document); cache the rows if a catalog grows large.
+    """
+    if not row["parse"]:
+        return {"unattributed_revisions": None, "unattributed_gaps": None}
+    parsed = _find(store.parse, row["parse"])
+    if parsed is None:
+        return {"unattributed_revisions": None, "unattributed_gaps": None}
+    chunks = []
+    for view in row["views"].values():
+        if not view["chunks"]:
+            continue
+        stored = _find(store.chunks, view["chunks"])
+        if stored is not None:
+            chunks.extend(stored.chunks)
+    pending = document_pending(parsed.parsed, chunks)
+    return {
+        "unattributed_revisions": pending.unattributed_revisions,
+        "unattributed_gaps": pending.unattributed_gaps,
+    }
+
+
+def _find(collection, key: str):
+    """``collection.find(key)`` treating an undecodable blob as absent, never evicting it."""
+    try:
+        return collection.find(key)
+    except CodecError:
+        return None
 
 
 def _runs_by_age(store: Store) -> list[tuple[int, str, RunRecord]]:

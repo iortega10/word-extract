@@ -47,7 +47,12 @@ Outside pytest the packages must be importable: either `pip install -e` as above
   canned client, the versioned prompt, schema 6, the `summarize` CLI; the ledger is green).
   Known and accepted: a stored rejection counts as a cache hit (retry means
   `store.rejections.evict(key)`), and `SummaryArtifact.tokens` is a small addition to the spec.
-  Turn 2 (`pending_changes`) is next. No real provider is wired: a client is named on the
+  **Turn 2 is done and validated** (`pending_changes`: `pending.py`'s `pending_changes` /
+  `document_pending`, summary records carrying the manifest entries plus the tri-state
+  `has_pending`, catalog rows carrying `unattributed_revisions` / `unattributed_gaps`, and the
+  render manifest fed by the same derivation; `RENDER_VERSION` 1→2, new `PENDING_VERSION`, the
+  ledger's `pending` component green). Turn 3 (retrieval and ranking, `rank.py` plus the D12
+  amendment) is next. No real provider is wired: a client is named on the
   command line and configured outside the repo.
 
 ## Rules that are easy to break (each was a real defect once)

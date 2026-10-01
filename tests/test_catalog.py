@@ -222,3 +222,33 @@ def test_a_run_record_that_cannot_be_decoded_is_skipped_not_reported(tmp_path):
 
     rows = list_documents(store)
     assert [row.latest_run_id for row in rows] == ["readable"]
+
+
+# --- Turn 2: what no chunk of the document accounts for ----------------------------------
+
+
+def test_a_document_whose_revisions_all_touch_chunks_reports_no_pending(tmp_path):
+    """The row's pending fields are computed from the parse and chunk sets it holds.
+
+    ``program_review_v3``'s two revisions both live in a chunk, so the answer is zero
+    with an empty list -- an observed zero, never an uncomputed ``None``.
+    """
+    store = Store(tmp_path / "store")
+    ingest(store, DOCUMENT, registry=_registry(), run_id="only")
+
+    (row,) = list_documents(store)
+    assert row.unattributed_revisions == 0
+    assert row.unattributed_gaps == []
+
+
+def test_pending_is_not_computed_when_a_row_has_no_parse_key(tmp_path):
+    """Archived bytes and no run: no parse was ever read, so the fields stay ``None``.
+
+    "Did not read" must not read as "no revisions" (rule 8).
+    """
+    store = Store(tmp_path / "store")
+    archive_raw(store.root, DOCUMENT)
+
+    (row,) = list_documents(store)
+    assert row.unattributed_revisions is None
+    assert row.unattributed_gaps is None

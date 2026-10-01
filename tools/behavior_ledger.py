@@ -32,6 +32,9 @@ committed ``.docx`` under ``fixtures/``, the synthetic registry, default chunker
   :func:`wordextract.store.summary_key` computes for each body chunk, under fixed model, params
   and prompt literals. It measures the *key's* construction, not a call: the prompt file is not
   read, because a committed fingerprint cannot depend on the working tree's prompt content.
+* **pending**, ``PENDING_VERSION``: ``pending_changes`` over each fixture's default body cuts
+  -- the entries a summary record and the manifest carry -- plus ``document_pending``'s
+  document-level count and gap ids, so both halves of Turn 2's derivation are fingerprinted.
 
 :func:`check` is the test's half (it reports every disagreement) and :func:`record` is
 :mod:`update_behavior_ledger`'s (it appends, and refuses to overwrite). The ledger starts
@@ -68,6 +71,7 @@ from wordextract import model, opc, summarize, versions  # noqa: E402
 from wordextract import render as rendering  # noqa: E402
 from wordextract.chunker import DEFAULT_PARAMS, chunk  # noqa: E402
 from wordextract.model import View  # noqa: E402
+from wordextract.pending import document_pending, pending_changes  # noqa: E402
 from wordextract.store import body_part_id, summary_key  # noqa: E402
 from wordextract.chunker import ChunkParams  # noqa: E402
 from wordextract.model import TermGroup  # noqa: E402
@@ -91,6 +95,7 @@ COMPONENTS = (
     "contracts",
     "render",
     "summary_key",
+    "pending",
 )
 
 #: Which constant a component's version string is built from -- what to bump. The
@@ -104,6 +109,7 @@ VERSION_CONSTANTS = {
     "contracts": "docextract_core.SCHEMA_VERSION",
     "render": "RENDER_VERSION",
     "summary_key": "SUMMARIZER_VERSION (or OUTPUT_SCHEMA_VERSION)",
+    "pending": "PENDING_VERSION",
 }
 
 #: The corpus. ``fixtures/real`` is machine-local (see the module docstring), so it is
@@ -157,7 +163,7 @@ CORPUS_PATH = _ROOT / "tests" / "ledger" / "corpus.json"
 
 #: The components whose fingerprint is over the corpus. ``contracts`` is over the record
 #: definitions alone, so it is keyed by the schema version and nothing else.
-CORPUS_DEPENDENT = ("parse", "views", "chunks", "matcher", "render", "summary_key")
+CORPUS_DEPENDENT = ("parse", "views", "chunks", "matcher", "render", "summary_key", "pending")
 
 _CORPUS_HEADER = (
     "The ledger's fixture corpora, oldest first: each version lists the fixtures (paths "
@@ -225,6 +231,7 @@ def version_strings() -> dict[str, str]:
         "contracts": SCHEMA_VERSION,
         "render": rendering.RENDER_VERSION,
         "summary_key": versions.SUMMARIZER_VERSION,
+        "pending": versions.PENDING_VERSION,
     }
 
 
@@ -356,6 +363,15 @@ def _document_pieces(root: Path, name: str) -> dict[str, Any]:
             )
             for built in default
         ],
+        "pending": encode(
+            {
+                "chunks": [
+                    {"chunk_id": built.id, "entries": pending_changes(parsed, built)}
+                    for built in default
+                ],
+                "document": document_pending(parsed, default),
+            }
+        ),
     }
 
 
@@ -381,6 +397,7 @@ def _assemble(pieces: Mapping[str, dict[str, Any]], names: list[str], root: Path
         "contracts": contracts_fingerprint(),
         "render": sha256_json({n: pieces[n]["render"] for n in names}),
         "summary_key": sha256_json({n: pieces[n]["summary_key"] for n in names}),
+        "pending": sha256_json({n: pieces[n]["pending"] for n in names}),
     }
 
 

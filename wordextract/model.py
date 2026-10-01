@@ -352,10 +352,12 @@ class SummaryArtifact(Artifact):
     :func:`~docextract_core.archive_llm_call` persists only the prompt and response *files*, so
     a cost recorded nowhere would be lost. ``None`` is the client not reporting it.
 
-    ``pending_changes`` is Turn 2's, attached here so one record answers "does this chunk have
-    pending revisions?". Until Turn 2 derives it, it is ``None`` -- *not computed*, never
-    "none" (rule 8) -- and its entries are the manifest entries
-    :func:`~wordextract.render.render_union_markup` already renders for a chunk.
+    ``pending_changes`` is Turn 2's: the manifest entries
+    :func:`~wordextract.pending.pending_changes` derives for the chunk, attached when the
+    summarizer writes a record so one record answers "which revisions does this summary
+    describe?" without re-parsing. A record written before Turn 2 keeps ``None`` -- *not
+    computed*, never "none" (rule 8) -- and a chunk with no revisions gets ``[]``, an
+    observed empty. ``has_pending`` is the tri-state answer, derived from it.
     """
 
     chunk_id: str
@@ -370,6 +372,19 @@ class SummaryArtifact(Artifact):
     response_ref: str
     pending_changes: list[dict] | None = None
     tokens: int | None = None
+
+    @property
+    def has_pending(self) -> bool | None:
+        """True when the chunk has pending revisions, False when computed and empty.
+
+        ``None`` while ``pending_changes`` was never computed -- a record written before
+        Turn 2 -- because a stale `False` would read as "the deletion is gone" (rule 8:
+        unknown is unknown). The flag is derived here, never model-written: a summary that
+        ignores its manifest cannot downgrade the pending facts sitting beside it (D5).
+        """
+        if self.pending_changes is None:
+            return None
+        return bool(self.pending_changes)
 
 
 @dataclass(frozen=True)
