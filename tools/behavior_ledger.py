@@ -110,14 +110,17 @@ LEDGER_PATH = _ROOT / "tests" / "ledger" / "behavior_ledger.json"
 
 _HEADER = (
     "Append-only behavior fingerprints (build spec, Turn 9): {component: "
-    "{version_string: sha256}}. A component's fingerprint is a sha256 over its output on "
-    "the committed fixture corpus (every .docx under fixtures/ except the git-ignored, "
-    "machine-local fixtures/real/, plus fixtures/terms/synthetic.example.json, default "
-    "chunker params). The history before this file is not reconstructed: it was started "
-    "from the code that added it, so it does not read as full history. Add a line with "
-    "tools/update_behavior_ledger.py in the same commit as the behavior change that "
-    "caused it, and bump that component's version constant (tools/behavior_ledger.py "
-    "names it) in that same commit."
+    "{key: sha256}}. A component's fingerprint is a sha256 over its output on a corpus of "
+    "committed fixtures (tests/ledger/corpus.json lists each corpus version; "
+    "fixtures/real/ is git-ignored and never included; the synthetic term registry and "
+    "default chunker params are fixed). A key is '<version string>|corpus:<N>': the code "
+    "version and the corpus version it was fingerprinted on. Adding a fixture adds a new "
+    "corpus version and NEW LINES under the SAME component versions -- it is not a behavior "
+    "change and bumps nothing; the tool refuses to record a new corpus if any older "
+    "corpus's fingerprint moved (that is a behavior change that needs a bump). 'contracts' "
+    "does not depend on the corpus and is keyed by the schema version alone. The history "
+    "before this file is not reconstructed. Record lines with "
+    "tools/update_behavior_ledger.py in the same commit as the change that caused them."
 )
 
 
@@ -130,6 +133,58 @@ def corpus(fixtures_dir: str | Path | None = None) -> list[Path]:
         if _LOCAL_ONLY not in path.relative_to(root).parts
     )
     return sorted(documents, key=lambda path: path.relative_to(root).as_posix())
+
+
+CORPUS_PATH = _ROOT / "tests" / "ledger" / "corpus.json"
+
+#: The components whose fingerprint is over the corpus. ``contracts`` is over the record
+#: definitions alone, so it is keyed by the schema version and nothing else.
+CORPUS_DEPENDENT = ("parse", "views", "chunks", "matcher")
+
+_CORPUS_HEADER = (
+    "The ledger's fixture corpora, oldest first: each version lists the fixtures (paths "
+    "relative to fixtures/) its fingerprints were taken over. Growing the committed fixtures "
+    "adds a version here (tools/update_behavior_ledger.py --new-corpus); it never bumps a "
+    "component version."
+)
+
+
+def discovered(fixtures_dir: str | Path | None = None) -> list[str]:
+    """The committed fixture documents, as sorted paths relative to the fixtures directory."""
+    root = Path(fixtures_dir) if fixtures_dir is not None else FIXTURES
+    return [path.relative_to(root).as_posix() for path in corpus(root)]
+
+
+def load_corpora(path: str | Path | None = None) -> list[dict]:
+    """The corpus versions on disk, oldest first; ``[]`` when there is no manifest yet."""
+    manifest = Path(path) if path is not None else CORPUS_PATH
+    if not manifest.is_file():
+        return []
+    loaded = json.loads(manifest.read_text(encoding="utf-8"))
+    return [
+        {"version": int(entry["version"]), "files": list(entry["files"])}
+        for entry in loaded.get("corpora", [])
+    ]
+
+
+def write_corpora(corpora: list[dict], path: str | Path | None = None) -> Path:
+    manifest = Path(path) if path is not None else CORPUS_PATH
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    body = {"_comment": _CORPUS_HEADER, "corpora": corpora}
+    with manifest.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(body, indent=2, sort_keys=True) + "\n")
+    return manifest
+
+
+def latest_corpus(corpora: list[dict]) -> int:
+    return max((entry["version"] for entry in corpora), default=0)
+
+
+def entry_key(component: str, version: str, corpus_version: int) -> str:
+    """The ledger key for a component: its version, plus the corpus it was taken over."""
+    if component in CORPUS_DEPENDENT:
+        return f"{version}|corpus:{corpus_version}"
+    return version
 
 
 def version_strings() -> dict[str, str]:
@@ -226,47 +281,83 @@ PROBE_TEXTS = (
 )
 
 
-def fingerprints(fixtures_dir: str | Path | None = None) -> dict[str, str]:
-    """Every component's fingerprint over the corpus. One parse per fixture, four hashes.
-
-    The parse, its views, its chunks and the registry's hits are all taken from the *same*
-    parse of each document, so the four fingerprints describe one corpus reading.
-    """
-    root = Path(fixtures_dir) if fixtures_dir is not None else FIXTURES
-    registry = load_registry_text((root / TERM_LIST).read_text(encoding="utf-8"))
-    index = compile_registry(registry)
-    parses: dict[str, Any] = {}
-    projections: dict[str, Any] = {}
-    chunks: dict[str, Any] = {}
-    stress: dict[str, Any] = {}
-    hits: dict[str, Any] = {}
-    for document in corpus(root):
-        name = document.relative_to(root).as_posix()
-        parsed = walk_document(opc.Package(document))
-        parses[name] = encode(parsed)
-        projections[name] = [
+def _document_pieces(root: Path, name: str) -> dict[str, Any]:
+    """Everything one fixture contributes to the four corpus fingerprints, parsed once."""
+    index = _registry_index(root)
+    parsed = walk_document(opc.Package(root / name))
+    body = body_part_id(parsed)
+    return {
+        "parse": encode(parsed),
+        "views": [
             encode(project(stream, view))
             for stream in parsed.union_streams
             for view in PROJECTION_VIEWS
-        ]
-        chunks[name] = [
+        ],
+        "chunks": [
             encode({field_: getattr(built, field_) for field_ in CHUNK_FIELDS})
-            for built in chunk(parsed, body_part_id(parsed), params=DEFAULT_PARAMS)
-        ]
-        stress[name] = [
+            for built in chunk(parsed, body, params=DEFAULT_PARAMS)
+        ],
+        "stress": [
             encode({field_: getattr(built, field_) for field_ in CHUNK_FIELDS})
-            for built in chunk(parsed, body_part_id(parsed), params=STRESS_PARAMS)
-        ]
-        hits[name] = encode(match_document(index, parsed))
+            for built in chunk(parsed, body, params=STRESS_PARAMS)
+        ],
+        "matcher": encode(match_document(index, parsed)),
+    }
+
+
+def _registry_index(root: Path):
+    registry = load_registry_text((root / TERM_LIST).read_text(encoding="utf-8"))
+    return compile_registry(registry)
+
+
+def _assemble(pieces: Mapping[str, dict[str, Any]], names: list[str], root: Path) -> dict[str, str]:
+    """One corpus's four fingerprints plus the contracts fingerprint, from parsed pieces."""
     probe_index = compile_registry(PROBE_REGISTRY)
     probe = [encode(match_text(probe_index, text)) for text in PROBE_TEXTS]
     return {
-        "parse": sha256_json(parses),
-        "views": sha256_json(projections),
-        "chunks": sha256_json({"default": chunks, "stress": stress}),
-        "matcher": sha256_json({"corpus": hits, "probe": probe}),
+        "parse": sha256_json({n: pieces[n]["parse"] for n in names}),
+        "views": sha256_json({n: pieces[n]["views"] for n in names}),
+        "chunks": sha256_json(
+            {
+                "default": {n: pieces[n]["chunks"] for n in names},
+                "stress": {n: pieces[n]["stress"] for n in names},
+            }
+        ),
+        "matcher": sha256_json({"corpus": {n: pieces[n]["matcher"] for n in names}, "probe": probe}),
         "contracts": contracts_fingerprint(),
     }
+
+
+def all_fingerprints(
+    fixtures_dir: str | Path | None = None,
+    corpus_versions: list[int] | None = None,
+    corpora: list[dict] | None = None,
+) -> dict[int, dict[str, str]]:
+    """Fingerprints for each requested corpus version, parsing every fixture **once**.
+
+    A fixture appearing in several corpus versions is parsed a single time and its pieces
+    are reused, so checking every corpus costs one pass over the union of the files.
+    """
+    root = Path(fixtures_dir) if fixtures_dir is not None else FIXTURES
+    corpora = load_corpora() if corpora is None else corpora
+    if not corpora:  # no manifest yet: the discovered fixtures are corpus 1
+        corpora = [{"version": 1, "files": discovered(root)}]
+    wanted = corpus_versions if corpus_versions is not None else [latest_corpus(corpora)]
+    by_version = {entry["version"]: entry["files"] for entry in corpora}
+    needed = sorted({name for version in wanted for name in by_version[version]})
+    pieces = {name: _document_pieces(root, name) for name in needed}
+    return {version: _assemble(pieces, by_version[version], root) for version in wanted}
+
+
+def fingerprints(
+    fixtures_dir: str | Path | None = None, corpus_version: int | None = None
+) -> dict[str, str]:
+    """Every component's fingerprint over one corpus (the latest by default)."""
+    corpora = load_corpora()
+    if not corpora:
+        corpora = [{"version": 1, "files": discovered(fixtures_dir)}]
+    version = latest_corpus(corpora) if corpus_version is None else corpus_version
+    return all_fingerprints(fixtures_dir, [version], corpora)[version]
 
 
 def load_ledger(path: str | Path | None = None) -> dict[str, dict[str, str]]:
@@ -314,28 +405,66 @@ def check(
 
     Both halves of the discipline are here: a component whose *current* version string is
     missing from the ledger is a bump nobody recorded, and one whose recorded fingerprint
-    differs from the recomputed one is a behavior change nobody bumped for. Each problem
-    names the constant to bump.
+    differs from the recomputed one is a behavior change nobody bumped for. Every corpus
+    version the ledger holds an entry for is checked, so a behavior change cannot hide in
+    the same commit as a new fixture. Each problem names the constant to bump.
+
+    ``computed`` (one set of fingerprints) checks the latest corpus only.
     """
     ledger = load_ledger() if ledger is None else ledger
-    current = fingerprints(fixtures_dir) if computed is None else computed
+    corpora = load_corpora() or [
+        {"version": 1, "files": discovered(fixtures_dir)}
+    ]
+    latest = latest_corpus(corpora)
     problems: list[str] = []
+    if not load_corpora():
+        problems.append(
+            "corpus: tests/ledger/corpus.json is missing -- run "
+            "tools/update_behavior_ledger.py to write corpus version 1"
+        )
+    if load_corpora() and sorted(discovered(fixtures_dir)) != sorted(
+        next(e["files"] for e in corpora if e["version"] == latest)
+    ):
+        problems.append(
+            "corpus: the committed fixtures differ from corpus "
+            f"{latest} in tests/ledger/corpus.json -- add a corpus version with "
+            "tools/update_behavior_ledger.py --new-corpus (growing the fixtures bumps no "
+            "component version)"
+        )
+    if computed is None:
+        # one pass over every corpus version the ledger has a line for under a current version
+        current_versions = version_strings()
+        wanted = sorted(
+            {
+                entry["version"]
+                for entry in corpora
+                for component, version in current_versions.items()
+                if entry_key(component, version, entry["version"]) in (ledger.get(component) or {})
+            }
+            | {latest}
+        )
+        by_corpus = all_fingerprints(fixtures_dir, wanted, corpora)
+    else:
+        by_corpus = {latest: dict(computed)}
     for component, version in version_strings().items():
         entry = ledger.get(component)
-        if not isinstance(entry, Mapping) or version not in entry:
+        entry = entry if isinstance(entry, Mapping) else {}
+        key = entry_key(component, version, latest)
+        if key not in entry:
             problems.append(
-                f"{component}: version {version!r} is not in the ledger -- record it "
+                f"{component}: {key!r} is not in the ledger -- record it "
                 f"(tools/update_behavior_ledger.py) in the same commit as the change; "
                 f"if the behavior changed, bump {VERSION_CONSTANTS[component]} first"
             )
-            continue
-        if entry[version] != current[component]:
-            problems.append(
-                f"{component}: version {version!r} was recorded with fingerprint "
-                f"{entry[version]} but the code now computes {current[component]} -- the "
-                f"behavior changed without a bump: bump {VERSION_CONSTANTS[component]} "
-                f"and record the new version"
-            )
+        for corpus_version, current in sorted(by_corpus.items()):
+            recorded_key = entry_key(component, version, corpus_version)
+            if recorded_key in entry and entry[recorded_key] != current[component]:
+                problems.append(
+                    f"{component}: {recorded_key!r} was recorded with fingerprint "
+                    f"{entry[recorded_key]} but the code now computes {current[component]} "
+                    f"-- the behavior changed without a bump: bump "
+                    f"{VERSION_CONSTANTS[component]} and record the new version"
+                )
     return problems
 
 
@@ -345,37 +474,70 @@ def record(
     computed: Mapping[str, str] | None = None,
     fixtures_dir: str | Path | None = None,
 ) -> tuple[dict[str, dict[str, str]], list[str]]:
-    """Append each component's current version and fingerprint; return what changed.
+    """Append each component's current version and fingerprint for every corpus version.
 
-    Appends only: a version already recorded with the fingerprint the code still computes
-    is left alone, and a version already recorded with a *different* fingerprint is a
-    :class:`ValueError` -- that is the case where the change needs a version bump, not a
-    new line under the old version, which is what makes the ledger append-only.
+    Appends only: a key already recorded with the fingerprint the code still computes is
+    left alone, and one recorded with a *different* fingerprint is a :class:`ValueError` --
+    that is the case where the change needs a version bump, not a new line under the old
+    version. Because every corpus version is recomputed, adding a fixture (a new corpus
+    version) is refused if it also hid a behavior change in an older corpus.
     """
-    current = fingerprints(fixtures_dir) if computed is None else computed
+    corpora = load_corpora() or [{"version": 1, "files": discovered(fixtures_dir)}]
+    latest = latest_corpus(corpora)
+    if computed is None:
+        by_corpus = all_fingerprints(
+            fixtures_dir, [entry["version"] for entry in corpora], corpora
+        )
+    else:
+        by_corpus = {latest: dict(computed)}
     updated = {name: dict(entry) for name, entry in ledger.items()}
     lines: list[str] = []
     for component, version in version_strings().items():
         entry = updated.setdefault(component, {})
-        recorded = entry.get(version)
-        if recorded == current[component]:
-            lines.append(f"{component} {version}: unchanged ({recorded})")
-        elif recorded is not None:
-            raise ValueError(
-                f"{component}: version {version!r} is already recorded with fingerprint "
-                f"{recorded}, but the code now computes {current[component]}. Bump "
-                f"{VERSION_CONSTANTS[component]} and record the new version -- an "
-                f"existing version is never overwritten."
-            )
-        else:
-            entry[version] = current[component]
-            lines.append(f"{component} {version}: appended {current[component]}")
+        for corpus_version, current in sorted(by_corpus.items()):
+            key = entry_key(component, version, corpus_version)
+            recorded = entry.get(key)
+            if recorded == current[component]:
+                lines.append(f"{component} {key}: unchanged ({recorded})")
+            elif recorded is not None:
+                raise ValueError(
+                    f"{component}: {key!r} is already recorded with fingerprint "
+                    f"{recorded}, but the code now computes {current[component]}. Bump "
+                    f"{VERSION_CONSTANTS[component]} and record the new version -- an "
+                    f"existing key is never overwritten."
+                )
+            else:
+                entry[key] = current[component]
+                lines.append(f"{component} {key}: appended {current[component]}")
+            if component not in CORPUS_DEPENDENT:
+                break  # corpus-independent: one line is the whole fact
     return updated, lines
+
+
+def add_corpus_version(
+    fixtures_dir: str | Path | None = None, path: str | Path | None = None
+) -> tuple[list[dict], bool]:
+    """Append a corpus version listing today's fixtures; ``False`` when nothing changed."""
+    corpora = load_corpora(path)
+    files = discovered(fixtures_dir)
+    if corpora and sorted(corpora[-1]["files"]) == sorted(files):
+        return corpora, False
+    corpora = [*corpora, {"version": latest_corpus(corpora) + 1, "files": files}]
+    return corpora, True
 
 
 __all__ = [
     "COMPONENTS",
     "CORE_RECORDS",
+    "CORPUS_DEPENDENT",
+    "CORPUS_PATH",
+    "add_corpus_version",
+    "all_fingerprints",
+    "discovered",
+    "entry_key",
+    "latest_corpus",
+    "load_corpora",
+    "write_corpora",
     "FIXTURES",
     "LEDGER_PATH",
     "TERM_LIST",

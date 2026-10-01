@@ -501,6 +501,14 @@ Cut from Phase 1: separate comment indexing, rank-time dedupe, any fused score
     **refuses to overwrite** an existing version with a different fingerprint and says
     which constant to bump. A reviewer sees the ledger line added in the same commit as
     the behavior change.
+  - **Amendment (corpus versions).** Fingerprints over the corpus change when a fixture is
+    added, which is not a behavior change and must not force a version bump (the versions
+    are store keys). The corpus is therefore versioned separately
+    (`tests/ledger/corpus.json`) and ledger keys are `<component version>|corpus:<N>`
+    (`contracts` stays keyed by the schema version alone). Growing the fixtures adds a
+    corpus version with `tools/update_behavior_ledger.py --new-corpus`, which recomputes
+    every older corpus first and refuses if any moved (a behavior change hiding in the same
+    commit as a new fixture).
   - Start the ledger from the current code: it records today's fingerprints under today's
     versions. The history before the ledger is not reconstructed; say so in the ledger's
     header comment (a `_comment` key) so nobody reads it as full history.

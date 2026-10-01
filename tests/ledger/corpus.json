@@ -1,0 +1,72 @@
+{
+  "_comment": "The ledger's fixture corpora, oldest first: each version lists the fixtures (paths relative to fixtures/) its fingerprints were taken over. Growing the committed fixtures adds a version here (tools/update_behavior_ledger.py --new-corpus); it never bumps a component version.",
+  "corpora": [
+    {
+      "files": [
+        "binder_summary.docx",
+        "edge_cases.docx",
+        "model/breaks_and_specials.docx",
+        "model/comment_in_deletion.docx",
+        "model/content_controls.docx",
+        "model/deleted_paragraph_mark.docx",
+        "model/empty_parts.docx",
+        "model/hyperlink_and_fields.docx",
+        "model/mixed_para_ids.docx",
+        "model/move.docx",
+        "model/nested_field_in_instruction.docx",
+        "model/nested_revisions.docx",
+        "model/outline_level_body_text.docx",
+        "model/renamed_comments_extended.docx",
+        "model/revision_id_collision.docx",
+        "model/revision_missing_id.docx",
+        "model/strict_namespaces.docx",
+        "model/style_chain_cycle.docx",
+        "model/style_numbering.docx",
+        "model/text_box.docx",
+        "model/threading_edge_cases.docx",
+        "model/transparent_containers.docx",
+        "model/unanchored_comment.docx",
+        "model/unrecognized_container.docx",
+        "model/unrecorded_revision_kinds.docx",
+        "program_review_v3.docx",
+        "samples/review_sample.docx",
+        "spec_threaded.docx"
+      ],
+      "version": 1
+    },
+    {
+      "files": [
+        "binder_summary.docx",
+        "edge_cases.docx",
+        "model/breaks_and_specials.docx",
+        "model/comment_in_deletion.docx",
+        "model/content_controls.docx",
+        "model/deleted_paragraph_mark.docx",
+        "model/empty_parts.docx",
+        "model/hyperlink_and_fields.docx",
+        "model/mixed_para_ids.docx",
+        "model/move.docx",
+        "model/nested_field_in_instruction.docx",
+        "model/nested_revisions.docx",
+        "model/outline_level_body_text.docx",
+        "model/renamed_comments_extended.docx",
+        "model/revision_id_collision.docx",
+        "model/revision_missing_id.docx",
+        "model/strict_namespaces.docx",
+        "model/style_chain_cycle.docx",
+        "model/style_numbering.docx",
+        "model/text_box.docx",
+        "model/threading_edge_cases.docx",
+        "model/transparent_containers.docx",
+        "model/unanchored_comment.docx",
+        "model/unrecognized_container.docx",
+        "model/unrecorded_revision_kinds.docx",
+        "program_review_v2.docx",
+        "program_review_v3.docx",
+        "samples/review_sample.docx",
+        "spec_threaded.docx"
+      ],
+      "version": 2
+    }
+  ]
+}

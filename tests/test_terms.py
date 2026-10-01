@@ -1171,14 +1171,14 @@ def test_the_matcher_version_records_the_matcher_and_the_nested_stemmer():
     vendored stemmer's own identity, so a new ``stem.py`` invalidates every key that stemmed
     anything even when no matcher line changed. 6c's change to what a hit addresses, and 6d's
     to what it records (a move's ``move_group_id``), are the matcher's algorithm, so they
-    count here even though the old hits were unchanged. 0e's bump is the corpus, not the
-    algorithm: the ledger fingerprints the committed fixtures, so a new one re-fingerprints
-    every corpus-derived component, and the version string is what the ledger keys on."""
+    count here even though the old hits were unchanged. Growing the fixture
+    corpus is not a behavior change: the ledger keys its fingerprints by corpus version, so a
+    new fixture adds a corpus version and bumps no component version."""
     from wordextract.stem import STEM_ALGORITHM_VERSION
     from wordextract.versions import MATCHER_VERSION
 
-    assert MATCHER_VERSION == "6+" + STEM_ALGORITHM_VERSION
-    assert MATCHER_VERSION == "6+porter-2"
+    assert MATCHER_VERSION == "5+" + STEM_ALGORITHM_VERSION
+    assert MATCHER_VERSION == "5+porter-2"
 
 
 # --- the first-token index finds exactly what the linear scan found ---------------------

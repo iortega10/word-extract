@@ -61,7 +61,7 @@ def test_the_check_names_the_constant_to_bump_when_a_version_is_missing(monkeypa
 def test_the_parse_version_string_is_the_composite_of_its_three_constants(monkeypatch):
     """One `ParseResult` is the product of the walker, the text model and the heading
     rules, so a bump to any of the three invalidates the parse fingerprint."""
-    assert behavior_ledger.version_strings()["parse"] == "1|3|2"
+    assert behavior_ledger.version_strings()["parse"] == "1|2|2"
     monkeypatch.setattr(versions, "TEXTMODEL_VERSION", "999")
     assert behavior_ledger.version_strings()["parse"] == "1|999|2"
     problems = behavior_ledger.check()
@@ -194,7 +194,12 @@ def test_the_update_tool_refuses_a_same_version_overwrite_and_writes_nothing(tmp
 def test_the_update_tool_appends_every_version_and_is_a_no_op_when_nothing_changed(tmp_path, capsys):
     ledger_path = tmp_path / "behavior_ledger.json"
     assert update_behavior_ledger.main(["--ledger", str(ledger_path)]) == 0
-    assert capsys.readouterr().out.count("appended") == len(behavior_ledger.COMPONENTS)
+    # one line per corpus version for each corpus-dependent component, one for contracts
+    corpora = len(behavior_ledger.load_corpora())
+    expected = corpora * len(behavior_ledger.CORPUS_DEPENDENT) + (
+        len(behavior_ledger.COMPONENTS) - len(behavior_ledger.CORPUS_DEPENDENT)
+    )
+    assert capsys.readouterr().out.count("appended") == expected
     written = behavior_ledger.load_ledger(ledger_path)
     assert set(written) == set(behavior_ledger.COMPONENTS)
     assert behavior_ledger.check(written) == []
