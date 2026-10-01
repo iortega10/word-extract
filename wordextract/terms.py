@@ -72,6 +72,23 @@ is named ``comment:<para_id>``, which is how a caller reaches the ``Comment`` re
 boxes are the one location not matched: their text is its own fragment, and no fragment
 stream exists yet, so their words are a known gap rather than a hit.
 
+**Moves (6d).** A move is two revisions -- the ``w:moveFrom`` mark at the source and the
+``w:moveTo`` mark at the destination -- that share a ``move_group_id``, and because those marks
+are del-family and ins-family respectively the same wording is one hit in ``original`` and one
+in ``accepted``: **two hits, one per location**, each carrying the shared ``move_group_id``
+(D4; text-model-spec section 5). The group is read off the ancestor stack of the union text a
+hit is made of -- the innermost move that text sits under, and only when every run of the hit
+sits under that same move, so wording that merely neighbours a moved run is not a move hit.
+*Where* the two ends are is not the matcher's business: the group is a property of each
+location's own text, so a move whose ends are in different paragraphs yields its two hits for
+free -- the paragraph-boundary gap rule (section 8) still governs matching *across* a boundary,
+which never happens because a part is matched paragraph by paragraph either way. The matcher
+never folds the pair: the two hits are one *group*, never one hit with two locations, so
+:func:`match_document` returns both and the collapse is **query-time**
+(:func:`dedupe_moves`), keyed on ``(group, move_group_id, normalized text, intra-group
+ordinal)`` -- the two ends of one move are one row, while two distinct moved occurrences of
+the same wording stay two.
+
 The registry itself is a codec record, persisted as content-addressed JSON through the
 core ``Collection`` with the record **id equal to** :func:`term_list_hash`: the term list
 is the identity, so a re-save is a no-op and two runs of the same terms share one file.
@@ -79,14 +96,16 @@ is the identity, so a re-save is a no-op and two runs of the same terms share on
 from __future__ import annotations
 
 import unicodedata
+from bisect import bisect_right
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Iterable, Iterator, Sequence
 
 from docextract_core import Collection, encode, from_json, sha256_json, to_json
 
 from .model import (
     Comment,
+    ElementarySpan,
     LocationKind,
     MatchType,
     Node,
@@ -475,7 +494,9 @@ def match_projection(
 
     One hit per group per occurrence: a group's overlapping forms are resolved per group
     and ``match_type`` is settled there, before any dedupe. ``location`` is the kind of
-    place the range is, which 6c's :func:`match_part` derives per node.
+    place the range is, which 6c's :func:`match_part` derives per node -- as it also fills
+    in a move's ``move_group_id``, which is a fact about the document rather than about one
+    projection, so a bare call here leaves it ``None``.
     """
     stop = len(projection.text) if end is None else end
     hits: list[TermHit] = []
@@ -526,6 +547,7 @@ def match_part(
     projection = project(stream, view)
     by_id = {node.id: node for node in parsed.nodes}
     parents = _parents(parsed)
+    moves = _move_groups(parsed)
     hits: list[TermHit] = []
     for node in parsed.nodes:
         if node.part_id != part_id or node.kind not in _MATCH_UNITS:
@@ -540,16 +562,15 @@ def match_part(
             end = projection.retained_before(span.end)
             if start == end:
                 continue  # this view kept none of this paragraph
-            hits.extend(
-                match_projection(
-                    index,
-                    projection,
-                    node_id=node.id,
-                    start=start,
-                    end=end,
-                    location=location,
-                )
-            )
+            for hit in match_projection(
+                index,
+                projection,
+                node_id=node.id,
+                start=start,
+                end=end,
+                location=location,
+            ):
+                hits.append(_with_move_group(hit, stream, moves))
     return hits
 
 
@@ -593,23 +614,24 @@ def match_comments(index: TermIndex, parsed: ParseResult) -> list[TermHit]:
     by_id = {node.id: node for node in parsed.nodes}
     parents = _parents(parsed)
     streams = {stream.part_id: stream for stream in parsed.union_streams}
+    moves = _move_groups(parsed)
     hits: list[TermHit] = []
     for comment in parsed.comments:
         address = comment.text_span
         if address is None:
             continue
         context = _anchor_node(parsed, comment.anchor, by_id, parents)
+        body = streams.get(address.part_id)
         for match_type, spans, group in _comment_matches(index, comment, address, streams):
-            hits.append(
-                TermHit(
-                    group=group,
-                    spans=spans,
-                    node_id=f"comment:{comment.para_id}",
-                    location=LocationKind.COMMENT,
-                    match_type=match_type,
-                    context_node_id=context,
-                )
+            hit = TermHit(
+                group=group,
+                spans=spans,
+                node_id=f"comment:{comment.para_id}",
+                location=LocationKind.COMMENT,
+                match_type=match_type,
+                context_node_id=context,
             )
+            hits.append(hit if body is None else _with_move_group(hit, body, moves))
     return hits
 
 
@@ -664,10 +686,11 @@ def dedupe_hits(hits: Iterable[TermHit]) -> list[TermHit]:
     """Drop repeats of one ``(group, node_id, view, start, end)``, keeping the first.
 
     Keeps the first occurrence -- and so the ``match_type`` already resolved for that
-    span -- and the caller's order. A location visited twice (6d's moves, or a location
-    re-offered by two passes) is one hit, not two. A hit with no view span at all (6c's
-    comment hits, whose ``present_in`` is empty by design) is keyed by its union address
-    instead, so the same address at the same node still collapses.
+    span -- and the caller's order. A location re-offered by two passes is one hit, not two;
+    the two hits of a move are two *locations* and are folded by :func:`dedupe_moves` instead.
+    A hit with no view span at all (6c's comment hits, whose ``present_in`` is empty by
+    design) is keyed by its union address instead, so the same address at the same node still
+    collapses.
     """
     seen: set[tuple[str, str, str, int, int]] = set()
     kept: list[TermHit] = []
@@ -680,6 +703,138 @@ def dedupe_hits(hits: Iterable[TermHit]) -> list[TermHit]:
         seen |= keys
         kept.append(hit)
     return kept
+
+
+# --- moves (6d) ----------------------------------------------------------------------
+
+
+def dedupe_moves(hits: Iterable[TermHit], streams: Iterable[UnionStream]) -> list[TermHit]:
+    """Fold the two hits of one move into one, at query time (6d; D4, spec section 5).
+
+    A move renders as two hits of the same wording at two locations; a query wants the term
+    once, so the pair is folded here and **not** in :func:`match_document`, which is the
+    record -- "the two hits are one *group*, never one hit with two locations". Only hits that
+    carry a ``move_group_id`` are in play: everything else passes through untouched, so two
+    ordinary occurrences of a group are still two hits. The key is ``(group, move_group_id,
+    normalized text, intra-group ordinal)``, where the *normalized text* is the wording a hit
+    is actually made of, read back out of ``streams`` and normalized (so a move whose two ends
+    do not hold the same words does not fold), and the *ordinal* is which occurrence of that
+    wording this is **within its own reading** -- the one stand-in for location the pair must
+    not collide on, the way the ordinary key's ``node_id`` and ``view`` do. The two ends of a
+    move sit in opposite readings (the source only in ``original``, the destination only in
+    ``accepted``), so the wording moved once is ordinal 0 on both sides and folds, while two
+    occurrences moved together are 0 and 1 on each. The kept hit is the first of the pair and
+    the caller's order is kept. A move hit whose part is not among ``streams`` cannot have its
+    wording read, so it is left alone rather than folded on a guess.
+    """
+    text_of = {stream.part_id: stream.text for stream in streams}
+    counts: dict[tuple[str, str, str, frozenset[View]], int] = {}
+    seen: set[tuple[str, str, str, int]] = set()
+    kept: list[TermHit] = []
+    for hit in hits:
+        text = None if hit.move_group_id is None else _hit_text(hit, text_of)
+        if text is None:
+            kept.append(hit)
+            continue
+        here = (hit.group, hit.move_group_id, text, frozenset(hit.present_in))
+        ordinal = counts.get(here, 0)
+        counts[here] = ordinal + 1
+        key = (hit.group, hit.move_group_id, text, ordinal)
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(hit)
+    return kept
+
+
+def _hit_text(hit: TermHit, text_of: dict[str, str]) -> str | None:
+    """The normalized wording a hit is made of, or None when a part of it is not in ``text_of``.
+
+    A hit's ``spans`` are the union runs it is made of, so reading them straight back out --
+    the text the view elided between two runs skipped, as the view skipped it -- is the wording
+    the view matched.
+    """
+    pieces: list[str] = []
+    for span in hit.spans:
+        text = text_of.get(span.part_id)
+        if text is None:
+            return None
+        pieces.append(text[span.start : span.end])
+    if not pieces:
+        return None
+    return normalize("".join(pieces))
+
+
+def _move_groups(parsed: ParseResult) -> dict[str, str]:
+    """Every move's ``move_group_id``, by revision id (D4).
+
+    Only a move carries a group, so a stack id absent here is not a move: this map is exactly
+    the set of revisions a hit's wording has to sit under to be a move hit.
+    """
+    return {
+        revision.id: revision.move_group_id
+        for revision in parsed.revisions
+        if revision.move_group_id is not None
+    }
+
+
+def _with_move_group(hit: TermHit, stream: UnionStream, moves: dict[str, str]) -> TermHit:
+    """``hit`` with its move group filled in, or ``hit`` unchanged when it is not a move hit."""
+    group = _move_group(stream, moves, hit.spans)
+    return hit if group is None else replace(hit, move_group_id=group)
+
+
+def _move_group(stream: UnionStream, moves: dict[str, str], spans: Sequence[Span]) -> str | None:
+    """The move group a hit's wording was moved by, or None (6d).
+
+    A hit is a move hit only when **every** elementary run its union spans are made of sits
+    under a move and they name the same one: wording that only partly came from a move is not
+    the moved text, so it claims no group and is never paired.
+    """
+    if not moves or not spans:
+        return None
+    found: str | None = None
+    seen = False
+    for span in spans:
+        for elementary in _elementary_between(stream, span):
+            seen = True
+            group = _innermost_move(elementary.stack, moves)
+            if group is None:
+                return None  # a run with no move ancestor: not all of the hit was moved
+            if found is None:
+                found = group
+            elif found != group:
+                return None  # the hit's runs were moved by different groups
+    return found if seen else None
+
+
+def _elementary_between(stream: UnionStream, span: Span) -> Iterator[ElementarySpan]:
+    """The stream's elementary spans that ``span`` overlaps, in order.
+
+    The elementary spans tile the union, so the first that can overlap is found by search on
+    their ends -- the same search :func:`~wordextract.views.project` makes -- and the scan
+    stops at the span's own end.
+    """
+    first = bisect_right(stream.spans, span.start, key=lambda elementary: elementary.end)
+    for elementary in stream.spans[first:]:
+        if elementary.start >= span.end:
+            break
+        if elementary.end > span.start:
+            yield elementary
+
+
+def _innermost_move(stack: Sequence[str], moves: dict[str, str]) -> str | None:
+    """The group of the innermost move in an ancestor stack, or None.
+
+    Stacks are outermost first, so the last move a stack holds most directly placed the text.
+    A stack with no move is not moved, which is what makes a hit that only partly came from a
+    move claim no group.
+    """
+    for revision_id in reversed(stack):
+        group = moves.get(revision_id)
+        if group is not None:
+            return group
+    return None
 
 
 def _resolve(candidates: list[TermMatch]) -> list[TermMatch]:

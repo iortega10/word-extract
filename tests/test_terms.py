@@ -35,6 +35,8 @@ from wordextract.model import (
     Node,
     NodeKind,
     ParseResult,
+    Revision,
+    RevisionKind,
     Span,
     TermGroup,
     TermHit,
@@ -50,6 +52,7 @@ from wordextract.terms import (
     TermRegistry,
     compile_registry,
     dedupe_hits,
+    dedupe_moves,
     dump_registry,
     load_registry,
     load_registry_text,
@@ -596,9 +599,14 @@ def _nodes(*specs: tuple[str, NodeKind, str, int | None, int | None, str | None]
 
 
 def _parsed(
-    streams: list[UnionStream], nodes: list[Node], comments: list[Comment] | None = None
+    streams: list[UnionStream],
+    nodes: list[Node],
+    comments: list[Comment] | None = None,
+    revisions: list[Revision] | None = None,
 ) -> ParseResult:
-    return ParseResult(union_streams=streams, nodes=nodes, comments=comments or [])
+    return ParseResult(
+        union_streams=streams, nodes=nodes, comments=comments or [], revisions=revisions or []
+    )
 
 
 def test_a_part_that_did_not_stream_is_a_loud_failure():
@@ -820,6 +828,266 @@ def test_a_text_box_is_not_matched_as_the_part_it_sits_in():
     assert match_document(index, parsed) == []
 
 
+# --- moves (6d) ------------------------------------------------------------------------
+
+#: The ids of the two revisions one move is made of, as the walker names them: ``kind:ordinal``.
+MOVE_FROM = "moveFrom:5"
+MOVE_TO = "moveTo:6"
+
+
+def _revisions(*specs: tuple[str, RevisionKind, str | None]) -> list[Revision]:
+    return [
+        Revision(id=revision_id, kind=kind, author="E. Nakamura", move_group_id=group)
+        for revision_id, kind, group in specs
+    ]
+
+
+def _one_move(*, group: str | None = "mg1") -> list[Revision]:
+    return _revisions(
+        (MOVE_FROM, RevisionKind.MOVE_FROM, group),
+        (MOVE_TO, RevisionKind.MOVE_TO, group),
+    )
+
+
+def _move_paragraphs() -> tuple[list[UnionStream], list[Node]]:
+    """``text-model-spec`` section 6 example C, as two paragraphs -- a move across a boundary.
+
+    The source paragraph is the moved text (del-family, so it is only in ``original``) and the
+    destination is a second paragraph (ins-family, so it is only in ``accepted``): two
+    locations, one move.
+    """
+    stream = _stream(
+        (["moveFrom:5"], "Section 4 "),
+        ([], TERMINATOR),
+        (["moveTo:6"], "Section 4 "),
+        ([], TERMINATOR),
+        part_id=DOCUMENT,
+    )
+    nodes = _nodes(
+        ("p0", NodeKind.PARA, DOCUMENT, 0, 10, None),
+        ("p1", NodeKind.PARA, DOCUMENT, 11, 21, None),
+    )
+    return [stream], nodes
+
+
+def test_a_move_is_two_hits_that_share_their_group():
+    """A move is **two hits, one per location**, each carrying the shared ``move_group_id`` --
+    never one hit with two locations (D4; section 5). The group is the shared ``w:name`` on the
+    two range markers, read off the ancestor stack of each location's own text, so the two
+    ends being in different paragraphs changes nothing."""
+    index = _index(TermGroup(canonical="Section 4"))
+    streams, nodes = _move_paragraphs()
+    parsed = _parsed(streams, nodes, revisions=_one_move())
+
+    hits = match_document(index, parsed)
+    assert len(hits) == 2
+    by_node = {hit.node_id: hit for hit in hits}
+    assert set(by_node) == {"p0", "p1"}
+    # the source is the moved text only in ``original``, the destination only in ``accepted``
+    assert (by_node["p0"].present_in, by_node["p0"].move_group_id) == ({View.ORIGINAL}, "mg1")
+    assert (by_node["p1"].present_in, by_node["p1"].move_group_id) == ({View.ACCEPTED}, "mg1")
+    # two locations, not one hit with two ranges
+    assert by_node["p0"].spans != by_node["p1"].spans
+    assert by_node["p1"].spans == [Span(DOCUMENT, 11, 20)]
+
+
+def test_a_hit_is_a_move_hit_only_when_its_whole_wording_was_moved():
+    """Wording that only *neighbours* a moved run is not the moved text, so it claims no group
+    and is never paired: ``right of`` sits outside the ``moveTo``, so the hit that spans both
+    is not a move hit, while the term that is entirely inside the mark is."""
+    index = _index(TermGroup(canonical="right of subrogation"), TermGroup(canonical="Section 4"))
+    stream = _stream(
+        ([], "right of "),
+        (["moveTo:6"], "subrogation"),
+        ([], " see "),
+        (["moveTo:6"], "Section 4"),
+        ([], TERMINATOR),
+        part_id=DOCUMENT,
+    )
+    parsed = _parsed(
+        [stream], _nodes(("p1", NodeKind.PARA, DOCUMENT, 0, 34, None)), revisions=_one_move()
+    )
+
+    by_group = {hit.group: hit for hit in match_part(index, parsed, DOCUMENT)}
+    assert by_group["right of subrogation"].move_group_id is None
+    assert by_group["Section 4"].move_group_id == "mg1"
+
+
+def test_a_hit_that_is_not_moved_has_no_group():
+    """An ordinary hit carries no ``move_group_id``, which is what keeps the dedupe below off
+    it: only a hit whose wording *was* moved is in the move fold's way."""
+    index = _index(SUBROGATION)
+    stream = _stream(
+        ([], "right of "), (["del:1"], "recovery"), (["ins:2"], "subrogation"),
+        ([], TERMINATOR), part_id=DOCUMENT,
+    )
+    parsed = _parsed([stream], _nodes(("p1", NodeKind.PARA, DOCUMENT, 0, 28, None)))
+
+    assert [hit.move_group_id for hit in match_document(index, parsed)] == [None, None]
+
+
+def test_a_move_in_a_comment_body_carries_its_group_too():
+    """A comment's words are matched like any other text, so a move inside one is the same
+    fact: the hit stays view-less and still names the move group its wording sits under."""
+    index = _index(SUBROGATION)
+    comments = _stream((["moveTo:6"], "subrogation"), part_id=COMMENTS_PART)
+    comment = Comment(
+        para_id="0000001A",
+        author="Reviewer",
+        initials="RE",
+        text="subrogation",
+        text_span=Span(COMMENTS_PART, 0, 11),
+    )
+    parsed = _parsed([comments], [], [comment], revisions=_one_move())
+
+    (hit,) = match_comments(index, parsed)
+    assert hit.move_group_id == "mg1"
+    assert hit.present_in == set() and hit.view_spans == []
+
+
+def test_the_query_time_dedupe_folds_the_two_hits_of_one_move():
+    """The matcher keeps both (they are the record); the **query** folds the pair to one row,
+    keeping the first (D4; section 5)."""
+    index = _index(TermGroup(canonical="Section 4"))
+    streams, nodes = _move_paragraphs()
+    parsed = _parsed(streams, nodes, revisions=_one_move())
+
+    hits = match_document(index, parsed)
+    assert len(hits) == 2
+    folded = dedupe_moves(hits, parsed.union_streams)
+    assert folded == [hits[0]]
+    # determinism: the same input is the same answer, run for run
+    assert dedupe_moves(hits, parsed.union_streams) == folded
+
+
+def test_the_dedupe_leaves_hits_that_are_not_moves_alone():
+    """Two ordinary occurrences of a group are two hits, not one: nothing without a
+    ``move_group_id`` is in the fold's way."""
+    index = _index(SUBROGATION)
+    stream = _paragraphs("a subrogation clause", "the subrogation clause", part_id=DOCUMENT)
+    nodes = _nodes(
+        ("p0", NodeKind.PARA, DOCUMENT, 0, 22, None),
+        ("p1", NodeKind.PARA, DOCUMENT, 23, 45, None),
+    )
+    parsed = _parsed([stream], nodes)
+
+    hits = match_document(index, parsed)
+    assert len(hits) == 2
+    assert dedupe_moves(hits, parsed.union_streams) == hits
+
+
+def test_the_dedupe_pairs_repeated_occurrences_inside_one_move():
+    """A moved region holding the term twice is two hits per location, and the fold pairs them
+    by the occurrence's ordinal within its own reading -- two rows, not one and not four."""
+    index = _index(TermGroup(canonical="Section 4"))
+    stream = _stream(
+        (["moveFrom:5"], "Section 4 and Section 4"),
+        ([], TERMINATOR),
+        (["moveTo:6"], "Section 4 and Section 4"),
+        ([], TERMINATOR),
+        part_id=DOCUMENT,
+    )
+    nodes = _nodes(
+        ("p0", NodeKind.PARA, DOCUMENT, 0, 23, None),
+        ("p1", NodeKind.PARA, DOCUMENT, 24, 47, None),
+    )
+    parsed = _parsed([stream], nodes, revisions=_one_move())
+
+    hits = match_document(index, parsed)
+    assert len(hits) == 4
+    folded = dedupe_moves(hits, parsed.union_streams)
+    assert [hit.node_id for hit in folded] == ["p1", "p1"]  # one per occurrence, not four
+    assert sorted(hit.spans[0].start for hit in folded) == [24, 38]
+
+
+def test_the_dedupe_folds_a_move_whose_two_ends_are_in_one_paragraph():
+    """Neither end's *node* nor *span* is part of the key -- the ordinal is read per reading, so
+    a move dragged from the end of a paragraph to its front is still two hits that fold to one,
+    though their locations differ only by where in that one node they sit."""
+    index = _index(TermGroup(canonical="Section 4"))
+    stream = _stream(
+        (["moveFrom:5"], "Section 4"),
+        ([], " and "),
+        (["moveTo:6"], "Section 4"),
+        ([], TERMINATOR),
+        part_id=DOCUMENT,
+    )
+    parsed = _parsed(
+        [stream], _nodes(("p0", NodeKind.PARA, DOCUMENT, 0, 24, None)), revisions=_one_move()
+    )
+
+    hits = match_document(index, parsed)
+    assert len(hits) == 2
+    assert {hit.node_id for hit in hits} == {"p0"}  # one paragraph, two locations
+    assert [hit.present_in for hit in hits] == [{View.ACCEPTED}, {View.ORIGINAL}]
+    assert hits[0].spans != hits[1].spans
+    assert [hit.move_group_id for hit in hits] == ["mg1", "mg1"]
+
+    folded = dedupe_moves(hits, parsed.union_streams)
+    assert folded == [hits[0]]
+
+
+def test_the_dedupe_does_not_fold_a_move_whose_two_ends_hold_different_words():
+    """The key holds the wording the hit is made of, so a move whose ends say different things
+    (both forms of one group) is two rows: the fold is for the *same* wording at two places."""
+    index = _index(SUBROGATION)
+    stream = _stream(
+        (["moveFrom:5"], "right of subrogation"),
+        ([], TERMINATOR),
+        (["moveTo:6"], "right of recovery"),
+        ([], TERMINATOR),
+        part_id=DOCUMENT,
+    )
+    nodes = _nodes(
+        ("p0", NodeKind.PARA, DOCUMENT, 0, 20, None),
+        ("p1", NodeKind.PARA, DOCUMENT, 21, 38, None),
+    )
+    parsed = _parsed([stream], nodes, revisions=_one_move())
+
+    hits = match_document(index, parsed)
+    assert [hit.group for hit in hits] == ["subrogation", "subrogation"]
+    assert [hit.move_group_id for hit in hits] == ["mg1", "mg1"]
+    assert dedupe_moves(hits, parsed.union_streams) == hits  # different words, so no fold
+
+
+def test_the_dedupe_keeps_a_move_hit_whose_other_end_is_absent():
+    """Only the source end holds the term, so there is nothing to fold it with -- and the fold
+    is not allowed to invent a partner for it."""
+    index = _index(TermGroup(canonical="Section 4"))
+    stream = _stream(
+        (["moveFrom:5"], "Section 4"),
+        ([], TERMINATOR),
+        (["moveTo:6"], "moved elsewhere"),
+        ([], TERMINATOR),
+        part_id=DOCUMENT,
+    )
+    nodes = _nodes(
+        ("p0", NodeKind.PARA, DOCUMENT, 0, 9, None),
+        ("p1", NodeKind.PARA, DOCUMENT, 10, 25, None),
+    )
+    parsed = _parsed([stream], nodes, revisions=_one_move())
+
+    hits = match_document(index, parsed)
+    assert [(hit.node_id, hit.move_group_id) for hit in hits] == [("p0", "mg1")]
+    assert dedupe_moves(hits, parsed.union_streams) == hits
+
+
+def test_a_move_in_a_real_package_is_two_hits_that_sharing_the_fixtures_group():
+    """The walker and the matcher together, on ``fixtures/model/move.docx``: the fixture's own
+    sidecar says ``move_group_id = mg1`` (the shared ``w:name`` on its two range markers), and
+    the two hits are one per location, folded to one at query time."""
+    from wordextract import opc
+    from wordextract.walker import walk_document
+
+    index = _index(TermGroup(canonical="Section 4"))
+    parsed = walk_document(opc.Package(FIXTURES / "model" / "move.docx"))
+
+    hits = match_document(index, parsed)
+    assert [hit.move_group_id for hit in hits] == ["mg1", "mg1"]
+    assert {view.value for hit in hits for view in hit.present_in} == {"accepted", "original"}
+    assert len(dedupe_moves(hits, parsed.union_streams)) == 1
+
+
 # --- option C: a term matches under either reading of the hyphen -----------------------
 
 
@@ -901,13 +1169,14 @@ def test_the_matcher_version_records_the_matcher_and_the_nested_stemmer():
     """``matcher_version`` is the reproducibility key's matcher half (D10): the matcher's own
     algorithm -- normalization never changed without it -- and, nested inside it, the
     vendored stemmer's own identity, so a new ``stem.py`` invalidates every key that stemmed
-    anything even when no matcher line changed. 6c's change to what a hit addresses is the
-    matcher's algorithm, so it counts here even though the old hits were unchanged."""
+    anything even when no matcher line changed. 6c's change to what a hit addresses, and 6d's
+    to what it records (a move's ``move_group_id``), are the matcher's algorithm, so they
+    count here even though the old hits were unchanged."""
     from wordextract.stem import STEM_ALGORITHM_VERSION
     from wordextract.versions import MATCHER_VERSION
 
-    assert MATCHER_VERSION == "4+" + STEM_ALGORITHM_VERSION
-    assert MATCHER_VERSION == "4+porter-2"
+    assert MATCHER_VERSION == "5+" + STEM_ALGORITHM_VERSION
+    assert MATCHER_VERSION == "5+porter-2"
 
 
 # --- the first-token index finds exactly what the linear scan found ---------------------
