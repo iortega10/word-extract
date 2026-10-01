@@ -1,0 +1,52 @@
+{
+  "changed": [
+    {
+      "change": "comment-text",
+      "chunk": 0,
+      "comment": {
+        "id": "0",
+        "v2": "Confirm limit against the binder.",
+        "v3": "Confirm limit vs. the binder - binder says $500k occurrence."
+      },
+      "note": "comment 0 is anchored on this chunk's first block, and a comment's own text is a context_hash input, so rewriting it re-summarizes the chunk it annotates. The chunk's own text is untouched, so its content_hash and its id are the same in the two revisions: this is the pair's cheaper half.",
+      "section_path": [
+        "Program Review: Contractors General Liability",
+        "1. Coverage Terms"
+      ]
+    },
+    {
+      "change": "body-paragraph",
+      "chunk": 2,
+      "note": "the pair's tracked change: R. Alvarez deletes one wording and inserts the other, so v3 holds the paragraph revision-marked and its accepted text is the inserted one, while v2 holds the deleted one as ordinary text. The chunk's own text moves, so its content_hash and therefore its id move with it, and the comment 4 anchored in the chunk is the same comment in both revisions.",
+      "paragraph": {
+        "v2": "Pollution: excluded in all cases",
+        "v3": "Pollution: excluded except for hostile-fire release"
+      },
+      "section_path": [
+        "Program Review: Contractors General Liability",
+        "2. Exclusions"
+      ]
+    }
+  ],
+  "fixture_pair": [
+    "program_review_v2.docx",
+    "program_review_v3.docx"
+  ],
+  "labels_provenance": "spec",
+  "note": "Hand-typed from the edit set build_endorsement_review defines, never derived from a diff. program_review_v2.docx is program_review_v3.docx minus exactly the edits under changed -- one body paragraph before its tracked change, one comment before it was rewritten -- and everything else is carried over unchanged: every other block and comment, and the header, the footer and the core properties, the header's banner still reading v3 included, since the banner is not one of the edits either. A chunk is named by its 0-based ordinal in the accepted view's chunk list, in document order, plus its section_path, never by its chunk id, its content_hash or a node id: the two documents chunk one-for-one -- the same boundary count, the same section paths, the same ordinals -- while those keys move with the revision that produced them, so an ordinal and a path are the only names the two documents share. changed is every chunk whose summary key the edits move: content_hash, and so the chunk id, which is its hash, for a body edit, or context_hash alone when a comment the chunk carries is rewritten -- the chunk is the same chunk, re-summarized, which is the case a summary cache is meant to make cheap. unchanged is the control: a paragraph no edit touches and no comment starts in, so both hashes are equal in the two revisions and its summary key must stay a hit.",
+  "unchanged": [
+    {
+      "change": "none",
+      "chunk": 4,
+      "note": "the control: no edit in the pair touches this paragraph and no comment starts in its chunk, so both hashes are equal in the two revisions and its summary key has to stay a cache hit.",
+      "paragraph": {
+        "v2": "Cancellation requires 30 days notice, 10 days for non-payment. The insured may not assign the policy without consent.",
+        "v3": "Cancellation requires 30 days notice, 10 days for non-payment. The insured may not assign the policy without consent."
+      },
+      "section_path": [
+        "Program Review: Contractors General Liability",
+        "4. Notes"
+      ]
+    }
+  ]
+}

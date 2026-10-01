@@ -123,7 +123,7 @@ def test_the_cli_exits_non_zero_on_a_fixtures_path_that_does_not_exist(tmp_path,
 def test_run_scores_l1_green_and_leaves_l2_not_evaluated():
     table = run(FIXTURES)
     # every committed sidecar, root and fixtures/model alike, is counted
-    assert table["labels"] == {"generator": 3, "spec": 24, "human": 0}
+    assert table["labels"] == {"generator": 4, "spec": 24, "human": 0}
 
     layers = {layer["layer"]: layer for layer in table["quality"]}
     assert layers["L1"]["result"] is True
@@ -182,7 +182,13 @@ def test_labels_module_imports_no_implementation_code():
     assert out.stdout.strip() == "ok"
 
 
-ROOT_SIDECARS = {"program_review_v3", "binder_summary", "edge_cases", "spec_threaded"}
+ROOT_SIDECARS = {
+    "program_review_v2",
+    "program_review_v3",
+    "binder_summary",
+    "edge_cases",
+    "spec_threaded",
+}
 MODEL_SIDECARS = {
     "breaks_and_specials",
     "comment_in_deletion",

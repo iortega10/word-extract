@@ -61,7 +61,7 @@ def test_the_check_names_the_constant_to_bump_when_a_version_is_missing(monkeypa
 def test_the_parse_version_string_is_the_composite_of_its_three_constants(monkeypatch):
     """One `ParseResult` is the product of the walker, the text model and the heading
     rules, so a bump to any of the three invalidates the parse fingerprint."""
-    assert behavior_ledger.version_strings()["parse"] == "1|2|2"
+    assert behavior_ledger.version_strings()["parse"] == "1|3|2"
     monkeypatch.setattr(versions, "TEXTMODEL_VERSION", "999")
     assert behavior_ledger.version_strings()["parse"] == "1|999|2"
     problems = behavior_ledger.check()

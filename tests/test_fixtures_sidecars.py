@@ -14,7 +14,13 @@ from pathlib import Path
 import pytest
 from lxml import etree
 
+from wordextract import opc
+from wordextract.chunker import DEFAULT_PARAMS, chunk
 from wordextract.evals import labels
+from wordextract.model import NodeKind, View
+from wordextract.store import body_part_id
+from wordextract.views import project
+from wordextract.walker import walk_document
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -40,7 +46,7 @@ def _sidecar(name):
     return json.loads((FIXTURES / f"{name}.expected.json").read_text(encoding="utf-8"))
 
 
-SYNTHETIC = ["program_review_v3", "binder_summary", "edge_cases"]
+SYNTHETIC = ["program_review_v2", "program_review_v3", "binder_summary", "edge_cases"]
 ALL = SYNTHETIC + ["spec_threaded"]
 
 
@@ -188,7 +194,7 @@ def test_program_review_ground_truth():
     assert sc["tables"] == [{"rows": 4, "columns": 3, "merges": [[3, 0, 3, 2]]}]
 
 
-@pytest.mark.parametrize("name", ["program_review_v3", "spec_threaded"])
+@pytest.mark.parametrize("name", ["program_review_v2", "program_review_v3", "spec_threaded"])
 def test_revision_spans_match_raw_xml(name):
     body = _body(FIXTURES / f"{name}.docx")
     raw = [(etree.QName(e).localname, e.get(_w("author"))) for e in body.iter()
@@ -270,6 +276,109 @@ def test_spec_fixture_ground_truth():
         ("Threaded Review", 1, 1),
     ]
     assert sc["tables"] == []
+
+
+# --- the v2 / v3 pair (build spec, Phase 2, 0e) ------------------------------
+
+
+#: The pair's hand-typed sidecar. Its `changed` / `unchanged` ordinals are the claim these
+#: tests check: the sidecar is what a reader is told, the documents are what actually is.
+PAIR = json.loads((FIXTURES / "program_review_pair.json").read_text(encoding="utf-8"))
+V2, V3 = "program_review_v2.docx", "program_review_v3.docx"
+
+#: Text-bearing leaves: the kinds a chunk's bytes can be made of (2b).
+LEAF_KINDS = frozenset({NodeKind.PARA, NodeKind.LIST_ITEM, NodeKind.HEADING})
+
+
+def _chunks(name):
+    """``(parsed, accepted-view body chunks)`` for one fixture of the pair."""
+    parsed = walk_document(opc.Package(FIXTURES / name))
+    return parsed, chunk(parsed, body_part_id(parsed), params=DEFAULT_PARAMS)
+
+
+def _chunk_text(parsed, one):
+    """``one``'s own accepted-view text, re-derived from the stream and the node tree."""
+    stream = next(s for s in parsed.union_streams if s.part_id == body_part_id(parsed))
+    named = set(one.node_ids)
+    pieces = [
+        project(stream, View.ACCEPTED, node.spans[0].start, node.spans[0].end).text
+        for node in parsed.nodes
+        if node.id in named and node.kind in LEAF_KINDS
+    ]
+    return "\n".join(pieces)
+
+
+@pytest.mark.spec_derived
+def test_the_pair_sidecar_names_exactly_the_chunks_the_edits_move():
+    """The pair's premise and its measurement: v2 and v3 chunk one-for-one, so an ordinal
+    names the same chunk in both, and the ordinals the sidecar calls `changed` are exactly
+    the chunks whose summary key differs."""
+    (_, v2), (_, v3) = _chunks(V2), _chunks(V3)
+    assert PAIR["fixture_pair"] == [V2, V3]
+
+    assert len(v2) == len(v3)
+    assert [one.section_path for one in v2] == [one.section_path for one in v3]
+
+    moved = {
+        i
+        for i, (before, after) in enumerate(zip(v2, v3))
+        if (before.content_hash, before.context_hash) != (after.content_hash, after.context_hash)
+    }
+    assert moved == {entry["chunk"] for entry in PAIR["changed"]}
+    assert [v2[entry["chunk"]].section_path for entry in PAIR["changed"]] == [
+        entry["section_path"] for entry in PAIR["changed"]
+    ]
+
+
+@pytest.mark.spec_derived
+def test_each_pair_edit_moves_the_half_of_the_summary_key_the_sidecar_says_it_does():
+    """A rewritten comment is a ``context_hash`` input only, so it re-summarizes the chunk
+    it annotates and re-ids nothing; an edited paragraph moves the chunk's own text, and
+    with it the content hash and the id. The control's both hashes are equal."""
+    (v2_parsed, v2), (v3_parsed, v3) = _chunks(V2), _chunks(V3)
+    kinds = {entry["change"]: entry for entry in PAIR["changed"]}
+
+    comment, body = kinds["comment-text"], kinds["body-paragraph"]
+    assert comment["comment"]["id"] == "0"
+
+    i = comment["chunk"]
+    assert (v2[i].id, v2[i].content_hash) == (v3[i].id, v3[i].content_hash)
+    assert v2[i].context_hash != v3[i].context_hash
+    assert _chunk_text(v2_parsed, v2[i]) == _chunk_text(v3_parsed, v3[i])
+    assert [c.text for c in v2_parsed.comments][0] == comment["comment"]["v2"]
+    assert [c.text for c in v3_parsed.comments][0] == comment["comment"]["v3"]
+
+    i = body["chunk"]
+    assert v2[i].content_hash != v3[i].content_hash and v2[i].id != v3[i].id
+    assert _chunk_text(v2_parsed, v2[i]) == body["paragraph"]["v2"]
+    assert _chunk_text(v3_parsed, v3[i]) == body["paragraph"]["v3"]
+
+    (control,) = PAIR["unchanged"]
+    i = control["chunk"]
+    assert (v2[i].id, v2[i].content_hash, v2[i].context_hash) == (
+        v3[i].id,
+        v3[i].content_hash,
+        v3[i].context_hash,
+    )
+    assert control["paragraph"]["v2"] == control["paragraph"]["v3"]
+    assert _chunk_text(v2_parsed, v2[i]) == _chunk_text(v3_parsed, v3[i])
+
+
+@pytest.mark.spec_derived
+def test_the_pair_differs_in_the_body_and_one_comment_and_nowhere_else():
+    """v2 *is* v3 minus those two edits: one member list, and the only members that differ
+    are the two parts that carry them -- no header, footer, style or core-property drift."""
+    with zipfile.ZipFile(FIXTURES / V2) as before, zipfile.ZipFile(FIXTURES / V3) as after:
+        assert before.namelist() == after.namelist()
+        differing = {
+            name for name in before.namelist() if before.read(name) != after.read(name)
+        }
+    assert differing == {"word/document.xml", "word/comments.xml"}
+
+    (v2_parsed, _), (v3_parsed, _) = _chunks(V2), _chunks(V3)
+    assert [(c.author, c.text) for c in v2_parsed.comments[1:]] == [
+        (c.author, c.text) for c in v3_parsed.comments[1:]
+    ]
 
 
 def test_regeneration_is_byte_reproducible(tmp_path):

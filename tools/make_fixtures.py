@@ -6,6 +6,10 @@ Also emits one ``<name>.expected.json`` sidecar per fixture (generator ground tr
 comment ranges/authors, revision spans, section outline, table shapes). Sidecars are
 read straight from the OOXML with ``zipfile`` + ``lxml`` -- never python-docx, which
 drops text inside ``w:ins``.
+
+``program_review_v2.docx`` is the v3 review minus two edits and gets no sidecar of its
+own: what separates the two revisions is recorded, hand-typed, in
+``program_review_pair.json`` instead (build spec, Phase 2, 0e).
 """
 from pathlib import Path
 import argparse
@@ -22,12 +26,111 @@ OUT = Path("fixtures")
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 W14 = "http://schemas.microsoft.com/office/word/2010/wordml"
 
-FIXTURES = ["program_review_v3.docx", "binder_summary.docx", "edge_cases.docx"]
+FIXTURES = [
+    "program_review_v2.docx",
+    "program_review_v3.docx",
+    "binder_summary.docx",
+    "edge_cases.docx",
+]
 
 # Regeneration is byte-reproducible: python-docx stamps comment dates and zip members
 # with "now", so both are pinned after build.
 FIXED_DATE = "2026-01-01T00:00:00Z"
 ZIP_WHEN = (2026, 1, 1, 0, 0, 0)
+
+# The v2 / v3 pair's edit set (build spec, Phase 2, 0e). v2 is v3 minus exactly these two
+# edits and nothing else -- one body paragraph before a tracked change, one comment before
+# it was rewritten -- so the pair isolates them, and `PAIR_SIDECAR` below records which
+# chunks that moves. The third string is the control: a paragraph no edit touches.
+PAIR_V2_POLLUTION = "excluded in all cases"
+PAIR_V3_POLLUTION = "excluded except for hostile-fire release"
+PAIR_V2_COMMENT = "Confirm limit against the binder."
+PAIR_V3_COMMENT = "Confirm limit vs. the binder - binder says $500k occurrence."
+PAIR_UNTOUCHED = (
+    "Cancellation requires 30 days notice, 10 days for non-payment. The insured may not "
+    "assign the policy without consent."
+)
+
+#: The pair's sidecar, typed by hand and written to ``program_review_pair.json`` (build spec,
+#: Phase 2, 0e): which chunks the edit set moves and which is the control. Every text in it
+#: comes from the constants above, so the sidecar and the documents cannot disagree about
+#: *what* the edits are -- only about where they land, which is what it exists to record.
+PAIR_SIDECAR = {
+    "fixture_pair": ["program_review_v2.docx", "program_review_v3.docx"],
+    "labels_provenance": "spec",
+    "note": (
+        "Hand-typed from the edit set build_endorsement_review defines, never derived from a "
+        "diff. program_review_v2.docx is program_review_v3.docx minus exactly the edits under "
+        "changed -- one body paragraph before its tracked change, one comment before it was "
+        "rewritten -- and everything else is carried over unchanged: every other block and "
+        "comment, and the header, the footer and the core properties, the header's banner "
+        "still reading v3 included, since the banner is not one of the edits either. A chunk "
+        "is named by its 0-based ordinal in the accepted view's chunk list, in document "
+        "order, plus its section_path, never by its chunk id, its content_hash or a node id: "
+        "the two documents chunk one-for-one -- the same boundary count, the same section "
+        "paths, the same ordinals -- while those keys move with the revision that produced "
+        "them, so an ordinal and a path are the only names the two documents share. changed "
+        "is every chunk whose summary key the edits move: content_hash, and so the chunk id, "
+        "which is its hash, for a body edit, or context_hash alone when a comment the chunk "
+        "carries is rewritten -- the chunk is the same chunk, re-summarized, which is the "
+        "case a summary cache is meant to make cheap. unchanged is the control: a paragraph "
+        "no edit touches and no comment starts in, so both hashes are equal in the two "
+        "revisions and its summary key must stay a hit."
+    ),
+    "changed": [
+        {
+            "chunk": 0,
+            "change": "comment-text",
+            "comment": {"id": "0", "v2": PAIR_V2_COMMENT, "v3": PAIR_V3_COMMENT},
+            "section_path": [
+                "Program Review: Contractors General Liability",
+                "1. Coverage Terms",
+            ],
+            "note": (
+                "comment 0 is anchored on this chunk's first block, and a comment's own text "
+                "is a context_hash input, so rewriting it re-summarizes the chunk it "
+                "annotates. The chunk's own text is untouched, so its content_hash and its id "
+                "are the same in the two revisions: this is the pair's cheaper half."
+            ),
+        },
+        {
+            "chunk": 2,
+            "change": "body-paragraph",
+            "paragraph": {
+                "v2": "Pollution: " + PAIR_V2_POLLUTION,
+                "v3": "Pollution: " + PAIR_V3_POLLUTION,
+            },
+            "section_path": [
+                "Program Review: Contractors General Liability",
+                "2. Exclusions",
+            ],
+            "note": (
+                "the pair's tracked change: R. Alvarez deletes one wording and inserts the "
+                "other, so v3 holds the paragraph revision-marked and its accepted text is "
+                "the inserted one, while v2 holds the deleted one as ordinary text. The "
+                "chunk's own text moves, so its content_hash and therefore its id move with "
+                "it, and the comment 4 anchored in the chunk is the same comment in both "
+                "revisions."
+            ),
+        },
+    ],
+    "unchanged": [
+        {
+            "chunk": 4,
+            "change": "none",
+            "paragraph": {"v2": PAIR_UNTOUCHED, "v3": PAIR_UNTOUCHED},
+            "section_path": [
+                "Program Review: Contractors General Liability",
+                "4. Notes",
+            ],
+            "note": (
+                "the control: no edit in the pair touches this paragraph and no comment starts "
+                "in its chunk, so both hashes are equal in the two revisions and its summary "
+                "key has to stay a cache hit."
+            ),
+        }
+    ],
+}
 
 
 def tracked(par, old, new, author, date="2026-09-01T10:00:00Z", rid=(900, 901)):
@@ -44,7 +147,10 @@ def numbered(doc, text, level=0):
     return p
 
 
-def build_endorsement_review():
+def build_endorsement_review(name="program_review_v3.docx", *, revision=True, binder_comment=PAIR_V3_COMMENT):
+    """The program review, v3 by default and v2 -- the pair's earlier revision, 0e -- when
+    ``revision`` is off: one tracked change and one comment rewritten are the whole of what
+    separates them, so both revisions come out of one builder and cannot drift apart."""
     d = Document()
     d.core_properties.author = "Underwriting"; d.core_properties.title = "MGU Program Review - Contractors GL"
     sec = d.sections[0]
@@ -62,7 +168,10 @@ def build_endorsement_review():
     numbered(d, "This policy does not apply to bodily injury to employees of the insured (employer's liability carve-out).")
     numbered(d, "Residential new-construction is not covered above three stories.", level=1)
     p3 = d.add_paragraph("Pollution: ")
-    tracked(p3, "excluded in all cases", "excluded except for hostile-fire release", "R. Alvarez")
+    if revision:
+        tracked(p3, PAIR_V2_POLLUTION, PAIR_V3_POLLUTION, "R. Alvarez")
+    else:
+        p3.add_run(PAIR_V2_POLLUTION)
 
     d.add_heading("3. Fee and Rate Schedule", 1)
     t = d.add_table(rows=4, cols=3); t.style = "Table Grid"
@@ -75,15 +184,20 @@ def build_endorsement_review():
     m = t.rows[3].cells[0].merge(t.rows[3].cells[2]); m.text = "Rates subject to loss-control survey; see Fees tab."
 
     d.add_heading("4. Notes", 1)
-    d.add_paragraph("Cancellation requires 30 days notice, 10 days for non-payment. The insured may not assign the policy without consent.")
+    d.add_paragraph(PAIR_UNTOUCHED)
 
     # comments: (paragraph, run range, text, author, initials) + a reply
-    c1 = d.add_comment(runs=p1.runs[0], text="Confirm limit vs. the binder - binder says $500k occurrence.", author="R. Alvarez", initials="RA")
+    c1 = d.add_comment(runs=p1.runs[0], text=binder_comment, author="R. Alvarez", initials="RA")
     d.add_comment(runs=p1.runs[0], text="Binder was superseded; $1M is right. Updating binder.", author="M. Chen", initials="MC")
     d.add_comment(runs=r, text="Is blanket AI ongoing-ops only, or completed-ops too? Carrier form CG 20 10 vs 20 37.", author="R. Alvarez", initials="RA")
     d.add_comment(runs=p2.runs[1], text="Consent language conflicts with section 1 (blanket waiver). Needs legal review.", author="Legal", initials="LG")
     d.add_comment(runs=p3.runs[0], text="Pollution exclusion wording changed - flag for carrier sign-off.", author="M. Chen", initials="MC")
-    d.save(OUT / "program_review_v3.docx")
+    d.save(OUT / name)
+
+
+def build_endorsement_review_v2():
+    """The pair's earlier revision: :func:`build_endorsement_review` before its two edits."""
+    build_endorsement_review("program_review_v2.docx", revision=False, binder_comment=PAIR_V2_COMMENT)
 
 
 def build_variant():
@@ -305,6 +419,19 @@ def emit_sidecars(out, names, provenance="generator"):
     return written
 
 
+def emit_pair_sidecar(out):
+    """Write the v2 / v3 pair's hand-typed sidecar (:data:`PAIR_SIDECAR`) into ``out``.
+
+    It is deliberately not ``<name>.expected.json``: it labels a *pair* of fixtures rather
+    than one, so nothing globs it as a single fixture's sidecar.
+    """
+    path = Path(out) / "program_review_pair.json"
+    path.write_text(
+        json.dumps(PAIR_SIDECAR, indent=2, sort_keys=True, ensure_ascii=False), encoding="utf-8"
+    )
+    return path.name
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("out", nargs="?", default="fixtures", help="fixtures directory")
@@ -316,11 +443,12 @@ def main(argv=None):
     OUT.mkdir(exist_ok=True)
 
     if not args.sidecars_only:
-        for f in (build_endorsement_review, build_variant, build_torture):
+        for f in (build_endorsement_review_v2, build_endorsement_review, build_variant, build_torture):
             f()
         for name in FIXTURES:
             normalize_package(OUT / name)
     written = emit_sidecars(OUT, FIXTURES)
+    written.append(emit_pair_sidecar(OUT))
     print(sorted(x.name for x in OUT.iterdir()))
     print("sidecars:", written)
     return 0
