@@ -225,4 +225,8 @@ fixture run `python tools/update_behavior_ledger.py --new-corpus`.
 
 ## License
 
-Not yet chosen.
+Licensed under the **Apache License, Version 2.0**; see [`LICENSE`](LICENSE) and
+[`NOTICE`](NOTICE). Copyright 2026 Ivan Ortega.
+
+The test fixtures are synthetic. Do not commit any employer's or client's real documents, term
+lists or labels to this repository; keep them outside it (see `docs/design/open-inputs.md`).

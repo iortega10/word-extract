@@ -87,6 +87,18 @@ Outside pytest the packages must be importable: either `pip install -e` as above
 - A one-off full test run took 13 minutes once (machine contention, not a regression); a normal run is
   about 40 seconds.
 
+## License and data hygiene
+
+- Licensed **Apache-2.0**, copyright Ivan Ortega (`LICENSE`, `NOTICE`). Keep `NOTICE` current when a
+  third-party component is vendored or a dependency is added.
+- **No employer's or client's confidential material in the repository, ever**: real documents, term
+  lists, checklists, labels or carrier forms. Fixtures are synthetic. Real inputs live outside the repo.
+- Real term lists should be built from **public sources** (ISO policy-form language, NAIC model laws,
+  public regulations) or supplied by the owner with permission. Do not reconstruct a former
+  employer's curated vocabularies.
+- Ownership questions (employer IP claims) are the owner's to settle with their agreement and, if
+  needed, an attorney. Do not make legal claims about them in code, docs or commits.
+
 ## Don't
 
 - Don't build FTS5 or embeddings (deferred / Phase 3), or any LLM code outside the Phase 2 spec.

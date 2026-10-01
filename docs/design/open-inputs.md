@@ -19,6 +19,10 @@ Last updated: 2026-09-30 (during Turn 6b validation).
   - groups where variants name *different* things (insured / insurer / insurance, the
     classic stem-overreach risk), so we can decide which groups must NOT opt in to stemming;
   - hyphenated compounds (hold-harmless, loss-control, non-compliance).
+- **Where real lists may come from.** Not from a former employer's curated vocabularies, which
+  are typically confidential. Build them from **public sources** (ISO policy-form and
+  endorsement language, NAIC model laws, public regulations, standard policy definitions), or
+  use a list the owner is explicitly permitted to use. Keep them outside the repository.
 - **Fallback until then:** synthetic registry only; stemming stays per-group opt-in and off
   by default; no real term list is ever invented or committed.
 - **Affects:** Turn 6c-6e spot-checks, Turn 9 L2 scoring (recall gate), Phase 3 candidate

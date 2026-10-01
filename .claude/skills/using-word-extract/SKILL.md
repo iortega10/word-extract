@@ -22,7 +22,8 @@ If an import fails with `No module named 'lxml'` or `'docextract_core'`, the ins
 2. **A term list** (`terms.json`): canonical JSON of groups. Write it with
    `wordextract.terms.dump_registry(TermRegistry(groups=[TermGroup(canonical=..., synonyms=[...],
    stemming=None|"porter")]))`. **Do not invent a real vocabulary**: ask the user. Real term lists
-   are not committed; the only one in the repo (`fixtures/terms/synthetic.example.json`) is synthetic.
+   are not committed and must never contain an employer's confidential vocabulary (build them from public
+   sources or get permission); the only one in the repo (`fixtures/terms/synthetic.example.json`) is synthetic.
 3. **A store directory** (default `.wordextract`), created on first use.
 
 ## 3. Run it
