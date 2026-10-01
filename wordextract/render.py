@@ -48,8 +48,10 @@ record can be rendered but not attributed, so it is **not** counted here: counti
 revisions no chunk accounts for is Turn 2's, and its document-level half cannot be answered
 by one chunk.
 
-No version constant lives here yet: Turn 1 adds the ``render`` ledger component, with a
-``RENDER_VERSION`` over this output for every chunk of the corpus.
+No version constant gates a *key* here: a summary is keyed by these bytes, so a format change
+invalidates summaries by changing the bytes. ``RENDER_VERSION`` exists so that change is
+**visible** -- to the behavior ledger and to a reviewer, who can see that the format every
+prompt was written against moved -- rather than only showing up as a cache miss.
 """
 from __future__ import annotations
 
@@ -68,6 +70,7 @@ from .model import (
     UnionStream,
     View,
 )
+from .versions import RENDER_VERSION
 from .views import project
 from .walker import TERMINATOR
 
@@ -391,4 +394,4 @@ def _value(kind: Any) -> str:
     return kind.value if hasattr(kind, "value") else str(kind)
 
 
-__all__ = ["chunk_text", "render_union_markup"]
+__all__ = ["RENDER_VERSION", "chunk_text", "render_union_markup"]

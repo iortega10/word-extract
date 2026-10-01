@@ -31,6 +31,12 @@ it:
              all, but stored with it, because the offline closure needs to find it.
 ===========  =========================================================================
 
+Phase 2's summaries are **not** a sixth run artifact. One document has one per chunk, and the
+inputs that can invalidate one are narrower than a run's: the term list, the matcher and the
+chunker parameters cannot change what a model reads. Their key is :func:`summary_key`, over the
+*rendered input* rather than over ``HashedInputs``, and they live in two collections of their
+own (``summaries/``, ``rejections/``).
+
 **A record is named by its own key.** Each artifact record carries the ``key`` it was
 stored under, and that field *is* the file name (``<key>.json``), so ``id_of`` and
 ``key_of`` are the same function and a re-save is a no-op by construction. The
@@ -90,6 +96,8 @@ from .model import (
     ParseArtifact,
     ParseResult,
     RunRecord,
+    SummaryArtifact,
+    SummaryRejection,
     View,
 )
 from .terms import (
@@ -106,6 +114,7 @@ from .versions import (
     MATCHER_VERSION,
     OUTPUT_SCHEMA_VERSION,
     SPEC_PARSER_VERSION,
+    SUMMARIZER_VERSION,
     TEXTMODEL_VERSION,
     HashedInputs,
 )
@@ -180,6 +189,51 @@ def hits_key(inputs: HashedInputs) -> str:
             "view_id": inputs.view_id,
             "term_list_hash": inputs.term_list_hash,
             "matcher_version": inputs.matcher_version,
+        },
+    )
+
+
+#: The ``view_id`` a summary key carries. A summary's input is the union **with** revision
+#: markup -- :func:`~wordextract.render.render_union_markup`'s rendering, comment context and
+#: manifest included -- which is not one of the accepted view's :class:`View` values, so the
+#: key names it with a literal of its own rather than borrowing a view's.
+SUMMARY_VIEW_ID = "union-markup"
+
+
+def summary_key(
+    input_hash: str,
+    *,
+    model_id: str,
+    model_params_hash: str,
+    prompt_hash: str,
+    summarizer_version: str = SUMMARIZER_VERSION,
+    output_schema_version: str = OUTPUT_SCHEMA_VERSION,
+) -> str:
+    """One chunk's summary key: the rendered input the model read, and what read it.
+
+    A **subset** of the run's ``HashedInputs``, deliberately: the source bytes, the term list,
+    the matcher and the chunker parameters cannot change what a summary says, so keying on
+    them would re-summarize a whole document because one term list grew (D7). What can change
+    it does: ``input_hash`` is the sha256 of the rendered input (see
+    :func:`~wordextract.summarize.input_hash`), which covers a tracked deletion that leaves the
+    accepted view's ``content_hash`` untouched -- revision 1 summed ``content_hash`` and
+    ``context_hash`` and would have served a stale summary for one.
+
+    ``view_id`` is the literal :data:`SUMMARY_VIEW_ID` rather than one of the accepted
+    :class:`View` values: the rendering is wider than any view, and naming a view here would
+    claim a summary was one view's. It stays a key member so that a second rendering exposed
+    under this id can never collide with the first.
+    """
+    return _key(
+        "summary",
+        {
+            "input_hash": input_hash,
+            "view_id": SUMMARY_VIEW_ID,
+            "summarizer_version": summarizer_version,
+            "model_id": model_id,
+            "model_params_hash": model_params_hash,
+            "prompt_hash": prompt_hash,
+            "output_schema_version": output_schema_version,
         },
     )
 
@@ -266,13 +320,16 @@ def _distribution_version(name: str) -> str:
         return ""
 
 
-def _find(collection: Collection, key: str):
+def find_stored(collection: Collection, key: str):
     """The record stored under ``key``, or None -- an unreadable one counts as missing.
 
     A record written under an older schema (the codec rejects it rather than decode it with
     new fields silently defaulted) is no longer a record this code can use. It is evicted so
     the run rebuilds and rewrites it, instead of every later ingest into that store failing
     on a file that was fine when it was written.
+
+    Public because the summarizer's cache check is the same check: a summary written under an
+    older schema is missing, not a hit (Phase 2, Turn 1).
     """
     try:
         return collection.find(key)
@@ -300,11 +357,19 @@ class Store:
         chunks/   <key>.json  + index.json
         hits/     <key>.json  + index.json
         terms/    <term_list_hash>.json + index.json
+        summaries/ <key>.json + index.json         one per chunk (Phase 2, Turn 1)
+        rejections/ <key>.json + index.json        the summary key's failures (same key space)
         runs/     <run_id>.json                   the log; no index, no key
 
     The term lists sit inside the store rather than beside it because the offline
     closure is ``UnionStream`` + the pinned views projection + the registry (spec review,
     Turn 3): reproducing a hit with the ``.docx`` gone needs all three from stored data.
+
+    ``summaries`` and ``rejections`` share one key space on purpose: at most one of the two
+    exists under a key, so "was this chunk summarized by this call?" is one lookup, and the
+    rejection is what a reviewer reads when the answer is no. Which of the two is present is
+    decided by :func:`~wordextract.summarize.summarize`, not enforced here -- a store holds
+    files, and the invariant lives where the files are written.
 
     ``read_only=True`` (Turn 0a) is the mode a query layer opens a store in: nothing is
     created and nothing is written -- every collection raises
@@ -326,6 +391,20 @@ class Store:
             self.root / "hits", HitsArtifact, id_of=_keyed, key_of=_keyed, read_only=read_only
         )
         self.terms = registry_store(self.root / "terms", read_only=read_only)
+        self.summaries = Collection(
+            self.root / "summaries",
+            SummaryArtifact,
+            id_of=_keyed,
+            key_of=_keyed,
+            read_only=read_only,
+        )
+        self.rejections = Collection(
+            self.root / "rejections",
+            SummaryRejection,
+            id_of=_keyed,
+            key_of=_keyed,
+            read_only=read_only,
+        )
         self.runs = Collection(
             self.root / "runs", RunRecord, id_of=_run_id, read_only=read_only
         )
@@ -388,7 +467,7 @@ def ingest(
         "raw": CacheStatus.HIT if raw_seen else CacheStatus.MISS
     }
 
-    stored_parse = _find(store.parse, keys["parse"])
+    stored_parse = find_stored(store.parse, keys["parse"])
     if stored_parse is None:
         parsed = walk_document(opc.Package(source))
         store.parse.save(ParseArtifact(key=keys["parse"], parsed=parsed))
@@ -397,7 +476,7 @@ def ingest(
         parsed = stored_parse.parsed
         statuses["parse"] = CacheStatus.HIT
 
-    stored_chunks = _find(store.chunks, keys["chunks"])
+    stored_chunks = find_stored(store.chunks, keys["chunks"])
     if stored_chunks is None:
         store.chunks.save(
             ChunksArtifact(
@@ -409,7 +488,7 @@ def ingest(
     else:
         statuses["chunks"] = CacheStatus.HIT
 
-    stored_hits = _find(store.hits, keys["hits"])
+    stored_hits = find_stored(store.hits, keys["hits"])
     if stored_hits is None:
         store.hits.save(
             HitsArtifact(key=keys["hits"], hits=match_document(compile_registry(registry), parsed))
@@ -418,7 +497,7 @@ def ingest(
     else:
         statuses["hits"] = CacheStatus.HIT
 
-    _find(store.terms, keys["terms"])  # an unreadable term list is evicted, then rewritten
+    find_stored(store.terms, keys["terms"])  # an unreadable term list is evicted, then rewritten
     _, term_written = save_registry(store.terms, registry)
     statuses["terms"] = CacheStatus.MISS if term_written else CacheStatus.HIT
 
@@ -441,13 +520,16 @@ def ingest(
 
 __all__ = [
     "ARTIFACT_KINDS",
+    "SUMMARY_VIEW_ID",
     "Store",
     "artifact_keys",
     "body_part_id",
     "chunks_key",
+    "find_stored",
     "hashed_inputs",
     "hits_key",
     "ingest",
     "parse_key",
     "recorded_inputs",
+    "summary_key",
 ]

@@ -330,6 +330,87 @@ class HitsArtifact(Artifact):
 
 
 @dataclass(frozen=True)
+class SummaryArtifact(Artifact):
+    """One chunk's summary, and which call produced it (Phase 2, Turn 1).
+
+    ``key`` is :func:`~wordextract.store.summary_key`, over the **rendered input**
+    (:func:`~wordextract.render.render_union_markup`), never over ``Chunk.content_hash``:
+    a deleted-only edit leaves the accepted view's text hash alone, so a key built on it
+    would serve a summary of text that is no longer there.
+
+    ``chunk_id`` and ``document_id`` are provenance, not key members -- two documents whose
+    chunks render to the same bytes share one summary on purpose. ``model_id``,
+    ``prompt_hash`` and ``params_hash`` are key members, repeated here so a record read back
+    from the store can be re-keyed and checked without guessing which call wrote it.
+
+    ``prompt_ref`` and ``response_ref`` address the archived prompt and response (D8), so a
+    summary can be replayed byte for byte. The call's ``latency_ms`` and ``call_id`` are
+    deliberately absent: they are the run's facts, not the record's, and a wall clock in a
+    record would break the determinism the whole store rests on.
+
+    ``tokens`` is the one call fact carried, mirroring ``LLMCall.tokens``: core's
+    :func:`~docextract_core.archive_llm_call` persists only the prompt and response *files*, so
+    a cost recorded nowhere would be lost. ``None`` is the client not reporting it.
+
+    ``pending_changes`` is Turn 2's, attached here so one record answers "does this chunk have
+    pending revisions?". Until Turn 2 derives it, it is ``None`` -- *not computed*, never
+    "none" (rule 8) -- and its entries are the manifest entries
+    :func:`~wordextract.render.render_union_markup` already renders for a chunk.
+    """
+
+    chunk_id: str
+    document_id: str
+    summary: str
+    topics: list[str]
+    open_questions: list[str]
+    model_id: str
+    prompt_hash: str
+    params_hash: str
+    prompt_ref: str
+    response_ref: str
+    pending_changes: list[dict] | None = None
+    tokens: int | None = None
+
+
+@dataclass(frozen=True)
+class SummaryRejection(Artifact):
+    """A model response that failed output validation: kept, never decoded into a summary.
+
+    Stored under the **same** key the summary would have taken, so it is one summary's worth
+    of evidence rather than a second artifact to reconcile; a later call with valid output
+    supersedes it, and the store's own no-overwrite rule is why a re-run evicts first.
+
+    Only the failure is here -- ``error`` and where the response was archived -- never a
+    half-decoded summary. A partial summary reads like a whole one, and that is how an
+    omitted pending deletion goes unnoticed (D5: say what was dropped, or drop nothing).
+    """
+
+    chunk_id: str
+    document_id: str
+    error: str
+    model_id: str
+    prompt_hash: str
+    params_hash: str
+    prompt_ref: str
+    response_ref: str
+
+
+@dataclass(frozen=True)
+class SummaryOutput:
+    """What the summary prompt asks for, and what the strict codec validates the answer against.
+
+    Not a stored record and not an :class:`Artifact`: this is the model's own JSON, decoded
+    with an empty namespace (``extra="forbid"``), so a missing field, an unknown key or a
+    wrong type is a rejection rather than a silent default. The provenance around it is
+    :class:`SummaryArtifact`'s.
+    """
+
+    summary: str
+    topics: list[str]
+    open_questions: list[str]
+
+
+@dataclass(frozen=True)
 class TermGroup:
     canonical: str
     synonyms: list[str] = field(default_factory=list)

@@ -26,6 +26,12 @@ committed ``.docx`` under ``fixtures/``, the synthetic registry, default chunker
   :mod:`wordextract.model` and the core's own records -- name, field names, types and
   defaults. A field added, removed, renamed or retyped changes this fingerprint, which is
   exactly the contract change a schema bump is for.
+* **render**, ``RENDER_VERSION``: each fixture's every body chunk in the union-markup format and
+  in each view's plain text -- the two renderings the summarizer is written against;
+* **summary_key**, ``SUMMARIZER_VERSION`` (and ``OUTPUT_SCHEMA_VERSION``): the key
+  :func:`wordextract.store.summary_key` computes for each body chunk, under fixed model, params
+  and prompt literals. It measures the *key's* construction, not a call: the prompt file is not
+  read, because a committed fingerprint cannot depend on the working tree's prompt content.
 
 :func:`check` is the test's half (it reports every disagreement) and :func:`record` is
 :mod:`update_behavior_ledger`'s (it appends, and refuses to overwrite). The ledger starts
@@ -57,10 +63,12 @@ for _path in (_ROOT, _ROOT / "docextract-core"):
 from docextract_core import SCHEMA_VERSION, encode, sha256_json  # noqa: E402
 from docextract_core import LLMCall, LLMResponse, RawArchiveRecord  # noqa: E402
 
-from wordextract import model, opc, versions  # noqa: E402
+from wordextract import model, opc, summarize, versions  # noqa: E402
+# Aliased: this module defines its own ``render`` (the ledger's text form).
+from wordextract import render as rendering  # noqa: E402
 from wordextract.chunker import DEFAULT_PARAMS, chunk  # noqa: E402
 from wordextract.model import View  # noqa: E402
-from wordextract.store import body_part_id  # noqa: E402
+from wordextract.store import body_part_id, summary_key  # noqa: E402
 from wordextract.chunker import ChunkParams  # noqa: E402
 from wordextract.model import TermGroup  # noqa: E402
 from wordextract.terms import (  # noqa: E402
@@ -75,7 +83,15 @@ from wordextract.walker import walk_document  # noqa: E402
 
 #: The component names, in the ledger's own order. Each is a stage whose output is a
 #: function of the version constants, so changing what it emits must change a key.
-COMPONENTS = ("parse", "views", "chunks", "matcher", "contracts")
+COMPONENTS = (
+    "parse",
+    "views",
+    "chunks",
+    "matcher",
+    "contracts",
+    "render",
+    "summary_key",
+)
 
 #: Which constant a component's version string is built from -- what to bump. The
 #: ``parse`` string is a composite because one ``ParseResult`` is the product of all three
@@ -86,6 +102,8 @@ VERSION_CONSTANTS = {
     "chunks": "CHUNKER_VERSION",
     "matcher": "MATCHER_VERSION (or the stemmer's STEM_ALGORITHM_VERSION)",
     "contracts": "docextract_core.SCHEMA_VERSION",
+    "render": "RENDER_VERSION",
+    "summary_key": "SUMMARIZER_VERSION (or OUTPUT_SCHEMA_VERSION)",
 }
 
 #: The corpus. ``fixtures/real`` is machine-local (see the module docstring), so it is
@@ -139,7 +157,7 @@ CORPUS_PATH = _ROOT / "tests" / "ledger" / "corpus.json"
 
 #: The components whose fingerprint is over the corpus. ``contracts`` is over the record
 #: definitions alone, so it is keyed by the schema version and nothing else.
-CORPUS_DEPENDENT = ("parse", "views", "chunks", "matcher")
+CORPUS_DEPENDENT = ("parse", "views", "chunks", "matcher", "render", "summary_key")
 
 _CORPUS_HEADER = (
     "The ledger's fixture corpora, oldest first: each version lists the fixtures (paths "
@@ -205,6 +223,8 @@ def version_strings() -> dict[str, str]:
         "chunks": versions.CHUNKER_VERSION,
         "matcher": versions.MATCHER_VERSION,
         "contracts": SCHEMA_VERSION,
+        "render": rendering.RENDER_VERSION,
+        "summary_key": versions.SUMMARIZER_VERSION,
     }
 
 
@@ -280,12 +300,26 @@ PROBE_TEXTS = (
     "waiver of right of recovery and a RIGHT OF SUBROGATION.\nSecond paragraph: subrogation.",
 )
 
+#: The views a chunk's plain text is fingerprinted in: the two a summarizer could be handed
+#: (``superseded`` is a mask, and a chunk's own bytes are already in ``content_hash``).
+RENDER_VIEWS = (View.ACCEPTED, View.ORIGINAL)
+
+#: The summarizer inputs a ``summary_key`` fingerprint is taken under. Literals, because the
+#: component measures the *key*, not a call: the prompt file is not read (a committed
+#: fingerprint cannot depend on the working tree's prompt text), and the model is nobody.
+PROBE_SUMMARY_INPUTS = {
+    "model_id": "ledger-probe",
+    "model_params_hash": "probe-params",
+    "prompt_hash": "probe-prompt",
+}
+
 
 def _document_pieces(root: Path, name: str) -> dict[str, Any]:
-    """Everything one fixture contributes to the four corpus fingerprints, parsed once."""
+    """Everything one fixture contributes to the corpus fingerprints, parsed once."""
     index = _registry_index(root)
     parsed = walk_document(opc.Package(root / name))
     body = body_part_id(parsed)
+    default = list(chunk(parsed, body, params=DEFAULT_PARAMS))
     return {
         "parse": encode(parsed),
         "views": [
@@ -295,13 +329,33 @@ def _document_pieces(root: Path, name: str) -> dict[str, Any]:
         ],
         "chunks": [
             encode({field_: getattr(built, field_) for field_ in CHUNK_FIELDS})
-            for built in chunk(parsed, body, params=DEFAULT_PARAMS)
+            for built in default
         ],
         "stress": [
             encode({field_: getattr(built, field_) for field_ in CHUNK_FIELDS})
             for built in chunk(parsed, body, params=STRESS_PARAMS)
         ],
         "matcher": encode(match_document(index, parsed)),
+        "render": encode(
+            [
+                {
+                    "id": built.id,
+                    "markup": rendering.render_union_markup(parsed, built),
+                    "text": {
+                        view.value: rendering.chunk_text(parsed, built, view)
+                        for view in RENDER_VIEWS
+                    },
+                }
+                for built in default
+            ]
+        ),
+        "summary_key": [
+            summary_key(
+                summarize.input_hash(rendering.render_union_markup(parsed, built)),
+                **PROBE_SUMMARY_INPUTS,
+            )
+            for built in default
+        ],
     }
 
 
@@ -311,7 +365,7 @@ def _registry_index(root: Path):
 
 
 def _assemble(pieces: Mapping[str, dict[str, Any]], names: list[str], root: Path) -> dict[str, str]:
-    """One corpus's four fingerprints plus the contracts fingerprint, from parsed pieces."""
+    """One corpus's fingerprints plus the contracts fingerprint, from parsed pieces."""
     probe_index = compile_registry(PROBE_REGISTRY)
     probe = [encode(match_text(probe_index, text)) for text in PROBE_TEXTS]
     return {
@@ -325,6 +379,8 @@ def _assemble(pieces: Mapping[str, dict[str, Any]], names: list[str], root: Path
         ),
         "matcher": sha256_json({"corpus": {n: pieces[n]["matcher"] for n in names}, "probe": probe}),
         "contracts": contracts_fingerprint(),
+        "render": sha256_json({n: pieces[n]["render"] for n in names}),
+        "summary_key": sha256_json({n: pieces[n]["summary_key"] for n in names}),
     }
 
 

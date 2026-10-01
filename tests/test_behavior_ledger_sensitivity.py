@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 import behavior_ledger as ledger  # noqa: E402
 
-from wordextract import chunker, headings, model, stem, terms, views  # noqa: E402
+from wordextract import chunker, headings, model, render, stem, store, terms, views  # noqa: E402
 
 
 def _components(problems) -> set[str]:
@@ -75,6 +75,18 @@ def test_a_new_contract_record_without_a_schema_bump_is_caught(monkeypatch):
         model, "ExtraRecord", dataclasses.make_dataclass("ExtraRecord", [("x", int)]), raising=False
     )
     assert "contracts" in _components(ledger.check())
+
+
+def test_a_rendering_format_change_without_a_bump_is_caught(monkeypatch):
+    """The rendering is a versioned prompt's contract, and a summary's key is over its bytes:
+    change either and the fingerprint must move."""
+    monkeypatch.setattr(render, "_JOIN", "|")
+    assert {"render", "summary_key"} <= _components(ledger.check())
+
+
+def test_a_key_member_change_without_a_bump_is_caught(monkeypatch):
+    monkeypatch.setattr(store, "SUMMARY_VIEW_ID", "accepted")
+    assert "summary_key" in _components(ledger.check())
 
 
 def test_the_probe_exercises_what_the_corpus_cannot():

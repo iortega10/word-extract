@@ -134,7 +134,8 @@ def _runs_by_age(store: Store) -> list[tuple[int, str, RunRecord]]:
     """Every readable run record, oldest-written first; a tie on the run id.
 
     An unreadable one (the codec rejects a blob from an older schema) is skipped, the same
-    call ``store._find`` makes: a record this code cannot decode is not a run it can report.
+    call ``store.find_stored`` makes: a record this code cannot decode is not a run it can
+    report.
     """
     runs = []
     for run_id in store.run_ids():

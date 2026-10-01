@@ -22,6 +22,11 @@ CHUNKER_VERSION = "1"
 MATCHER_VERSION = f"5+{STEM_ALGORITHM_VERSION}"
 SUMMARIZER_VERSION = "1"
 OUTPUT_SCHEMA_VERSION = "1"
+#: The version of the rendering **format** below (Phase 2, Turn 1): the wrapper syntax, the
+#: comment line, the manifest line. Bump it when the format changes; it is not part of a
+#: summary key (the bytes are), so the bump is a signal to the ledger and to a reviewer, not a
+#: key member.
+RENDER_VERSION = "1"
 
 
 @dataclass(frozen=True)

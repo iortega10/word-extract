@@ -5,7 +5,8 @@
     "1|corpus:2": "367a8f4911081a62e64f039604f7569a1379126e8dd91cbc7d0e943970b6c0d6"
   },
   "contracts": {
-    "5": "71b8844454af7b5b03b165aa12e88798124470f0fa91a30c2d87afc19f9ca436"
+    "5": "71b8844454af7b5b03b165aa12e88798124470f0fa91a30c2d87afc19f9ca436",
+    "6": "044f153f0adf280d17ebbda273116de9fafba968e333e286d2b1acb0c7ed4dc6"
   },
   "matcher": {
     "5+porter-2|corpus:1": "974ba3d32756816a4f8a37e97f64cf802ba770b7a78626a50da8265fa2aae99f",
@@ -14,6 +15,14 @@
   "parse": {
     "1|2|2|corpus:1": "b8ba0e47d9bc11f8fda6db16a3636bb5228b507b5ed8443d5acb9971ad2d82cc",
     "1|2|2|corpus:2": "08700e7b65bdc1dc0ad156559cbcaec45fb8f696e7985fa292cfb6ec84ebdbf1"
+  },
+  "render": {
+    "1|corpus:1": "0bbab77b3a56c8aacb9082930256add11fdb3aaae6b71ad1ed0e6a9b9c7111ec",
+    "1|corpus:2": "3ac30ec9a26bdb397996d1f0aa897398db7aea519bb67e1d869d10c807952905"
+  },
+  "summary_key": {
+    "1|corpus:1": "7dabb49b621cce7356777cb74ed6e874d7b5948f8f01bcae8f09e5fc78c3effc",
+    "1|corpus:2": "77f8cb11046d15b179207b7a98558c7b9831f2a07d97ae24b9145189207821b0"
   },
   "views": {
     "2|corpus:1": "14e272608713a63d7a8026781a7987ff9f6bb2082f13dcab804bba74405b31ec",

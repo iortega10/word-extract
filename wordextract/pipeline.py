@@ -12,10 +12,10 @@ Two defaults live here and nowhere else: which store directory a bare command wr
 and that a run is the ``accepted`` view unless told otherwise.
 
 **The parse and the hits are read back, not returned.** :func:`run` gives the run record;
-:func:`stored_parse` and :func:`stored_hits` open the store under the keys the record
-recomputed from the run's own hashed inputs (D10 B) and decode what is *there*. A pipeline
-that returned the parser's or the matcher's in-memory objects instead would make the store
-untested by the one path the product uses -- and the offline reproduction claim (D8) is
+:func:`stored_parse`, :func:`stored_chunks` and :func:`stored_hits` open the store under the
+keys the record recomputed from the run's own hashed inputs (D10 B) and decode what is *there*.
+A pipeline that returned the parser's or the matcher's in-memory objects instead would make the
+store untested by the one path the product uses -- and the offline reproduction claim (D8) is
 about the stored artifact.
 """
 
@@ -26,7 +26,7 @@ from pathlib import Path
 from docextract_core import CodecError
 
 from .chunker import DEFAULT_PARAMS, ChunkParams
-from .model import ParseResult, RunRecord, TermHit, View
+from .model import Chunk, ParseResult, RunRecord, TermHit, View
 from .store import Store, ingest
 from .terms import TermRegistry, load_registry_text
 
@@ -89,6 +89,26 @@ def stored_hits(record: RunRecord, *, store_root: str | Path = DEFAULT_STORE) ->
     return stored.hits
 
 
+def stored_chunks(record: RunRecord, *, store_root: str | Path = DEFAULT_STORE) -> list[Chunk]:
+    """The chunks ``record`` stored, decoded from the store under the record's own key.
+
+    Same key discipline as :func:`stored_hits`: taken from ``record.artifact_cache``, so a
+    store that holds nothing under it is an error rather than a re-chunk of the document.
+    The summarizer needs the chunk *records* -- their ids, their node ids and their order --
+    and never their text: what a model is sent is
+    :func:`~wordextract.render.render_union_markup`'s rendering of each one.
+    """
+    store = Store(store_root)
+    key = _artifact_key(record, "chunks")
+    try:
+        stored = store.chunks.find(key)
+    except CodecError:
+        stored = None
+    if stored is None:
+        raise LookupError(f"store {Path(store_root)} holds no chunks under {key}")
+    return stored.chunks
+
+
 def stored_parse(record: RunRecord, *, store_root: str | Path = DEFAULT_STORE) -> ParseResult:
     """The parse ``record`` stored, decoded from the store under the record's own key.
 
@@ -119,6 +139,7 @@ __all__ = [
     "DEFAULT_STORE",
     "load_terms",
     "run",
+    "stored_chunks",
     "stored_hits",
     "stored_parse",
 ]

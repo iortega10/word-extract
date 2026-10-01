@@ -43,7 +43,11 @@ Outside pytest the packages must be importable: either `pip install -e` as above
 - **Phase 2** (summaries, `pending_changes`, search, MCP tools) is specified in
   `docs/design/phase2-build-spec.md` (revision 2). **Turn 0 is done and validated** (read-only
   store, `chunk_text` / `render_union_markup`, public `nodes.py` helpers, `catalog.py`, the v2/v3
-  pair). Turn 1 (summaries, schema bump to 6) is next. No LLM code exists yet.
+  pair). **Turn 1 (summaries, schema bump to 6) is built and validated in the working tree but
+  not yet committed**: 4769 tests pass across both packages, `update_behavior_ledger.py --check`
+  and the evals gate are green. Three findings are reported awaiting owner/hearth action (codec
+  value-type checks, `SummaryArtifact.tokens` spec deviation, rejection-as-hit retry policy).
+  Turn 2 (`pending_changes`) is next once Turn 1 lands.
 
 ## Rules that are easy to break (each was a real defect once)
 
