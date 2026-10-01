@@ -291,6 +291,45 @@ class ParseResult:
 
 
 @dataclass(frozen=True)
+class Artifact:
+    """What every stored artifact has: the key it is addressed by, and named after (D8).
+
+    The key is a field rather than a derivation because the store names each artifact's
+    file after it (``<key>.json``). ``id_of`` and ``key_of`` are then the same function,
+    so re-saving an artifact the store already holds is a no-op -- which is what makes an
+    unchanged re-ingest rewrite nothing (Turn 7).
+    """
+
+    key: str
+
+
+@dataclass(frozen=True)
+class ParseArtifact(Artifact):
+    """The union streams and the resolved node tree: D8 stores the parse, not just the
+    chunks derived from it, so a hit can be reproduced with the ``.docx`` gone."""
+
+    parsed: ParseResult
+
+
+@dataclass(frozen=True)
+class ChunksArtifact(Artifact):
+    """One view's chunks, in document order, exactly as the chunker returned them."""
+
+    chunks: list[Chunk]
+
+
+@dataclass(frozen=True)
+class HitsArtifact(Artifact):
+    """The matcher's record for one term list: ``match_document``'s hits, unfolded.
+
+    Folding is query-time (6b's ``dedupe_hits``, 6d's ``dedupe_moves``), so the store
+    says what was found, never what a caller would want to see.
+    """
+
+    hits: list[TermHit]
+
+
+@dataclass(frozen=True)
 class TermGroup:
     canonical: str
     synonyms: list[str] = field(default_factory=list)

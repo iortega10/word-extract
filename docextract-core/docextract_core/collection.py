@@ -60,6 +60,25 @@ class Collection(Generic[T]):
             write_json(self._index_path, index)
         return record, True
 
+    def evict(self, key: str) -> bool:
+        """Remove the record stored under ``key`` and its index entry; True when anything was.
+
+        For a record that can no longer be read -- written by an older schema, say -- so the
+        next ``save`` writes a fresh one instead of tripping over the stale file. A key the
+        collection does not know is not an error.
+        """
+        index = read_json(self._index_path, {})
+        record_id = index.pop(key, None)
+        removed = record_id is not None
+        if removed:
+            write_json(self._index_path, index)
+        for name in {record_id, key} - {None}:
+            path = self._path(name)
+            if path.exists():
+                path.unlink()
+                removed = True
+        return removed
+
     def load(self, record_id: str) -> T | None:
         path = self._path(record_id)
         if not path.exists():
