@@ -1,0 +1,6 @@
+# The sdist carries the library only; the test suite needs the fixture corpus and tools,
+# which live in the repository, not in the distribution.
+prune tests
+prune fixtures
+prune tools
+prune docs

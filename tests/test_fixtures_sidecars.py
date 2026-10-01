@@ -381,6 +381,20 @@ def test_the_pair_differs_in_the_body_and_one_comment_and_nowhere_else():
     ]
 
 
+def _content_digest(path: Path) -> str:
+    """Digest of a fixture's content. A .docx is compared by its decompressed members, not its
+    zip bytes: the compressed stream (zlib level and version) differs across Python builds for
+    files python-docx writes, while the XML inside is identical."""
+    if path.suffix == ".docx":
+        h = hashlib.sha256()
+        with zipfile.ZipFile(path) as z:
+            for name in sorted(z.namelist()):
+                member = z.read(name)
+                h.update(f"{name}:{len(member)}:".encode("utf-8") + member)
+        return h.hexdigest()
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def test_regeneration_is_byte_reproducible(tmp_path):
     root = Path(__file__).resolve().parents[1]
 
@@ -393,16 +407,13 @@ def test_regeneration_is_byte_reproducible(tmp_path):
             [sys.executable, "tools/make_spec_fixtures.py", str(dest)],
             cwd=root, check=True, capture_output=True,
         )
-        return {
-            p.name: hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in Path(dest).iterdir() if p.is_file()
-        }
+        return {p.name: _content_digest(p) for p in Path(dest).iterdir() if p.is_file()}
 
     first, second = build(tmp_path / "a"), build(tmp_path / "b")
     assert first == second, "fixture generation is not reproducible"
 
     committed = {
-        p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+        p.name: _content_digest(p)
         for p in FIXTURES.iterdir() if p.suffix in {".docx", ".json"}
     }
     assert committed == first, "committed fixtures are stale vs the generator"
