@@ -118,6 +118,7 @@ from .model import (
     View,
     ViewSpan,
 )
+from .nodes import ancestor_of_kind, anchor_node, parents
 from .stem import stemmer
 from .views import Projection, project
 
@@ -238,13 +239,17 @@ def _canonical_groups(registry: TermRegistry) -> list[dict]:
     return sorted(groups, key=lambda group: group["canonical"])
 
 
-def registry_store(root: str | Path) -> Collection[TermRegistry]:
+def registry_store(root: str | Path, *, read_only: bool = False) -> Collection[TermRegistry]:
     """A content-addressed store of term lists: one record per distinct term list.
 
     The record id **is** the term-list hash and so is the idempotency key, which is what
     makes a re-save a no-op and keeps a store free of duplicate copies of one term list.
+    ``read_only`` is the store's own mode (Turn 0a), threaded through here so opening a
+    store read-only opens its term lists read-only too.
     """
-    return Collection(root, TermRegistry, id_of=term_list_hash, key_of=term_list_hash)
+    return Collection(
+        root, TermRegistry, id_of=term_list_hash, key_of=term_list_hash, read_only=read_only
+    )
 
 
 def save_registry(
@@ -546,13 +551,13 @@ def match_part(
         return []
     projection = project(stream, view)
     by_id = {node.id: node for node in parsed.nodes}
-    parents = _parents(parsed)
+    parent_of = parents(parsed)
     moves = _move_groups(parsed)
     hits: list[TermHit] = []
     for node in parsed.nodes:
         if node.part_id != part_id or node.kind not in _MATCH_UNITS:
             continue
-        location = _location(node, by_id, parents)
+        location = _location(node, by_id, parent_of)
         if location is LocationKind.TEXTBOX:
             continue  # a fragment is not this part's text (the ``textbox`` known gap)
         for span in node.spans:
@@ -611,8 +616,7 @@ def match_comments(index: TermIndex, parsed: ParseResult) -> list[TermHit]:
     A comment with no ``text_span`` is one whose part did not stream: its words are in no
     address space, so nothing about it is claimed.
     """
-    by_id = {node.id: node for node in parsed.nodes}
-    parents = _parents(parsed)
+    parent_of = parents(parsed)
     streams = {stream.part_id: stream for stream in parsed.union_streams}
     moves = _move_groups(parsed)
     hits: list[TermHit] = []
@@ -620,7 +624,7 @@ def match_comments(index: TermIndex, parsed: ParseResult) -> list[TermHit]:
         address = comment.text_span
         if address is None:
             continue
-        context = _anchor_node(parsed, comment.anchor, by_id, parents)
+        context = anchor_node(parsed, comment.anchor, parent_of)
         body = streams.get(address.part_id)
         for match_type, spans, group in _comment_matches(index, comment, address, streams):
             hit = TermHit(
@@ -993,52 +997,7 @@ def _part_kind(part_id: str) -> LocationKind:
     return kind
 
 
-def _parents(parsed: ParseResult) -> dict[str, str]:
-    """Each node's parent, from the ``child_ids`` edges. Node ids are package-unique."""
-    parents: dict[str, str] = {}
-    for node in parsed.nodes:
-        for child in node.child_ids:
-            parents[child] = node.id
-    return parents
-
-
-def _depth(node_id: str, parents: dict[str, str]) -> int:
-    """How deep ``node_id`` sits in the ``child_ids`` tree; a root is 0.
-
-    ``parents`` is a map, not a tree -- a malformed one could point back into itself -- so
-    the walk carries the ids it has seen and stops rather than looping.
-    """
-    seen = {node_id}
-    depth = 0
-    current = parents.get(node_id)
-    while current is not None and current not in seen:
-        seen.add(current)
-        depth += 1
-        current = parents.get(current)
-    return depth
-
-
-def _ancestor_of_kind(
-    node_id: str,
-    by_id: dict[str, Node],
-    parents: dict[str, str],
-    kind: NodeKind,
-) -> Node | None:
-    """The innermost ancestor of ``node_id`` of ``kind``, or None. Cycle-guarded."""
-    seen = {node_id}
-    current = parents.get(node_id)
-    while current is not None and current not in seen:
-        seen.add(current)
-        node = by_id.get(current)
-        if node is None:
-            break
-        if node.kind is kind:
-            return node
-        current = parents.get(current)
-    return None
-
-
-def _location(node: Node, by_id: dict[str, Node], parents: dict[str, str]) -> LocationKind:
+def _location(node: Node, by_id: dict[str, Node], parent_of: dict[str, str]) -> LocationKind:
     """Where ``node``'s text sits: a text box, a table cell, or the kind of part it is in.
 
     A fragment address is a text box before anything else -- its text is the fragment's,
@@ -1048,38 +1007,6 @@ def _location(node: Node, by_id: dict[str, Node], parents: dict[str, str]) -> Lo
     """
     if any(span.fragment_id is not None for span in node.spans):
         return LocationKind.TEXTBOX  # no fragment streams yet: text boxes are a known gap
-    if _ancestor_of_kind(node.id, by_id, parents, NodeKind.CELL) is not None:
+    if ancestor_of_kind(node.id, by_id, parent_of, NodeKind.CELL) is not None:
         return LocationKind.TABLE_CELL
     return _part_kind(node.part_id)
-
-
-def _anchor_node(
-    parsed: ParseResult,
-    anchor: Span | None,
-    by_id: dict[str, Node],
-    parents: dict[str, str],
-) -> str | None:
-    """The node a comment is anchored to: the innermost one whose span holds its start.
-
-    A range comment belongs to the place it **starts** -- the containment the chunker
-    attaches the comment to a chunk by -- so a range over three paragraphs has the node it
-    opens in as its context. None where no node holds that offset: a comment anchored on a
-    paragraph terminator, or one whose part (or the anchor's) did not stream, has no node to
-    point at, and says so.
-    """
-    if anchor is None:
-        return None
-    best: Node | None = None
-    best_depth = -1
-    for node in parsed.nodes:
-        if not any(
-            span.part_id == anchor.part_id
-            and span.fragment_id == anchor.fragment_id
-            and span.start <= anchor.start < span.end
-            for span in node.spans
-        ):
-            continue
-        depth = _depth(node.id, parents)
-        if depth > best_depth:
-            best, best_depth = node, depth
-    return None if best is None else best.id

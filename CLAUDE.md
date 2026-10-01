@@ -41,9 +41,9 @@ Outside pytest the packages must be importable: either `pip install -e` as above
   Closed **conditionally**: L2 "not evaluated" (no human labels, no real term lists), 0 of 25
   producer-verified paths (no Word-saved document), FTS5 deferred (not needed at ~25 documents).
 - **Phase 2** (summaries, `pending_changes`, search, MCP tools) is specified in
-  `docs/design/phase2-build-spec.md` (revision 2). **Turn 0e is done** (the v2/v3 fixture pair);
-  Turn 0a to 0d (read-only store, `chunk_text`, union-markup renderer, section helper, document
-  catalog) are next. No LLM code exists yet.
+  `docs/design/phase2-build-spec.md` (revision 2). **Turn 0 is done and validated** (read-only
+  store, `chunk_text` / `render_union_markup`, public `nodes.py` helpers, `catalog.py`, the v2/v3
+  pair). Turn 1 (summaries, schema bump to 6) is next. No LLM code exists yet.
 
 ## Rules that are easy to break (each was a real defect once)
 

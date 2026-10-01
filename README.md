@@ -14,7 +14,8 @@ wrong attribution is a real failure.
 > built and validated. It closed **conditionally**: the term matcher is tested only against a
 > synthetic registry, and nothing is yet checked against a Word-saved document (see
 > [Open inputs](#open-inputs)). Phase 2 (summaries, search, an MCP server) is specified in
-> `docs/design/phase2-build-spec.md` and in progress. Nothing in Phase 1 calls an LLM.
+> `docs/design/phase2-build-spec.md`; its Turn 0 helpers (read-only store, chunk text and
+> revision-markup rendering, document catalog) are built. Nothing in Phase 1 calls an LLM.
 
 ## What it does
 

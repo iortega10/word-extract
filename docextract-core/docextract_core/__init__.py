@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .archive import LLMCall, RawArchiveRecord, archive_llm_call, archive_raw
 from .codec import CodecError, SCHEMA_VERSION, decode, encode, from_json, to_json
-from .collection import Collection
+from .collection import Collection, ReadOnlyError
 from .hashing import content_hash, sha256_json, sha256_text
 from .jsonio import read_json, write_json
 from .llm import LLMClient, LLMResponse
@@ -39,6 +39,7 @@ __all__ = [
     "LLMClient",
     "LLMResponse",
     "Collection",
+    "ReadOnlyError",
 ]
 
 

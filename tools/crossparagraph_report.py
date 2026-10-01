@@ -44,14 +44,13 @@ for _path in (_ROOT, _ROOT / "docextract-core"):
 from wordextract import opc  # noqa: E402
 from wordextract.evals.labels import iter_sidecars  # noqa: E402
 from wordextract.model import NodeKind, ParseResult, Span, TermHit, View  # noqa: E402
+from wordextract.nodes import ancestor_of_kind, parents  # noqa: E402
 from wordextract.terms import (  # noqa: E402
     PARAGRAPH_BOUNDARY,
     TermIndex,
     TermMatch,
     TermRegistry,
     _MATCH_VIEWS,
-    _ancestor_of_kind,
-    _parents,
     compile_registry,
     dedupe_hits,
     load_registry_text,
@@ -182,7 +181,7 @@ def classify_boundary(parsed: ParseResult, spans: tuple[Span, ...]) -> str:
     if not spans:
         return "paragraph"
     by_id = {node.id: node for node in parsed.nodes}
-    parents = _parents(parsed)
+    parent_of = parents(parsed)
     first, last = spans[0], spans[-1]
 
     def node_at(offset: int):
@@ -199,8 +198,8 @@ def classify_boundary(parsed: ParseResult, spans: tuple[Span, ...]) -> str:
     end = node_at(last.end - 1)
     if start is None or end is None:
         return "paragraph"
-    start_cell = _ancestor_of_kind(start.id, by_id, parents, NodeKind.CELL)
-    end_cell = _ancestor_of_kind(end.id, by_id, parents, NodeKind.CELL)
+    start_cell = ancestor_of_kind(start.id, by_id, parent_of, NodeKind.CELL)
+    end_cell = ancestor_of_kind(end.id, by_id, parent_of, NodeKind.CELL)
     if (start_cell is not None or end_cell is not None) and (
         start_cell is None or end_cell is None or start_cell.id != end_cell.id
     ):

@@ -4,6 +4,12 @@ Generalized from a single consumer's three methods (form-extract store.py:88-137
 ``find_instance`` / ``save_instance`` / ``load_instance``). Having one consumer
 means the surface is a guess: it may change when a second arrives. Hashing,
 codec and archive behavior are frozen; this class is not.
+
+``read_only`` is the one mode a *reader* needs and a writer must never get by
+accident: a query layer opens a store it did not build, so opening it must not
+create or touch anything. A read-only collection's directory has to be there
+already (that is what "this is a store" means) and every mutating method raises
+:class:`ReadOnlyError` instead of writing.
 """
 from __future__ import annotations
 
@@ -18,6 +24,10 @@ T = TypeVar("T")
 _INDEX = "index.json"
 
 
+class ReadOnlyError(RuntimeError):
+    """A write was asked of a collection (or store) opened read-only."""
+
+
 class Collection(Generic[T]):
     def __init__(
         self,
@@ -26,12 +36,21 @@ class Collection(Generic[T]):
         *,
         id_of: Callable[[T], str],
         key_of: Callable[[T], str] | None = None,
+        read_only: bool = False,
     ) -> None:
         self.root = Path(root)
         self.cls = cls
         self._id_of = id_of
         self._key_of = key_of
-        self.root.mkdir(parents=True, exist_ok=True)
+        self.read_only = read_only
+        if read_only:
+            if not self.root.is_dir():
+                raise ReadOnlyError(
+                    f"read-only collection has no directory: {self.root} -- a read-only "
+                    f"open never creates one"
+                )
+        else:
+            self.root.mkdir(parents=True, exist_ok=True)
 
     @property
     def _index_path(self) -> Path:
@@ -47,6 +66,8 @@ class Collection(Generic[T]):
 
     def save(self, record: T) -> tuple[T, bool]:
         """Idempotent when ``key_of`` is set: an existing key returns (existing, False)."""
+        if self.read_only:
+            raise ReadOnlyError(f"{self.root} is read-only: refusing to save")
         key = self._key_of(record) if self._key_of else None
         if key is not None:
             existing = self.find(key)
@@ -67,6 +88,8 @@ class Collection(Generic[T]):
         next ``save`` writes a fresh one instead of tripping over the stale file. A key the
         collection does not know is not an error.
         """
+        if self.read_only:
+            raise ReadOnlyError(f"{self.root} is read-only: refusing to evict")
         index = read_json(self._index_path, {})
         record_id = index.pop(key, None)
         removed = record_id is not None

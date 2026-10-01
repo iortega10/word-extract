@@ -305,17 +305,30 @@ class Store:
     The term lists sit inside the store rather than beside it because the offline
     closure is ``UnionStream`` + the pinned views projection + the registry (spec review,
     Turn 3): reproducing a hit with the ``.docx`` gone needs all three from stored data.
+
+    ``read_only=True`` (Turn 0a) is the mode a query layer opens a store in: nothing is
+    created and nothing is written -- every collection raises
+    :class:`~docextract_core.ReadOnlyError` when asked. Every directory therefore has to
+    exist already, so a typo in a store path fails at open rather than reading as an empty
+    store, and an open never creates a directory that merely opening asked for.
     """
 
-    def __init__(self, root: str | Path) -> None:
+    def __init__(self, root: str | Path, *, read_only: bool = False) -> None:
         self.root = Path(root)
-        self.parse = Collection(self.root / "parse", ParseArtifact, id_of=_keyed, key_of=_keyed)
-        self.chunks = Collection(
-            self.root / "chunks", ChunksArtifact, id_of=_keyed, key_of=_keyed
+        self.read_only = read_only
+        self.parse = Collection(
+            self.root / "parse", ParseArtifact, id_of=_keyed, key_of=_keyed, read_only=read_only
         )
-        self.hits = Collection(self.root / "hits", HitsArtifact, id_of=_keyed, key_of=_keyed)
-        self.terms = registry_store(self.root / "terms")
-        self.runs = Collection(self.root / "runs", RunRecord, id_of=_run_id)
+        self.chunks = Collection(
+            self.root / "chunks", ChunksArtifact, id_of=_keyed, key_of=_keyed, read_only=read_only
+        )
+        self.hits = Collection(
+            self.root / "hits", HitsArtifact, id_of=_keyed, key_of=_keyed, read_only=read_only
+        )
+        self.terms = registry_store(self.root / "terms", read_only=read_only)
+        self.runs = Collection(
+            self.root / "runs", RunRecord, id_of=_run_id, read_only=read_only
+        )
 
     def record_run(self, record: RunRecord) -> RunRecord:
         """Write ``runs/<run_id>.json`` and return ``record``.
