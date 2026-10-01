@@ -28,9 +28,9 @@ from wordextract.store import Store, ingest
 from wordextract.terms import TermRegistry
 
 ROOT = Path(__file__).resolve().parents[1]
-DOCUMENT = ROOT / "fixtures" / "samples" / "review_sample.docx"
+DOCUMENT = ROOT / "fixtures" / "program_review_v3.docx"
 REGISTRY = TermRegistry(
-    groups=[TermGroup(canonical="named storm deductible"), TermGroup(canonical="aggregate")]
+    groups=[TermGroup(canonical="exclusion"), TermGroup(canonical="subrogation")]
 )
 
 

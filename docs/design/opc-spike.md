@@ -67,7 +67,7 @@ reading the design.
    is unparsed here (see §3).
 7. **`w14:paraId` is absent from every generator-made package we have.** 0 of 48
    paragraphs across the five non-authored packages carry it; 10 of 77 in total, all
-   ten in fixtures we authored. All six comments in the underwriting sample have
+   ten in fixtures we authored. All six comments in the sample document have
    `paraId=None`. **Correction (review):** these five packages are docx-generator
    output, not Word output, and Word writes `w14:paraId` on every paragraph. The
    spike shows generator docs lack paraIds; it does **not** show that Word docs do,

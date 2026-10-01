@@ -807,6 +807,49 @@ def _empty_parts():
     )
 
 
+def _note_separator_stubs():
+    """Word's own footnotes part: a ``separator`` and a ``continuationSeparator`` note.
+
+    Word writes both stubs into every document that has a footnotes part. Each is a single
+    paragraph holding only a separator run and no ``w14:paraId``, so the two notes have
+    identical content and their content-hash ids collide: the ``duplicate_content_id_churn``
+    known gap (see ``docs/design/phase1-gaps.md``). The body has a paraId, so only the stubs
+    are affected.
+    """
+    body = _p(_r("A body with Word's separator stubs in its footnotes part."), para_id="40000002")
+    stub = "<w:p><w:r><w:{kind}/></w:r></w:p>"
+    footnotes = (
+        XML_DECL
+        + f'<w:footnotes {_nsdecl(NS, ("w",))}>'
+        + '<w:footnote w:type="separator" w:id="-1">' + stub.format(kind="separator") + "</w:footnote>"
+        + '<w:footnote w:type="continuationSeparator" w:id="0">'
+        + stub.format(kind="continuationSeparator") + "</w:footnote>"
+        + "</w:footnotes>"
+    )
+    sidecar = {
+        "fixture": "note_separator_stubs.docx",
+        "labels_provenance": "spec",
+        "clauses": ["8"],
+        "known_gaps": ["duplicate_content_id_churn"],
+        "parts": [
+            {"rel_type": RT["footnotes"], "path": "word/footnotes.xml",
+             "content_type": CT["footnotes"], "empty": False},
+        ],
+        "paragraphs": [
+            _para(0, [("A body with Word's separator stubs in its footnotes part.", [])],
+                  accepted="A body with Word's separator stubs in its footnotes part.",
+                  original="A body with Word's separator stubs in its footnotes part.",
+                  superseded="", clause="8"),
+        ],
+    }
+    return package(
+        "note_separator_stubs.docx", body, sidecar=sidecar, title="Note separator stubs",
+        doc_rels=[("rId1", RT["footnotes"], "footnotes.xml", None)],
+        extra_parts={"word/footnotes.xml": footnotes},
+        ct_overrides=[("/word/footnotes.xml", CT["footnotes"])],
+    )
+
+
 def _text_box():
     choice = (
         '<mc:Choice Requires="wps">'
@@ -1228,6 +1271,7 @@ BUILDERS = [
     _renamed_comments_extended,
     _threading_edge_cases,
     _empty_parts,
+    _note_separator_stubs,
     _text_box,
     _nested_field_in_instruction,
     _transparent_containers,

@@ -311,7 +311,7 @@ citations. Each takes an explicit `view` where views matter, echoed back in the 
   and optionally term-hit differences. No LLM.
 
 Every function is pure over stored records; none calls an LLM. Tests cover each function
-on the fixtures, the underwriting sample and the v2 / v3 pair.
+on the fixtures, the sample document and the v2 / v3 pair.
 
 ## Turn 6: MCP tools and CLI
 

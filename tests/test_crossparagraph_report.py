@@ -208,9 +208,6 @@ def test_the_golden_set_is_every_sidecar_backed_document():
         if sidecar.path is None:
             continue
         assert (sidecar.path.parent / sidecar.fixture) in documents
-    # the sidecar-less samples are measured too: they are the most realistic documents here
-    for sample in sorted((FIXTURES / "samples").glob("*.docx")):
-        assert sample in documents
 
 
 def test_the_report_over_the_golden_set_is_deterministic_and_every_find_is_a_real_miss():

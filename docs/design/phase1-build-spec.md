@@ -19,7 +19,7 @@ before writing anything and reuse them.
 1. **FTS5** stays in Phase 1 as the last, minimal turn. **L2**: build only the
    loader, format and `must_find.example.json`; scoring runs when human labels
    exist and otherwise reports "not evaluated". L2 scorer is otherwise deferred.
-2. **The underwriting-sample sidecar is labeled by a human**
+2. **The sample-document sidecar is labeled by a human**
    (`labels_provenance: human`). Never generate or edit it. Until it exists,
    claims about that file (6 headings -- the Title and 5 Heading 1 -- range starts 0,2,1,3,4,5, part
    resolution) are **unenforced**, and the final report must say so.
@@ -36,7 +36,7 @@ before writing anything and reuse them.
    and a `host_node_id`. Chunk assembly order for box text is
    (host node id, ordinal), stated in the spec and tested.
 7. **Word-produced document**: user-supplied. Make it from
-   `fixtures/samples/review_sample.docx`
+   a machine-local sample (`local-private/review_sample.docx`, not committed)
    (open in Word, reply to two comments, resolve one, Track Changes on, edit a
    clause, save into `fixtures/real/`). Until it exists, `commentsExtended`,
    `w14:paraId` identity and strict namespaces stay recorded as **unverified**.
@@ -117,7 +117,7 @@ tagged with the text-model-spec clause (A to E or section 8) it encodes.
 
 Sizing is a **cost gate** (design D1, Open risk #6). Build the smallest
 scaffold that reads the 0a package, the existing spec fixtures, the
-underwriting sample, `program_review_v3.docx` and `edge_cases.docx`, and prints
+sample document, `program_review_v3.docx` and `edge_cases.docx`, and prints
 per-paragraph union text with ancestor stacks and comment anchors. It is a
 scaffold that Turn 2a rewrites against the revised contracts, **not production
 code**; contracts are not frozen by it.
@@ -267,10 +267,10 @@ new or changed record, plus a test that an old-version blob is rejected.
   comments, commentsExtended, footnotes, endnotes, headers, footers.
   Normalize to one internal namespace map.
 - Tolerate directory entries, missing optional parts, empty parts (the
-  underwriting sample has an empty footnotes part).
+  sample document has an empty footnotes part).
 - `part_id` is stable and path-independent (relationship type + ordinal).
 
-Tests: all fixtures including the 0a package and the underwriting sample; a
+Tests: all fixtures including the 0a package and the sample document; a
 renamed `commentsExtended`; an absent part yields `None`, not an exception.
 
 ## Carried follow-ups (from validating Turns 0.5 and 1)
@@ -297,7 +297,7 @@ renamed `commentsExtended`; an absent part yields `None`, not an exception.
    validator the matcher must call) and test the disagreement case.
 5. **"Has content" vs "exists".** `Part.empty` does not flag separator-only
    footnote/endnote stubs (they have child elements). The walker must treat
-   content and existence separately; add a helper and a test on the underwriting
+   content and existence separately; add a helper and a test on the sample
    sample.
 6. **`TEXTMODEL_VERSION`.** Bump to `"2"` when Turn 2a produces the first real
    output, so the first data carries the amended semantics (span rule,
@@ -357,7 +357,7 @@ not a list continuation. Fail open: no headings gives one flat root with
 size-chunked. 4b builds the section tree and `section_path`.
 
 Tests: sidecar outlines match; list items are never headings; a styleless doc
-degrades and still chunks. The underwriting sample's "exactly 6 headings (the Title plus 5 Heading 1; Title is a level-0 heading)" is
+degrades and still chunks. The sample document's "exactly 6 headings (the Title plus 5 Heading 1; Title is a level-0 heading)" is
 asserted **only** once its human sidecar exists.
 
 ## Turn 5: chunker v1
@@ -518,7 +518,7 @@ Cut from Phase 1: separate comment indexing, rank-time dedupe, any fused score
 
 ## Blocked on the user (do not fake)
 
-1. Human sidecar for the underwriting sample, and the must-find term list.
+1. Human sidecar for the sample document, and the must-find term list.
 2. A Word-produced doc in `fixtures/real/` (see decision 7).
 3. Real "like terms" groups. Ship only a clearly synthetic example registry.
 

@@ -32,7 +32,7 @@ Last updated: 2026-09-30 (during Turn 6b validation).
 
 - **What it is:** a `.docx` saved by actual Word (or Word online) with a comment reply, a
   resolved comment, and a tracked change. Easiest path: open
-  `fixtures/samples/review_sample.docx` in Word, reply to
+  a machine-local sample (`local-private/review_sample.docx`, not committed) in Word, reply to
   two comments, resolve one, turn on Track Changes, edit a clause, save into
   `fixtures/real/` (contents are gitignored).
 - **Why it matters:** every fixture so far is repo-authored or generator output. Nothing is
@@ -42,10 +42,10 @@ Last updated: 2026-09-30 (during Turn 6b validation).
 - **Fallback:** those paths stay recorded as *unverified* (`@spec_derived`,
   `producer_verified_coverage`), as the design allows.
 
-## 3. Human labels for the underwriting sample — OPEN
+## 3. Human labels for a real-shaped sample document — OPEN
 
 - **What it is:** a hand-labeled sidecar for
-  `fixtures/samples/review_sample.docx` (headings: 6 with
+  a machine-local sample (`local-private/review_sample.docx`, not committed) (headings: 6 with
   the Title; list items; comment anchors) and a **must-find term list** drawn from real
   documents, with `labels_provenance: human`.
 - **Why it matters:** L2 recall = 1.0 and the "every false positive classified" gate can
@@ -56,3 +56,13 @@ Last updated: 2026-09-30 (during Turn 6b validation).
 
 - A real query set with expected citations, the summarizer model and access, and human
   grading for L3. See `phase2-build-spec.md`, "Blocked on the user".
+
+## Note: the Word-style sample is machine-local
+
+The one non-generated, Word-style document used while building Phase 1 is **not in the
+repository** (or its history): its provenance was not established, so it lives at
+`local-private/review_sample.docx` (git-ignored) and the tests that read it are skipped where it
+is absent. What it exercised and the committed fixtures now cover on their own: separator-stub
+note parts (`fixtures/model/note_separator_stubs.docx`, including the `duplicate_content_id_churn`
+gap). What only a Word-saved document can show (zip directory entries, Word's bullet-list
+numbering, `w14:paraId` identity) stays unverified until a real one is supplied (item 2 above).

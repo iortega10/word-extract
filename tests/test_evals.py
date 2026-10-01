@@ -123,7 +123,7 @@ def test_the_cli_exits_non_zero_on_a_fixtures_path_that_does_not_exist(tmp_path,
 def test_run_scores_l1_green_and_leaves_l2_not_evaluated():
     table = run(FIXTURES)
     # every committed sidecar, root and fixtures/model alike, is counted
-    assert table["labels"] == {"generator": 4, "spec": 24, "human": 0}
+    assert table["labels"] == {"generator": 4, "spec": 25, "human": 0}
 
     layers = {layer["layer"]: layer for layer in table["quality"]}
     assert layers["L1"]["result"] is True
@@ -198,6 +198,7 @@ MODEL_SIDECARS = {
     "hyperlink_and_fields",
     "mixed_para_ids",
     "move",
+    "note_separator_stubs",
     "nested_revisions",
     "renamed_comments_extended",
     "strict_namespaces",
@@ -312,7 +313,7 @@ def test_cli_emits_the_metrics_table_as_pure_stdout_json():
     table = json.loads(proc.stdout)
     assert [layer["layer"] for layer in table["quality"]] == ["L1", "L2", "L3"]
     assert table["quality"][0]["result"] is True
-    assert table["labels"]["spec"] == 24
+    assert table["labels"]["spec"] == 25
     # the "L2 was not evaluated" diagnostic is stderr's, never stdout's
     assert proc.stdout.strip().startswith("{")
     assert "not gated this run" in proc.stderr

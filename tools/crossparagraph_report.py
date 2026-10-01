@@ -315,10 +315,9 @@ def golden_documents(fixtures_dir: str | Path) -> list[Path]:
         document = sidecar.path.parent / sidecar.fixture
         if document.is_file():
             documents.append(document)
-    # The samples carry no sidecar yet (their labels are the blocked human input) but they are
-    # the most realistic documents here, so they are measured too; ``real`` is what the
-    # measurement is ultimately for.
-    for extra in ("samples", "real"):
+    # ``real`` is what the measurement is ultimately for: machine-local documents carry no
+    # sidecar (their labels are the blocked human input) but are measured when present.
+    for extra in ("real",):
         extra_dir = fixtures_dir / extra
         if extra_dir.is_dir():
             documents.extend(sorted(extra_dir.glob("*.docx")))

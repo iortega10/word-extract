@@ -1,7 +1,7 @@
 """Turn 1: the read-only OPC reader.
 
-Every fixture is opened, including the 0a model package and the underwriting
-sample. The tests that matter pin the producer-variance sites the spike found
+Every fixture is opened, including the 0a model package (and a machine-local
+Word-style sample when one is present). The tests that matter pin the producer-variance sites the spike found
 (``docs/design/opc-spike.md``): a renamed part, strict namespaces, a relative
 ``..`` target, and an absent optional part returning ``None`` rather than raising.
 """
@@ -11,6 +11,8 @@ import zipfile
 from pathlib import Path
 
 import pytest
+
+from real_sample import REAL_SAMPLE, requires_real_sample
 from lxml import etree
 
 from wordextract import opc
@@ -153,8 +155,9 @@ def test_empty_part_is_present_but_empty():
         assert part.rel_type == expected["rel_type"]
 
 
-def test_underwriting_sample_has_separator_only_note_parts():
-    package = Package(FIXTURES / "samples" / "review_sample.docx")
+@requires_real_sample
+def test_real_sample_has_separator_only_note_parts():
+    package = Package(REAL_SAMPLE)
     # the sample's footnotes/endnotes carry separator runs, so they are non-empty
     assert package.footnotes is not None and not package.footnotes.empty
     assert package.endnotes is not None and not package.endnotes.empty
@@ -203,8 +206,9 @@ def test_external_relationship_has_no_part():
     assert package.part(rel.target) is None
 
 
+@requires_real_sample
 def test_directory_entries_are_tolerated():
-    document = FIXTURES / "samples" / "review_sample.docx"
+    document = REAL_SAMPLE
     with zipfile.ZipFile(document) as archive:
         assert any(name.endswith("/") for name in archive.namelist())
     package = Package(document)
@@ -454,8 +458,9 @@ def test_corrupt_member_is_an_opc_error(tmp_path):
 # --- has_text vs exists --------------------------------------------------------
 
 
+@requires_real_sample
 def test_separator_only_note_parts_have_no_text():
-    package = Package(FIXTURES / "samples" / "review_sample.docx")
+    package = Package(REAL_SAMPLE)
     assert package.footnotes is not None and not package.footnotes.empty
     assert package.footnotes.has_text is False
     assert package.endnotes is not None and package.endnotes.has_text is False

@@ -386,7 +386,7 @@ def main(argv=None):
             agreement.append((path.name, problems))
     others = [Path("fixtures/spec_threaded.docx"), Path("fixtures/binder_summary.docx"),
               Path("fixtures/edge_cases.docx"), Path("fixtures/program_review_v3.docx"),
-              Path("fixtures/samples/review_sample.docx")]
+              Path("local-private/review_sample.docx")]
     for path in others:
         if path.exists():
             show(Package(path), "corpus")

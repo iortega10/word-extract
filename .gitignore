@@ -8,3 +8,6 @@ __pycache__/
 .pytest_cache/
 .exec-mcp/
 .scratch/
+
+# Machine-local documents (never committed): tests that read them skip when absent
+local-private/

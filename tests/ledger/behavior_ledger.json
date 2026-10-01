@@ -1,31 +1,37 @@
 {
   "_comment": "Append-only behavior fingerprints (build spec, Turn 9): {component: {key: sha256}}. A component's fingerprint is a sha256 over its output on a corpus of committed fixtures (tests/ledger/corpus.json lists each corpus version; fixtures/real/ is git-ignored and never included; the synthetic term registry and default chunker params are fixed). A key is '<version string>|corpus:<N>': the code version and the corpus version it was fingerprinted on. Adding a fixture adds a new corpus version and NEW LINES under the SAME component versions -- it is not a behavior change and bumps nothing; the tool refuses to record a new corpus if any older corpus's fingerprint moved (that is a behavior change that needs a bump). 'contracts' does not depend on the corpus and is keyed by the schema version alone. The history before this file is not reconstructed. Record lines with tools/update_behavior_ledger.py in the same commit as the change that caused them.",
   "chunks": {
-    "1|corpus:1": "a2d29abbd528b87afafe0be1c13dfb5bdd4001bd19b8b603684d518d9714cfe9",
-    "1|corpus:2": "367a8f4911081a62e64f039604f7569a1379126e8dd91cbc7d0e943970b6c0d6"
+    "1|corpus:1": "0ba275f7b4db8b07c55f41d01893791364243515434ce6c538780649de7478f0",
+    "1|corpus:2": "d2317605cff9d669cdfac53a53f2e49b55f721a82966925af5b5a986c217792f",
+    "1|corpus:3": "922977e3f5666e69fa53afb1fbc4113d56443972752cfd2ba97a5434b17cad85"
   },
   "contracts": {
     "5": "71b8844454af7b5b03b165aa12e88798124470f0fa91a30c2d87afc19f9ca436",
     "6": "044f153f0adf280d17ebbda273116de9fafba968e333e286d2b1acb0c7ed4dc6"
   },
   "matcher": {
-    "5+porter-2|corpus:1": "974ba3d32756816a4f8a37e97f64cf802ba770b7a78626a50da8265fa2aae99f",
-    "5+porter-2|corpus:2": "400c36363c7a835670fff9d6d0e2205e0991c4aa75a379227446794281c3078e"
+    "5+porter-2|corpus:1": "541e81d99fd4381aa73d2c11f7ac01936c80818ebd92a77f1cde48a1210115ab",
+    "5+porter-2|corpus:2": "7c98fce94d67312df728c8045f6adf61a9dc44e1e7ce2838c80494462d7669bc",
+    "5+porter-2|corpus:3": "85142fc1fa90f37326a0d1ff8044b745adf03d88359c42bc4c3bef36f09f67e7"
   },
   "parse": {
-    "1|2|2|corpus:1": "b8ba0e47d9bc11f8fda6db16a3636bb5228b507b5ed8443d5acb9971ad2d82cc",
-    "1|2|2|corpus:2": "08700e7b65bdc1dc0ad156559cbcaec45fb8f696e7985fa292cfb6ec84ebdbf1"
+    "1|2|2|corpus:1": "8ee73ed8019bb3767dea0f9b7d9c86ad9b5ee67d77af08ced11f24e6e95e7296",
+    "1|2|2|corpus:2": "0852e0c0c91c01f77336cb91b2121aaef80f51acdc4b475e9d90eab2b7cf1751",
+    "1|2|2|corpus:3": "18bda02e03afa1cc2bf55fcbad632ef75f1a37cf2d75ab7cf04540fab4fb48d2"
   },
   "render": {
-    "1|corpus:1": "0bbab77b3a56c8aacb9082930256add11fdb3aaae6b71ad1ed0e6a9b9c7111ec",
-    "1|corpus:2": "3ac30ec9a26bdb397996d1f0aa897398db7aea519bb67e1d869d10c807952905"
+    "1|corpus:1": "54caac6e416fffd527dcbf41250bcda3babd50ca2e3c9be687a06f6c6672b5ef",
+    "1|corpus:2": "3fab58f085364b40bdfdd105c3d716e7e4f6cb3d7bd826fa26683543a3e92fd7",
+    "1|corpus:3": "66f288e46fffed47cf4944120a5d82ba6784e9d5ee8c64efa924da0ccd06b661"
   },
   "summary_key": {
-    "1|corpus:1": "7dabb49b621cce7356777cb74ed6e874d7b5948f8f01bcae8f09e5fc78c3effc",
-    "1|corpus:2": "77f8cb11046d15b179207b7a98558c7b9831f2a07d97ae24b9145189207821b0"
+    "1|corpus:1": "eb4f53f5776c30ed57bdb98e9739255a20ecff7ae6e9cbed0209a90ace48fc1a",
+    "1|corpus:2": "06ee1c62449d4c1e1a97f4fca112294ccf4242f9180add213c0b67ee21704336",
+    "1|corpus:3": "d232ad5cf39ee0f96aeccb608f4db4ca345ef36ce3de65b096ea9203ad25ba20"
   },
   "views": {
-    "2|corpus:1": "14e272608713a63d7a8026781a7987ff9f6bb2082f13dcab804bba74405b31ec",
-    "2|corpus:2": "c4eeaefba98751ac9f6d7642dcf8f533d9755329ad85895aa6383368db8ad461"
+    "2|corpus:1": "de11e88ce72beae15f5290a23dd38b64a26a3299113206f7e55a327701ff63d1",
+    "2|corpus:2": "6a15ab88bd6aa1a46f35922c0c2455e7a869557c383aeb9a8005475df7dbcb29",
+    "2|corpus:3": "65798480ef900fc7ee560cbc279c26b10fed68b5ae5f6fca8804891d9a062438"
   }
 }

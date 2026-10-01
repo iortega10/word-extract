@@ -1,0 +1,38 @@
+{
+  "clauses": [
+    "8"
+  ],
+  "fixture": "note_separator_stubs.docx",
+  "known_gaps": [
+    "duplicate_content_id_churn"
+  ],
+  "labels_provenance": "spec",
+  "paragraphs": [
+    {
+      "accepted": "A body with Word's separator stubs in its footnotes part.",
+      "clause": "8",
+      "index": 0,
+      "original": "A body with Word's separator stubs in its footnotes part.",
+      "spans": [
+        {
+          "end": 57,
+          "stack": [],
+          "start": 0,
+          "text": "A body with Word's separator stubs in its footnotes part."
+        }
+      ],
+      "superseded": "",
+      "union": "A body with Word's separator stubs in its footnotes part."
+    }
+  ],
+  "parts": [
+    {
+      "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml",
+      "empty": false,
+      "path": "word/footnotes.xml",
+      "rel_type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
+    }
+  ],
+  "span_rule": "spans are maximal runs of equal ancestor stack; the union is an address space only and is never matched directly",
+  "terminator": "\n"
+}

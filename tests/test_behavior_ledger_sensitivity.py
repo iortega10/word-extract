@@ -106,7 +106,7 @@ def test_stress_parameters_force_the_paths_the_default_never_reaches():
     from wordextract.store import body_part_id
     from wordextract.walker import walk_document
 
-    document = ROOT / "fixtures" / "samples" / "review_sample.docx"
+    document = ROOT / "fixtures" / "program_review_v3.docx"
     parsed = walk_document(opc.Package(document))
     part = body_part_id(parsed)
     default = chunker.chunk(parsed, part, params=chunker.DEFAULT_PARAMS)

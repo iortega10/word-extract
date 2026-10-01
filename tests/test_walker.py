@@ -50,6 +50,8 @@ from pathlib import Path
 
 import pytest
 
+from real_sample import REAL_SAMPLE, requires_real_sample
+
 from docextract_core import sha256_json
 
 from wordextract import opc, walker as walker_mod
@@ -72,7 +74,7 @@ from wordextract.walker import (
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 MODEL = FIXTURES / "model"
 MODEL_NAMES = sorted(p.name[: -len(".expected.json")] for p in MODEL.glob("*.expected.json"))
-SAMPLE = FIXTURES / "samples" / "review_sample.docx"
+SAMPLE = REAL_SAMPLE
 ALL_DOCX = sorted(FIXTURES.rglob("*.docx"))
 REVISION_KINDS = ("ins", "del", "moveFrom", "moveTo")
 
@@ -174,6 +176,19 @@ def test_a_part_without_a_paragraph_has_no_stream():
     assert [stream.part_id for stream in union_streams(package)] == [package.document.part_id]
 
 
+def test_word_style_separator_stubs_yield_their_terminators_and_name_the_id_churn():
+    """Committed twin of the machine-local checks: Word's separator and continuationSeparator
+    notes are two paragraphs of identical content, so their content-hash ids collide."""
+    package = opc.Package(MODEL / "note_separator_stubs.docx")
+    footnotes = union_stream(package.footnotes)
+    assert footnotes is not None
+    assert footnotes.text == TERMINATOR * 2, footnotes.text
+    parsed = walk_document(package)
+    assert parsed.known_gaps == ["duplicate_content_id_churn"]
+    assert sum(1 for n in parsed.nodes if n.kind is NodeKind.FOOTNOTE) == 2
+
+
+@requires_real_sample
 def test_separator_only_note_parts_still_yield_their_terminators():
     """An existing part with no text is not an absent part: it addresses its breaks."""
     package = opc.Package(SAMPLE)
@@ -294,7 +309,7 @@ def test_nested_field_result_inside_an_outer_instruction_is_not_content():
     assert stream.text.startswith("A OUTER-RESULT Z" + TERMINATOR)
 
 
-def test_the_underwriting_sample_and_older_fixtures_report_no_unrecognized_container():
+def test_every_fixture_reports_no_unrecognized_container():
     """No real-shaped document loses text to the allow-list."""
     for path in ALL_DOCX:
         _, gaps = walk_package(opc.Package(path))
@@ -449,6 +464,7 @@ def _synth_labels(tmp_path: Path, body: str, numbering: str) -> list:
 # --- numbering labels ----------------------------------------------------------
 
 
+@requires_real_sample
 def test_the_sample_bullets_are_list_items_with_a_bullet_label():
     """Word's own bullet list: one bullet label per item, no level on the paragraph."""
     items = [n for n in walk_document(opc.Package(SAMPLE)).nodes if n.kind is NodeKind.LIST_ITEM]
@@ -1258,6 +1274,7 @@ def test_inserting_a_duplicate_ahead_moves_the_later_nodes_id(tmp_path):
     assert before[1] != after[2]
 
 
+@requires_real_sample
 def test_the_sample_churns_on_words_own_footnote_separator_stubs():
     """Word writes an empty separator and continuationSeparator note in every note
     part: two notes of identical content, so their content-hash ids collide."""

@@ -46,7 +46,7 @@ Citations are to the tree at review time (Phase 0, `24848ee`).
   literals in the generator source**, each tagged with the text-model-spec
   clause it encodes (A to E, section 8). Not computed by any extractor.
 - **0b: spike + report + stop.** Inputs: the 0a package, existing spec
-  fixtures, the underwriting sample, and the two generator fixtures. Replace
+  fixtures, the sample document, and the two generator fixtures. Replace
   the spec sentence "Build the smallest thing that reads
   `program_review_v3.docx` and `edge_cases.docx`". Spike code is a scaffold
   that Turn 2a rewrites against the revised contracts, not production.
@@ -267,7 +267,7 @@ needed.
    this is your call. Recommendation: keep FTS5 as the last, minimal turn;
    keep only the L2 loader and `must_find.example.json` (L2 reports "not
    evaluated" until labels exist).
-2. **Who labels the underwriting sample sidecar?** It must be you
+2. **Who labels the sample document sidecar?** It must be you
    (`labels_provenance: human`); a tool-generated sidecar is circular and
    mis-provenanced. Until it exists, the spec's claims (Turn 1 resolution,
    exactly 5 headings, range start order 0,2,1,3,4,5) are unenforced and the

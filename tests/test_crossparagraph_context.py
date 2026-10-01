@@ -141,9 +141,11 @@ def test_a_zero_over_the_synthetic_registry_is_inconclusive_and_says_why():
     assert "stays paragraph-bounded" not in text
 
 
-def test_the_golden_set_now_includes_the_sample_documents():
-    documents = {path.name for path in report.golden_documents(ROOT / "fixtures")}
-    assert "review_sample.docx" in documents
+def test_the_golden_set_includes_the_machine_local_documents(tmp_path):
+    (tmp_path / "real").mkdir()
+    local = tmp_path / "real" / "mine.docx"
+    local.write_bytes((ROOT / "fixtures" / "program_review_v3.docx").read_bytes())
+    assert local in report.golden_documents(tmp_path)
 
 
 def test_only_cell_adjacencies_are_not_evidence_for_promotion():
