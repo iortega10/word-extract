@@ -1,6 +1,6 @@
 # `fixtures/terms/` — term registries
 
-**Synthetic only.** Real "like terms" groups (the insurance / regulated vocabulary this
+**Synthetic only.** Real "like terms" groups (the domain vocabulary this
 tool exists to flag) are **blocked on the user**: the term list is input, not something
 this repo can derive, and an invented one would read as a real one. So the only registry
 committed here is `synthetic.example.json`, hand-typed to exercise the registry format

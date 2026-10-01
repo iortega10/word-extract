@@ -48,7 +48,7 @@ Re-running on identical bytes is a no-op (every artifact reports `hit`). From Py
 - **Moves** appear as two hits sharing a `move_group_id`; fold with `terms.dedupe_moves(hits, streams)`
   in the order the matcher returned them.
 - **`match_type`**: `exact`, `synonym`, or `stem` (only for groups that opted in). Stemming merges
-  words that name different things (insured / insurer / insurance), so treat `stem` hits as leads.
+  words that name different things (universe / university / universal), so treat `stem` hits as leads.
 - **Matching is token-based** under either hyphen reading and never crosses a paragraph. A phrase
   split across two paragraphs is missed by design; `tools/crossparagraph_report.py` measures how often.
 

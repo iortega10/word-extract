@@ -16,11 +16,11 @@ headings, headers/footers. We want to:
 3. Persist everything in a content-addressed store while structuring, so runs
    are efficient (idempotent, cached per chunk) and reproducible (pinned
    parser/model/prompt versions, archived LLM I/O).
-4. Given a list of "like terms" (insurance / regulated: "waiver of
+4. Given a list of "like terms" (for example contracts: "waiver of
    subrogation" ~ "right of recovery" ~ "subrogation rights"), flag every
    occurrence in body text, tables, AND comments, and group them together.
 
-Real docs have regulated-industry stakes: a missed exclusion or a wrong
+Real docs have high stakes: a missed clause or a wrong
 attribution ("who commented that?") is a real failure. Auditability matters.
 
 ## Key difference vs form-extract
@@ -74,7 +74,7 @@ prompt/model version) -> term-index (deterministic match + grouping) -> store
 4. **Term flagging is deterministic first** (normalized phrase match with
    lemma/stem + user synonym lists; matches are spans with node refs).
    LLM only proposes *candidate new synonyms* for human approval — never
-   silently expands the list, because regulated use needs reproducible hits.
+   silently expands the list, because audited use needs reproducible hits.
    Grouping = by TermGroup; plus co-location report (which groups cluster in
    the same section / comment thread).
 5. **Comments are first-class, not annotations on the side.** They're indexed
@@ -83,7 +83,7 @@ prompt/model version) -> term-index (deterministic match + grouping) -> store
    about it".
 6. **Revisions default policy is explicit**: default view = "accepted" text for
    summarizing/search, but deleted text and the ins/del authorship are retained
-   and searchable (a deleted exclusion is exactly what a regulated reviewer
+   and searchable (a deleted clause is exactly what a reviewer
    needs to find). Policy is a config, recorded on the record.
 7. **Storage**: content-addressed JSON (same as form-extract store) is
    canonical. Retrieval index (SQLite FTS5 + optional embeddings) is a

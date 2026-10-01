@@ -9,19 +9,19 @@ Last updated: 2026-09-30 (during Turn 6b validation).
 ## 1. Real "like terms" groups — NOT AVAILABLE, check back later
 
 - **Status:** the user does not currently have access to the real term lists. Revisit.
-- **What it is:** the insurance / regulated-industry term groups (canonical form plus
+- **What it is:** the domain term groups (regulated or not) (canonical form plus
   curated synonyms, and which groups should opt in to stemming) that the matcher exists to
   flag.
 - **Why it matters:** the matcher is validated only against a clearly synthetic registry
   (`fixtures/terms/synthetic.example.json`). Real lists are what expose problems in overlap
   precedence, hyphen readings, stem overreach and location handling.
 - **Needed from the user:** even 5-10 real groups would help. Especially welcome:
-  - groups where variants name *different* things (insured / insurer / insurance, the
+  - groups where variants name *different* things (universe / university / universal, the
     classic stem-overreach risk), so we can decide which groups must NOT opt in to stemming;
   - hyphenated compounds (hold-harmless, loss-control, non-compliance).
 - **Where real lists may come from.** Not from a former employer's curated vocabularies, which
-  are typically confidential. Build them from **public sources** (ISO policy-form and
-  endorsement language, NAIC model laws, public regulations, standard policy definitions), or
+  are typically confidential. Build them from **public sources** (public standards,
+  model laws, public regulations, standard definitions), or
   use a list the owner is explicitly permitted to use. Keep them outside the repository.
 - **Fallback until then:** synthetic registry only; stemming stays per-group opt-in and off
   by default; no real term list is ever invented or committed.

@@ -7,8 +7,9 @@ footnotes, parsed into an addressable, stored tree, with **reproducible term fla
 
 It is a sibling of [`form-extract`](../form-extract), built for the case where someone sends a
 Word document full of comments and tracked changes and you need to find, cite and compare
-what it says, in a setting (insurance, other regulated work) where a missed exclusion or a
-wrong attribution is a real failure.
+what it says, in any setting with messy documents where a missed clause or a wrong attribution
+is a real failure (contracts, policies, reviews, audits, regulated work) or where you need to get
+a document to an LLM cleanly.
 
 > **Status.** Phase 1 (the deterministic parse, structure, term matching, store and evals) is
 > built and validated. It closed **conditionally**: the term matcher is tested only against a
@@ -81,7 +82,7 @@ open("terms.json", "w").write(dump_registry(registry) + "\n")
 
 An example lives at `fixtures/terms/synthetic.example.json` (synthetic only: real term lists
 are not committed). **Stemming is off unless a group asks for it**, because Porter merges
-words that name different things (`insured`, `insurer` and `insurance` are one stem).
+words that name different things (`universe`, `university` and `universal` are one stem).
 
 ### 2. The command line
 

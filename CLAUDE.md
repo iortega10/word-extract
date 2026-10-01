@@ -92,8 +92,8 @@ Outside pytest the packages must be importable: either `pip install -e` as above
 - Licensed **Apache-2.0**, copyright Ivan Ortega (`LICENSE`, `NOTICE`). Keep `NOTICE` current when a
   third-party component is vendored or a dependency is added.
 - **No employer's or client's confidential material in the repository, ever**: real documents, term
-  lists, checklists, labels or carrier forms. Fixtures are synthetic. Real inputs live outside the repo.
-- Real term lists should be built from **public sources** (ISO policy-form language, NAIC model laws,
+  lists, checklists, labels or third-party forms. Fixtures are synthetic. Real inputs live outside the repo.
+- Real term lists should be built from **public sources** (public standards, model laws,
   public regulations) or supplied by the owner with permission. Do not reconstruct a former
   employer's curated vocabularies.
 - Ownership questions (employer IP claims) are the owner's to settle with their agreement and, if
