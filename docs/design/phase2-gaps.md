@@ -54,6 +54,17 @@ those still apply and are not repeated here.
 - **Only the body part is chunked.** Text in headers, footers, footnotes and endnotes is
   reachable through term hits but not through the text or summary tiers.
 
+## Query API
+
+- **`get_chunk` reads only views a run ingested.** Accepted and original chunk ids differ, so
+  there is no mapping from one to the other; a store ingested in the accepted view cannot
+  return a chunk's original-view text. Deleted text is still visible in the chunk's union
+  `markup`, its `pending_changes` and `get_revisions`.
+- **`compare` is over chunk ids** (content per view plus occurrence). A text change moves a
+  chunk between `only_in_a` / `only_in_b`; an edited, added or resolved comment on an
+  unchanged chunk is reported separately in `comments_changed`. There is no sense that one
+  document is a revision of another: both ids are named by the caller.
+
 ## Store and catalog
 
 - **"Latest run" is a file mtime.** The run log carries no clock, so copying or restoring a
