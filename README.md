@@ -19,8 +19,9 @@ a document to an LLM cleanly.
 > revision-markup rendering, document catalog) Turn 1 (per-chunk summaries cached on the
 > rendered input, `python -m wordextract summarize`) Turn 2 (`pending_changes`: the
 > revisions each chunk carries, derived from the parse and never from model text) and Turn 3
-> (retrieval and ranking: term, text and summary tiers in a fixed order) and Turn 4 (section and
-> document roll-ups built from child summaries, non-authoritative) are built. Nothing in Phase 1 calls an LLM.
+> (retrieval and ranking: term, text and summary tiers in a fixed order) Turn 4 (section and
+> document roll-ups built from child summaries, non-authoritative) and Turn 5 (the query API:
+> eight read-only functions that return cited results) are built. Nothing in Phase 1 calls an LLM.
 
 ## What it does
 

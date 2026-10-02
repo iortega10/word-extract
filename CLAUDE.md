@@ -61,8 +61,16 @@ Outside pytest the packages must be importable: either `pip install -e` as above
   `RollupRejection` behind the store's `rollups`/`rollup_rejections` pair (`allow_missing` on
   read-only opens), schema 6→7, `ROLLUP_VERSION` plus the ledger's `rollup` component over
   canned executions, the versioned `prompts/rollup.v1.md`, and `tests/test_rollups.py` plus
-  the ledger-sensitivity and read-only additions; full suite green). Turn 5 (search) is
-  next. No real provider is wired: a client is named on the
+  the ledger-sensitivity and read-only additions; full suite green). **Turn 5 is done and
+  validated** (query API: `query.py`'s eight pure functions over stored records --
+  `list_documents`, `get_outline`, `get_chunk`, `get_comments`, `get_revisions`,
+  `find_terms`, `search`, `compare` -- no LLM, nothing written, `LookupError`/
+  `ValueError` for ambiguous or unpickable lookups; `tests/test_query.py` covers each
+  function on the fixtures, the v2/v3 pair and the machine-local
+  `local-private/review_sample.docx` (skips when absent), asserting the tri-state
+  roll-ups, the comment/revision unknowns, read-only byte/mtime invariance and
+  determinism; full suite green, ledger check green). Turn 6 (MCP tools) is next.
+  No real provider is wired: a client is named on the
   command line and configured outside the repo.
 
 ## Rules that are easy to break (each was a real defect once)

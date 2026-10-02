@@ -221,4 +221,14 @@ def _written_at(root: Path, run_id: str) -> int:
         return 0
 
 
-__all__ = ["DocumentEntry", "ViewArtifacts", "list_documents"]
+# Public names for the helpers the query layer reads the same run log with (Turn 5).
+find_readable = _find
+runs_by_age = _runs_by_age
+
+__all__ = [
+    "DocumentEntry",
+    "ViewArtifacts",
+    "find_readable",
+    "list_documents",
+    "runs_by_age",
+]

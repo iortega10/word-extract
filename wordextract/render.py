@@ -346,6 +346,24 @@ def _value(kind: Any) -> str:
     return kind.value if hasattr(kind, "value") else str(kind)
 
 
+def comments_in(parsed: ParseResult, chunk: Chunk) -> list[Comment]:
+    """The comments the chunk holds, by the chunker's containment rule (Turn 5).
+
+    Exactly the comments :func:`render_union_markup` cites for this chunk and no
+    others -- the same merged coverage (:func:`_covered`), so a comment anchored on
+    a paragraph terminator inside the chunk is this chunk's and one anchored in a
+    row group's skipped rows is not. The chunker's public identity is its
+    contiguity, so containment is where the equivalence with
+    :meth:`wordextract.chunker.Document.chunk_containing` stops. A chunk with no
+    leaves holds nothing; the anchors are those leaves' paragraph covers.
+    """
+    leaves = _leaves(parsed, chunk)
+    if not leaves:
+        return []
+    stream = _stream(parsed, leaves[0].part_id)
+    return _comments_in(parsed, leaves, stream, None)
+
+
 #: Public names for the helpers the retrieval layer shares with this module.
 chunk_leaves = _leaves
 leaf_text = _leaf_text
@@ -355,6 +373,7 @@ __all__ = [
     "RENDER_VERSION",
     "chunk_leaves",
     "chunk_text",
+    "comments_in",
     "leaf_text",
     "part_stream",
     "render_union_markup",
