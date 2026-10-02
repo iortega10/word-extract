@@ -1,9 +1,9 @@
 {
   "_comment": "Append-only behavior fingerprints (build spec, Turn 9): {component: {key: sha256}}. A component's fingerprint is a sha256 over its output on a corpus of committed fixtures (tests/ledger/corpus.json lists each corpus version; fixtures/real/ is git-ignored and never included; the synthetic term registry and default chunker params are fixed). A key is '<version string>|corpus:<N>': the code version and the corpus version it was fingerprinted on. Adding a fixture adds a new corpus version and NEW LINES under the SAME component versions -- it is not a behavior change and bumps nothing; the tool refuses to record a new corpus if any older corpus's fingerprint moved (that is a behavior change that needs a bump). 'contracts' does not depend on the corpus and is keyed by the schema version alone. The history before this file is not reconstructed. Record lines with tools/update_behavior_ledger.py in the same commit as the change that caused them.",
   "chunks": {
-    "1|corpus:1": "0ba275f7b4db8b07c55f41d01893791364243515434ce6c538780649de7478f0",
-    "1|corpus:2": "d2317605cff9d669cdfac53a53f2e49b55f721a82966925af5b5a986c217792f",
-    "1|corpus:3": "922977e3f5666e69fa53afb1fbc4113d56443972752cfd2ba97a5434b17cad85"
+    "1|corpus:1": "42d99acc31359ae0f750292838aca903d44d1a10d5d3ef076692060962d15af8",
+    "1|corpus:2": "f3ac3a9ec186ae893e4ff2ef24b6cc83f80be0786249a41852c30b6883cfe511",
+    "1|corpus:3": "7d265ffee36c2e8aa1931e6036a61a9cda602a8e87bc725f2989e739e397d720"
   },
   "contracts": {
     "5": "71b8844454af7b5b03b165aa12e88798124470f0fa91a30c2d87afc19f9ca436",
@@ -11,46 +11,43 @@
     "7": "6d81904a9ffdcb11fda9f6542dac968e5e26cd43d452e2d02a4ea28adeb8944f"
   },
   "matcher": {
-    "5+porter-2|corpus:1": "541e81d99fd4381aa73d2c11f7ac01936c80818ebd92a77f1cde48a1210115ab",
-    "5+porter-2|corpus:2": "7c98fce94d67312df728c8045f6adf61a9dc44e1e7ce2838c80494462d7669bc",
-    "5+porter-2|corpus:3": "85142fc1fa90f37326a0d1ff8044b745adf03d88359c42bc4c3bef36f09f67e7"
+    "5+porter-2|corpus:1": "35570d1c586207882813eefd544a6ec05f71d0ec56e89625f07b6309fb4d8f0e",
+    "5+porter-2|corpus:2": "51d4da261843384ef7748a634ed24be423740394b3fb15f29189dbbb51f70e37",
+    "5+porter-2|corpus:3": "b90e913abc390b7bc4dad72d6e90e79c1ca2a333c13c287cca9d26e92326b2c8"
   },
   "parse": {
-    "1|2|2|corpus:1": "8ee73ed8019bb3767dea0f9b7d9c86ad9b5ee67d77af08ced11f24e6e95e7296",
-    "1|2|2|corpus:2": "0852e0c0c91c01f77336cb91b2121aaef80f51acdc4b475e9d90eab2b7cf1751",
-    "1|2|2|corpus:3": "18bda02e03afa1cc2bf55fcbad632ef75f1a37cf2d75ab7cf04540fab4fb48d2"
+    "1|2|2|corpus:1": "a53d6fd6289ec032ae933a5be4a8d52aa3519f8dbec510345ae85cdb3ad252ac",
+    "1|2|2|corpus:2": "3ebce5f4edf3554bcb2adf00473594993d42e786a88997598dc8cdb02151e1ce",
+    "1|2|2|corpus:3": "40032d68454ce7c0ef8abda5402884f38fb740f8ff2a1915f0775cf5a8cf27db"
   },
   "pending": {
-    "1|corpus:1": "519a8470036622d7e4083fa1a7266fd8b55c21015554f4019f399bf27e6c8a2e",
-    "1|corpus:2": "43c4808317e94f74cc14b8f288e910133353947f906db5115bdadc6f97a7fc14",
-    "1|corpus:3": "333f3ac07a6c31b3408640b376d21c814040ad4ce67ef76960e508e4e24c1fdc"
+    "1|corpus:1": "333407badaed194989ec9c552e803061e5860cfd13033500a979cb090184f408",
+    "1|corpus:2": "b716f053f1a185f1dd2efaa9c109e4b1680f695ff1f9f90f26261ea83834d924",
+    "1|corpus:3": "a544ada71492ef16df9899830aa7fdb9c718feab3a61b685a3b13dca3190926b"
   },
   "rank": {
-    "1|corpus:1": "80e90d2801ea43f9baa6835ae484ee1d6d3de0cd7dd1a42600693cf82e31e2fd",
-    "1|corpus:2": "253a8d668cfc864bb2e26b348e6e8f24164dcc8fb7f0a0b5afca6f5b87ad1f91",
-    "1|corpus:3": "5bc24e941bc8841faea4bbb9a01ff77c5dde95d3f0fb1b922795b4488328e807"
+    "1|corpus:1": "6140898f96977b6dd2237db67037bd2544b0a2c6912f82898d3ef53b0d928608",
+    "1|corpus:2": "421949baef7d8d3762c52fff80e6290bad8bea3281538c529e8fb0da7c019ec0",
+    "1|corpus:3": "02a89d4c9c01b142312dc0ca4dfcbdbf30f409cca515849097e46586b2fe6332"
   },
   "render": {
-    "1|corpus:1": "54caac6e416fffd527dcbf41250bcda3babd50ca2e3c9be687a06f6c6672b5ef",
-    "1|corpus:2": "3fab58f085364b40bdfdd105c3d716e7e4f6cb3d7bd826fa26683543a3e92fd7",
-    "1|corpus:3": "66f288e46fffed47cf4944120a5d82ba6784e9d5ee8c64efa924da0ccd06b661",
-    "2|corpus:1": "54caac6e416fffd527dcbf41250bcda3babd50ca2e3c9be687a06f6c6672b5ef",
-    "2|corpus:2": "3fab58f085364b40bdfdd105c3d716e7e4f6cb3d7bd826fa26683543a3e92fd7",
-    "2|corpus:3": "66f288e46fffed47cf4944120a5d82ba6784e9d5ee8c64efa924da0ccd06b661"
+    "2|corpus:1": "caac33c0e8ff26ef724d9df8ea51e1e0714bf7e671d55e6a8460468b7c833323",
+    "2|corpus:2": "818965366023f3065d92c2f8688b7aafe6e863bda99d51c3ac72a60d798f9bd4",
+    "2|corpus:3": "a8f26524889588c0153813b075af18942431dafeb0fb820e19c76fda05db9306"
   },
   "rollup": {
-    "1|corpus:1": "4a3067d857f18bd42990ea41eb33b79fab1005271cd5c70d32b91a099955eed8",
-    "1|corpus:2": "9eff42fe6aa33b7013817c81f26023bae247ba09b9ad307f85fc9d8c0591fb86",
-    "1|corpus:3": "9d9c27bc92d85609f2f4513a8637bf5d3588dbc13f7174d13ff4eb71b73630c7"
+    "1|corpus:1": "834da5b6c34c11ac942cf7b321b4c5433ad3aab7803f74b6eac04bb544a8bc64",
+    "1|corpus:2": "d36d982f05eee1b65b67da092043cf2005b9f36b975bdee1c8254f48f0ba3aa6",
+    "1|corpus:3": "b83d573c474003a52da059713abaac18bb7cd6bc9c476d6f74235a80bbcbf0fb"
   },
   "summary_key": {
-    "1|corpus:1": "eb4f53f5776c30ed57bdb98e9739255a20ecff7ae6e9cbed0209a90ace48fc1a",
-    "1|corpus:2": "06ee1c62449d4c1e1a97f4fca112294ccf4242f9180add213c0b67ee21704336",
-    "1|corpus:3": "d232ad5cf39ee0f96aeccb608f4db4ca345ef36ce3de65b096ea9203ad25ba20"
+    "1|corpus:1": "99929442d5508448d6ef81db35ce219577cc6b54820984ba54780b7ae3e264c7",
+    "1|corpus:2": "79118c1b1029a36a7ab0dd42ecf765056c6f55932720bc22a7e91940f5da86af",
+    "1|corpus:3": "85cb179e92f1d9832914df346c1523ddd421bbb68012789227aaf6474b8a3a4c"
   },
   "views": {
-    "2|corpus:1": "de11e88ce72beae15f5290a23dd38b64a26a3299113206f7e55a327701ff63d1",
-    "2|corpus:2": "6a15ab88bd6aa1a46f35922c0c2455e7a869557c383aeb9a8005475df7dbcb29",
-    "2|corpus:3": "65798480ef900fc7ee560cbc279c26b10fed68b5ae5f6fca8804891d9a062438"
+    "2|corpus:1": "f75f4352ef5f687a80d15a14a38420b55317ed8e9fc432111e05effd02434b96",
+    "2|corpus:2": "343242b15ea5f2d12c8876866540754ed8f17207417b35ae236a47938140f875",
+    "2|corpus:3": "01873df5e36050a49eefb828684792d3ab197f86f2cac29fb471b9b29655d2fe"
   }
 }

@@ -112,29 +112,29 @@ Same-family treatment as revisions:
 Offsets below are illustrative. `[…rN:kind…]` denotes a run carrying revision
 mark `rN` of that kind. Stacks are outer→inner.
 
-### A. `right of [del recovery][ins subrogation]`
+### A. `right of [del transfer][ins termination]`
 
 Union stream (one paragraph):
 
 | offsets  | text          | stack        |
 |----------|---------------|--------------|
 | `0–9`    | `right of `   | `[]`         |
-| `9–17`   | `recovery`    | `[r1:del]`   |
-| `17–28`  | `subrogation` | `[r2:ins]`   |
+| `9–17`   | `transfer`    | `[r1:del]`   |
+| `17–28`  | `termination` | `[r2:ins]`   |
 
-Union text = `right of recoverysubrogation` (no separator between the two
-revision runs; the false adjacency below is `recoverysubrogation`). The
+Union text = `right of transfertermination` (no separator between the two
+revision runs; the false adjacency below is `transfertermination`). The
 paragraph's `"\n"` terminator would follow at `28–29`: it is elementary span
 content in the union, but never part of `Node.spans` (§1).
 
-- `accepted` = `right of ` + `subrogation` → gap closed → `right of subrogation`.
-- `original` = `right of ` + `recovery` → `right of recovery`.
+- `accepted` = `right of ` + `termination` → gap closed → `right of termination`.
+- `original` = `right of ` + `transfer` → `right of transfer`.
 - `superseded` = ∅.
 
-A raw-union match would find the false adjacency `recoverysubrogation`. This
+A raw-union match would find the false adjacency `transfertermination`. This
 is why matching happens on views. Under D6 this yields **two hits in one
-group**: `right of recovery` (`present_in={original}`) and
-`right of subrogation` (`present_in={accepted}`).
+group**: `right of transfer` (`present_in={original}`) and
+`right of termination` (`present_in={accepted}`).
 
 ### B. `w:del` nested inside a `w:ins`
 
@@ -255,7 +255,7 @@ tag the section or example it encodes.
   fragment (`Span.fragment_id` = host node id + ordinal), so host document order
   is undisturbed. Recorded as a known gap.
 - **Gap-closing keeps no placeholder** (§4). Word itself renders `right of ` +
-  accepted `subrogation` as `right ofsubrogation` when the space sat inside the
+  accepted `termination` as `right oftermination` when the space sat inside the
   deleted run; tests document that miss, and a `w:br` inside a deleted run.
 - **Offline-reproduction closure** (Turn 7) is `UnionStream` + the pinned views
   projection + the term registry. "From the stored node tree alone" is wrong.

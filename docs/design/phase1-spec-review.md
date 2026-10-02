@@ -135,7 +135,7 @@ improvise:
   exactly one contiguous span; table, row, block-sdt = empty spans with
   `child_ids`. `NodeKind.SDT` is for block-level sdt only; inline sdt is
   transparent (no node, no boundary, no ancestor).
-- Matching unit is always a `w:p` after the mark-revision policy. Table cells
+- Matching unit is always a `w:p` after the mark-revision permit. Table cells
   never fuse (each cell paragraph is an ordinary paragraph); cell/row/table
   order is document order. Footnotes, endnotes, headers, footers are separate
   parts; no view spans parts. Headers/footers: read every part reachable via
@@ -151,7 +151,7 @@ improvise:
   relationship. Recorded as a known gap. Chunk assembly order for box text
   (host id, ordinal) must be stated. (Representation is an open question.)
 - Gap-closing keeps **no placeholder** (Word itself renders
-  `right of ` + accepted `subrogation` as `right ofsubrogation` when the
+  `right of ` + accepted `termination` as `right oftermination` when the
   space sat inside the deleted run). Turn 3 adds a test documenting that miss,
   and one showing a `w:br` inside a deleted run.
 - Turn 3 also states the closure for offline reproduction (Turn 7):
@@ -186,7 +186,7 @@ Slice 4a rules (fired / winner / disputed) and 4b section tree.
 
 ### Turn 6 (matcher)
 
-- Slice: 6a registry + exact/synonym + overlap policy; 6b stemmer; 6c
+- Slice: 6a registry + exact/synonym + overlap permit; 6b stemmer; 6c
   locations; 6d moves; 6e cross-paragraph measurement as a `tools/`
   report-only script, not package code.
 - Matching is over normalized **token sequences**, never substrings;
@@ -243,7 +243,7 @@ needed.
   change the decision.
 - **"Insert a placeholder space when an elided span contained whitespace."**
   Hearth first raised the miss as a bug; it withdrew after the fidelity
-  argument (Word's accepted view really shows `right ofsubrogation`; a
+  argument (Word's accepted view really shows `right oftermination`; a
   placeholder asserts text no view contains). No-placeholder stays, with
   tests for the miss.
 - **Comment `parent_id` identity-space objection.** Withdrawn (see above).

@@ -41,7 +41,7 @@ from wordextract.walker import walk_document
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 ALL_DOCX = sorted(FIXTURES.rglob("*.docx"))
-BINDER = FIXTURES / "binder_summary.docx"
+LEDGER = FIXTURES / "ledger_summary.docx"
 #: Text-bearing leaves: the kinds that carry text of their own (2b), which is all a chunk's
 #: bytes can be made of -- a table's rows and cells are containers over these.
 LEAF_KINDS = frozenset({NodeKind.PARA, NodeKind.LIST_ITEM})
@@ -301,7 +301,7 @@ def test_the_params_hash_pins_the_tunables():
 
 def test_a_part_no_walk_ever_visited_yields_no_chunks():
     """The chunker answers about the part it is given, and invents nothing for another."""
-    parsed, part_id = _parsed(BINDER)
+    parsed, part_id = _parsed(LEDGER)
     assert chunk(parsed, "word/document.xml") == []
     assert chunk(parsed, "no-such-part:99") == []
     assert chunk(parsed, "") == []
@@ -311,19 +311,19 @@ def test_a_part_no_walk_ever_visited_yields_no_chunks():
 # --- the outline, end to end ---------------------------------------------------------
 
 
-def test_the_binder_summary_fixture_is_three_chunks_of_its_outline():
+def test_the_ledger_summary_fixture_is_three_chunks_of_its_outline():
     """The root fixture, whole: the outline's own boundaries and the fixture's own lengths.
 
-    ``Binder Summary`` states no content of its own before its first subsection, so there
+    ``Ledger Summary`` states no content of its own before its first subsection, so there
     is no preamble chunk and no parent chunk -- the three subsections are the three
     chunks, in document order, and each one's size is hand-readable off its paragraphs.
     """
-    parsed, part_id = _parsed(BINDER)
+    parsed, part_id = _parsed(LEDGER)
     chunks = chunk(parsed, part_id)
     assert _shape(chunks) == [
-        (["Binder Summary", "Insuring Agreement"], 124, 1),
-        (["Binder Summary", "Conditions"], 99, 1),
-        (["Binder Summary", "Not Covered"], 211, 2),
+        (["Ledger Summary", "Services Agreement"], 124, 1),
+        (["Ledger Summary", "Conditions"], 99, 1),
+        (["Ledger Summary", "Not Covered"], 211, 2),
     ]
     assert [one.occurrence_index for one in chunks] == [0, 0, 0]
     assert all(one.heading_detection is parsed.heading_detection for one in chunks)
@@ -715,20 +715,20 @@ def _body_with_short_subsection():
     return (
         _p("Coverage", style="Heading1")
         + _p(long_text)
-        + _p("Waiver of Subrogation", style="Heading2")
+        + _p("waiver of termination", style="Heading2")
         + _p("Applies where required by contract.")
         + _p("Exclusions", style="Heading1")
-        + _p("Pollution is excluded. " * 12)
+        + _p("Shortfall is excluded. " * 12)
     )
 
 
 def test_a_merged_up_headings_text_is_a_line_of_the_chunk_it_merged_into(tmp_path):
-    """The defect this pins: 'Waiver of Subrogation' was in no chunk text and no path."""
+    """The defect this pins: 'waiver of termination' was in no chunk text and no path."""
     parsed, part_id = _synth(tmp_path, _body_with_short_subsection())
     chunks = chunk(parsed, part_id)
     assert [one.section_path for one in chunks] == [["Coverage"], ["Exclusions"]]
     text = _text(parsed, part_id, View.ACCEPTED, chunks[0])
-    assert text.endswith("Waiver of Subrogation\nApplies where required by contract.")
+    assert text.endswith("waiver of termination\nApplies where required by contract.")
     # the heading that opens its own chunks stays out of the bytes: it is in the path
     assert "Coverage" not in text.replace("Established coverage", "")
 
@@ -741,9 +741,9 @@ def test_a_surviving_sections_heading_stays_out_of_its_chunk_bytes(tmp_path):
 
 def test_a_comment_on_a_merged_up_heading_folds_into_the_chunk_its_text_landed_in(tmp_path):
     body = _body_with_short_subsection().replace(
-        '<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Waiver of Subrogation</w:t></w:r></w:p>',
+        '<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>waiver of termination</w:t></w:r></w:p>',
         '<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:commentRangeStart w:id="1"/>'
-        "<w:r><w:t>Waiver of Subrogation</w:t></w:r><w:commentRangeEnd w:id=\"1\"/>"
+        "<w:r><w:t>waiver of termination</w:t></w:r><w:commentRangeEnd w:id=\"1\"/>"
         '<w:r><w:commentReference w:id="1"/></w:r></w:p>',
     )
     assert "commentRangeStart" in body

@@ -166,7 +166,7 @@ def test_a_token_that_is_not_plain_ascii_letters_is_its_own_stem():
     """The corpus is whatever the document contains: a token that is digits, a non-ASCII
     word, or a mix keeps a single pinned reading -- itself -- rather than letting the ASCII
     rules strip an ``-ing`` off a German word or a digit off an identifier."""
-    for token in ("2019", "123", "überweisung", "subrogación", "r2d2", "subrogation2"):
+    for token in ("2019", "123", "überweisung", "subrogación", "r2d2", "termination2"):
         assert porter_stem(token) == token
 
 

@@ -46,7 +46,7 @@ def _sidecar(name):
     return json.loads((FIXTURES / f"{name}.expected.json").read_text(encoding="utf-8"))
 
 
-SYNTHETIC = ["program_review_v2", "program_review_v3", "binder_summary", "edge_cases"]
+SYNTHETIC = ["program_review_v2", "program_review_v3", "ledger_summary", "edge_cases"]
 ALL = SYNTHETIC + ["spec_threaded"]
 
 
@@ -170,22 +170,22 @@ def test_program_review_ground_truth():
     # python-docx does not set w14:paraId in these fixtures -> null, never invented.
     assert all(c["para_id"] is None for c in sc["comments"])
     assert sc["comments"][0]["anchor_text"] == (
-        "The policy provides a Limit of Liability of $1,000,000 per occurrence "
+        "The permit provides a Limit of Liability of $1,000,000 per engagement "
         "and $2,000,000 aggregate. "
     )
-    assert sc["comments"][2]["anchor_text"].startswith("Additional insured status")
-    assert sc["comments"][4]["anchor_text"] == "Pollution: "
+    assert sc["comments"][2]["anchor_text"].startswith("Additional partner status")
+    assert sc["comments"][4]["anchor_text"] == "Shortfall: "
 
     assert sc["revisions"] == [
         {"author": "R. Alvarez", "kind": "del", "text": "excluded in all cases"},
         {
             "author": "R. Alvarez",
             "kind": "ins",
-            "text": "excluded except for hostile-fire release",
+            "text": "excluded except for supply-delay release",
         },
     ]
     assert [(s["text"], s["level"], s["order"]) for s in sc["sections"]] == [
-        ("Program Review: Contractors General Liability", 0, 0),
+        ("Program Review: Consultants Service Agreement", 0, 0),
         ("1. Coverage Terms", 1, 1),
         ("2. Exclusions", 1, 2),
         ("3. Fee and Rate Schedule", 1, 3),
@@ -210,12 +210,12 @@ def test_edge_cases_ground_truth():
     assert sc["tables"] == [{"rows": 2, "columns": 2, "merges": []}]
 
 
-def test_binder_summary_ground_truth():
-    sc = _sidecar("binder_summary")
+def test_ledger_summary_ground_truth():
+    sc = _sidecar("ledger_summary")
     assert [c["author"] for c in sc["comments"]] == ["M. Chen"]
     assert [s["text"] for s in sc["sections"]] == [
-        "Binder Summary",
-        "Insuring Agreement",
+        "Ledger Summary",
+        "Services Agreement",
         "Conditions",
         "Not Covered",
     ]
@@ -228,11 +228,11 @@ def test_binder_summary_ground_truth():
 def test_python_docx_would_miss_inserted_text():
     docx = FIXTURES / "program_review_v3.docx"
     paragraphs = [p.text for p in make_fixtures.Document(docx).paragraphs]
-    assert any(t.startswith("Pollution: ") for t in paragraphs)
-    assert not any("hostile-fire" in t for t in paragraphs)
+    assert any(t.startswith("Shortfall: ") for t in paragraphs)
+    assert not any("supply-delay" in t for t in paragraphs)
 
     sc = _sidecar("program_review_v3")
-    assert "excluded except for hostile-fire release" in [r["text"] for r in sc["revisions"]]
+    assert "excluded except for supply-delay release" in [r["text"] for r in sc["revisions"]]
 
 
 # --- threaded comments (spec fixture) ----------------------------------------
@@ -265,7 +265,7 @@ def test_spec_fixture_ground_truth():
         ("1", "D. Okafor", "DO"),
         ("2", "S. Ruiz", "SR"),
     ]
-    assert [c["anchor_text"] for c in sc["comments"]] == ["The endorsement ", "Post-completion tail"]
+    assert [c["anchor_text"] for c in sc["comments"]] == ["The attestation ", "Post-completion tail"]
     assert [c["para_id"] for c in sc["comments"]] == ["00000001", "00000002"]
     assert sc["revisions"] == [
         {"author": "D. Okafor", "kind": "del", "text": "three years"},

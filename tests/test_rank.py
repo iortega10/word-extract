@@ -40,7 +40,7 @@ BODY = (
 )
 PLAIN_COMMENT = (
     '<w:comment w:id="1" w:author="A" w:date="d" w:initials="X">'
-    '<w:p w14:paraId="0000000A"><w:r><w:t>This is a right of subrogation</w:t></w:r></w:p>'
+    '<w:p w14:paraId="0000000A"><w:r><w:t>This is a right of termination</w:t></w:r></w:p>'
     "</w:comment>"
 )
 
@@ -83,48 +83,48 @@ def _package(tmp_path: Path, comment_xml: str) -> opc.Package:
 def test_the_same_query_gives_the_same_results_in_the_same_order_every_time():
     """The sort is total (tier, document id, node order, chunk id), so neither the order
     the documents arrive in nor a second run may move a single result."""
-    binder_parsed, binder_chunks = _document("binder_summary.docx")
+    ledger_parsed, ledger_chunks = _document("ledger_summary.docx")
     edge_parsed, edge_chunks = _document("edge_cases.docx")
-    registry = _registry(TermGroup(canonical="limits of insurance"))
-    hit = TermHit(group="limits of insurance", node_id=binder_chunks[2].node_ids[0])
+    registry = _registry(TermGroup(canonical="limits of liability"))
+    hit = TermHit(group="limits of liability", node_id=ledger_chunks[2].node_ids[0])
     summaries = (
-        SummaryRef(chunk_id=binder_chunks[1].id, text="The limits of insurance schedule applies."),
+        SummaryRef(chunk_id=ledger_chunks[1].id, text="The limits of liability schedule applies."),
     )
-    binder = DocumentInput(
-        document_id="binder",
-        parsed=binder_parsed,
-        chunks=binder_chunks,
+    ledger = DocumentInput(
+        document_id="ledger",
+        parsed=ledger_parsed,
+        chunks=ledger_chunks,
         hits=(hit,),
         summaries=summaries,
     )
     edge = DocumentInput(document_id="edge", parsed=edge_parsed, chunks=edge_chunks)
 
-    first = rank("limits of insurance", [binder, edge], registry=registry)
-    again = rank("limits of insurance", [binder, edge], registry=registry)
-    reversed_in = rank("limits of insurance", [edge, binder], registry=registry)
+    first = rank("limits of liability", [ledger, edge], registry=registry)
+    again = rank("limits of liability", [ledger, edge], registry=registry)
+    reversed_in = rank("limits of liability", [edge, ledger], registry=registry)
     assert first == again == reversed_in
     assert [result.sources for result in first] == [("term",), ("text",), ("summary",)]
 
 
 def test_a_chunk_hit_by_a_term_and_by_text_is_returned_once_with_both_sources():
-    """``binder_summary.docx`` names the group in its own words, so the term tier and the
+    """``ledger_summary.docx`` names the group in its own words, so the term tier and the
     text tier both find the one chunk -- one result, sources merged, views recorded."""
-    parsed, chunks = _document("binder_summary.docx")
+    parsed, chunks = _document("ledger_summary.docx")
     registry = _registry(
         TermGroup(
-            canonical="subrogation",
-            synonyms=["right of subrogation", "right of recovery"],
+            canonical="termination",
+            synonyms=["right of termination", "right of transfer"],
         )
     )
     hits = match_document(compile_registry(registry), parsed)
     document = DocumentInput(
-        document_id="binder", parsed=parsed, chunks=chunks, hits=tuple(hits)
+        document_id="ledger", parsed=parsed, chunks=chunks, hits=tuple(hits)
     )
 
-    results = rank("subrogation", [document], registry=registry)
+    results = rank("termination", [document], registry=registry)
     (result,) = results
     assert result.sources == ("term", "text")
-    assert result.term_group == "subrogation"
+    assert result.term_group == "termination"
     assert result.views == (View.ACCEPTED, View.ORIGINAL)
     assert result.chunk_id == chunks[1].id
     assert len(result.locations) == 2  # the canonical hit and the synonym's
@@ -136,14 +136,14 @@ def test_a_comment_hit_dedupes_into_its_anchor_chunk(tmp_path):
     parsed = walk_document(_package(tmp_path, PLAIN_COMMENT))
     chunks = tuple(chunk(parsed, body_part_id(parsed), params=DEFAULT_PARAMS))
     registry = _registry(
-        TermGroup(canonical="subrogation", synonyms=["right of subrogation"])
+        TermGroup(canonical="termination", synonyms=["right of termination"])
     )
     hits = match_document(compile_registry(registry), parsed)
     document = DocumentInput(
         document_id="comment", parsed=parsed, chunks=chunks, hits=tuple(hits)
     )
 
-    results = rank("subrogation", [document], registry=registry)
+    results = rank("termination", [document], registry=registry)
     (result,) = results
     assert result.chunk_id == chunks[0].id
     assert result.sources == ("term",)
@@ -200,13 +200,13 @@ def test_a_move_split_across_chunks_is_still_one_result_with_both_addresses():
 
 def test_a_text_match_never_spans_the_break_between_two_paragraphs():
     """``program_review_v3``: one paragraph ends "...required by written contract." and the
-    next begins "A waiver of subrogation...". Their boundary words are not a phrase."""
+    next begins "A waiver of termination...". Their boundary words are not a phrase."""
     parsed, chunks = _document("program_review_v3.docx")
     document = DocumentInput(document_id="v3", parsed=parsed, chunks=chunks)
     registry = _registry()
 
     assert rank("contract A", [document], registry=registry) == []
-    inside = rank("waiver of subrogation", [document], registry=registry)
+    inside = rank("waiver of termination", [document], registry=registry)
     assert inside and all(result.sources == ("text",) for result in inside)
 
 
@@ -221,32 +221,32 @@ def test_an_ambiguous_term_list_is_an_error_naming_the_candidates():
 
 
 def test_ordering_follows_the_tiering_not_document_order_on_a_hand_built_mixed_case():
-    """One hand-built case over ``binder_summary.docx``: a term hit planted in the *last*
+    """One hand-built case over ``ledger_summary.docx``: a term hit planted in the *last*
     chunk, a text match in the first, a summary match in the middle. The tiering wins --
     term, text, summary -- over document order, and each result carries only its own
     source. No relevance number exists to reorder them."""
-    parsed, chunks = _document("binder_summary.docx")
-    registry = _registry(TermGroup(canonical="limits of insurance"))
-    hit = TermHit(group="limits of insurance", node_id=chunks[2].node_ids[0])
+    parsed, chunks = _document("ledger_summary.docx")
+    registry = _registry(TermGroup(canonical="limits of liability"))
+    hit = TermHit(group="limits of liability", node_id=chunks[2].node_ids[0])
     document = DocumentInput(
-        document_id="binder",
+        document_id="ledger",
         parsed=parsed,
         chunks=chunks,
         hits=(hit,),
         summaries=(
             SummaryRef(
-                chunk_id=chunks[1].id, text="The limits of insurance schedule applies."
+                chunk_id=chunks[1].id, text="The limits of liability schedule applies."
             ),
         ),
     )
 
-    results = rank("limits of insurance", [document], registry=registry)
+    results = rank("limits of liability", [document], registry=registry)
     assert [result.chunk_id for result in results] == [
         chunks[2].id,
         chunks[0].id,
         chunks[1].id,
     ]
     assert [result.sources for result in results] == [("term",), ("text",), ("summary",)]
-    assert results[0].term_group == "limits of insurance"
+    assert results[0].term_group == "limits of liability"
     assert results[1].views == (View.ACCEPTED, View.ORIGINAL)
     assert results[2].locations == ()

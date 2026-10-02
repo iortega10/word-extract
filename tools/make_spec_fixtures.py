@@ -106,7 +106,7 @@ def _document():
         _heading("Threaded Review", "Heading1"),
         "<w:p>"
         '<w:commentRangeStart w:id="1"/>'
-        + _run("The endorsement ")
+        + _run("The attestation ")
         + '<w:commentRangeEnd w:id="1"/>'
         + comment_ref.format(cid=1)
         + _run("extends coverage to completed operations for ")
@@ -136,7 +136,7 @@ def _comments():
 
     body = (
         comment(1, "D. Okafor", "DO", "00000001", "Does this include the tail after project completion?")
-        + comment(2, "S. Ruiz", "SR", "00000002", "Yes - three-year completed-ops tail, now confirmed resolved.")
+        + comment(2, "S. Ruiz", "SR", "00000002", "Yes - three-year completed-use tail, now confirmed resolved.")
     )
     return XML_DECL + f'<w:comments {_nsdecl("w", "w14", "w15")}>{body}</w:comments>'
 

@@ -1,14 +1,14 @@
 """Turn 6c validation: a comment body is matched through the views, never the raw union.
 
 A comment body is union text like any part's. A tracked change inside it holds the deleted
-*and* the inserted words, so the union reads ``right of recoverysubrogation``: an adjacency no
+*and* the inserted words, so the union reads ``right of transfertermination``: an adjacency no
 reading of the comment asserts. The first 6c matched ``Comment.text`` (the union) directly,
-and reported a hit on the fused ``recoverysubrogation``. These tests pin the fix: the comment's
+and reported a hit on the fused ``transfertermination``. These tests pin the fix: the comment's
 range is matched in each view's text, the hit's spans skip the elided text, and the hit stays
 view-less.
 
-The offsets are hand-typed from the comment's text ``This is a right of recoverysubrogation``:
-``This is a `` is 10 characters, ``right of `` 9 more, ``recovery`` 8 more, ``subrogation`` 11 more.
+The offsets are hand-typed from the comment's text ``This is a right of transfertermination``:
+``This is a `` is 10 characters, ``right of `` 9 more, ``transfer`` 8 more, ``termination`` 11 more.
 """
 from __future__ import annotations
 
@@ -36,13 +36,13 @@ BODY = (
 TRACKED_COMMENT = (
     '<w:comment w:id="1" w:author="A" w:date="d" w:initials="X"><w:p w14:paraId="0000000A">'
     '<w:r><w:t xml:space="preserve">This is a right of </w:t></w:r>'
-    '<w:del w:id="9" w:author="A" w:date="d"><w:r><w:delText>recovery</w:delText></w:r></w:del>'
-    '<w:ins w:id="10" w:author="A" w:date="d"><w:r><w:t>subrogation</w:t></w:r></w:ins>'
+    '<w:del w:id="9" w:author="A" w:date="d"><w:r><w:delText>transfer</w:delText></w:r></w:del>'
+    '<w:ins w:id="10" w:author="A" w:date="d"><w:r><w:t>termination</w:t></w:r></w:ins>'
     "</w:p></w:comment>"
 )
 PLAIN_COMMENT = (
     '<w:comment w:id="1" w:author="A" w:date="d" w:initials="X"><w:p w14:paraId="0000000A">'
-    "<w:r><w:t>This is a right of subrogation</w:t></w:r></w:p></w:comment>"
+    "<w:r><w:t>This is a right of termination</w:t></w:r></w:p></w:comment>"
 )
 
 
@@ -76,10 +76,10 @@ def _index():
         TermRegistry(
             groups=[
                 TermGroup(
-                    canonical="subrogation",
-                    synonyms=["right of subrogation", "right of recovery"],
+                    canonical="termination",
+                    synonyms=["right of termination", "right of transfer"],
                 ),
-                TermGroup(canonical="recoverysubrogation"),
+                TermGroup(canonical="transfertermination"),
             ]
         )
     )
@@ -87,25 +87,25 @@ def _index():
 
 def test_the_comment_text_is_the_union_which_is_why_it_cannot_be_matched_directly(tmp_path):
     parsed = walk_document(_package(tmp_path, TRACKED_COMMENT))
-    assert parsed.comments[0].text == "This is a right of recoverysubrogation"
+    assert parsed.comments[0].text == "This is a right of transfertermination"
 
 
 def test_a_tracked_comment_never_matches_the_fused_union_adjacency(tmp_path):
     parsed = walk_document(_package(tmp_path, TRACKED_COMMENT))
     groups = [hit.group for hit in match_comments(_index(), parsed)]
-    assert "recoverysubrogation" not in groups
-    assert groups == ["subrogation", "subrogation"]
+    assert "transfertermination" not in groups
+    assert groups == ["termination", "termination"]
 
 
 def test_each_reading_of_a_tracked_comment_is_its_own_hit_with_spans_that_skip_elided_text(tmp_path):
-    """Original reads 'right of recovery'; accepted reads 'right of subrogation'. The accepted
-    hit is two spans -- never the deleted 'recovery' between them."""
+    """Original reads 'right of transfer'; accepted reads 'right of termination'. The accepted
+    hit is two spans -- never the deleted 'transfer' between them."""
     parsed = walk_document(_package(tmp_path, TRACKED_COMMENT))
     part = parsed.comments[0].text_span.part_id
     hits = match_comments(_index(), parsed)
     assert sorted(hit.spans[0].start for hit in hits) == [10, 10]
     by_spans = {tuple(hit.spans): hit for hit in hits}
-    assert by_spans[(Span(part, 10, 27),)].match_type.value == "synonym"  # right of recovery
+    assert by_spans[(Span(part, 10, 27),)].match_type.value == "synonym"  # right of transfer
     assert by_spans[(Span(part, 10, 19), Span(part, 27, 38))].match_type.value == "synonym"
 
 
@@ -124,7 +124,7 @@ def test_a_comment_without_revisions_is_one_hit_over_one_contiguous_span(tmp_pat
     parsed = walk_document(_package(tmp_path, PLAIN_COMMENT))
     part = parsed.comments[0].text_span.part_id
     (hit,) = match_comments(_index(), parsed)
-    assert hit.spans == [Span(part, 10, 30)]  # "right of subrogation": 9 + 11 = 20 characters
+    assert hit.spans == [Span(part, 10, 30)]  # "right of termination": 9 + 11 = 20 characters
     assert match_document(_index(), parsed)[-1] == hit
 
 

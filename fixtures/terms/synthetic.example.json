@@ -2,13 +2,13 @@
   "record": {
     "groups": [
       {
-        "canonical": "subrogation",
+        "canonical": "termination",
         "rules": {},
         "stemming": "porter",
         "synonyms": [
-          "right of subrogation",
-          "right of recovery",
-          "waiver of subrogation"
+          "right of termination",
+          "right of transfer",
+          "waiver of termination"
         ],
         "tags": {
           "category": "coverage"
@@ -30,18 +30,18 @@
         "rules": {},
         "stemming": null,
         "synonyms": [
-          "policy aggregate"
+          "permit aggregate"
         ],
         "tags": {
           "category": "limits"
         }
       },
       {
-        "canonical": "named insured",
+        "canonical": "named partner",
         "rules": {},
         "stemming": null,
         "synonyms": [
-          "additional insured"
+          "additional partner"
         ],
         "tags": {
           "category": "parties"

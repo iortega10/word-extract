@@ -330,7 +330,7 @@ def _hyperlink_and_fields():
     hyperlink = (
         '<w:hyperlink r:id="rId10">'
         + _r("See the ")
-        + _r("endorsement form")
+        + _r("attestation form")
         + "</w:hyperlink>"
     )
     nested_field = "".join([
@@ -355,8 +355,8 @@ def _hyperlink_and_fields():
         "doc_rels": [{"id": "rId10", "type": RT["hyperlink"], "target": "https://example.test/form",
                       "mode": "External"}],
         "paragraphs": [
-            _para(0, [("See the endorsement form", [])], accepted="See the endorsement form",
-                  original="See the endorsement form", superseded="", clause="E",
+            _para(0, [("See the attestation form", [])], accepted="See the attestation form",
+                  original="See the attestation form", superseded="", clause="E",
                   note="w:hyperlink runs are ordinary content at their document position"),
             _para(1, [("Endorsed", [])], accepted="Endorsed",
                   original="Endorsed", superseded="", clause="E",

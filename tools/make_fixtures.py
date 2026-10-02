@@ -1,4 +1,4 @@
-"""Generate synthetic insurance-flavored .docx fixtures exercising the hard cases:
+"""Generate synthetic liability-flavored .docx fixtures exercising the hard cases:
 comments (with replies + ranges spanning runs), tracked changes, merged-cell tables,
 multi-level numbering, headers/footers, content controls, and near-synonym term variants.
 
@@ -29,7 +29,7 @@ W14 = "http://schemas.microsoft.com/office/word/2010/wordml"
 FIXTURES = [
     "program_review_v2.docx",
     "program_review_v3.docx",
-    "binder_summary.docx",
+    "ledger_summary.docx",
     "edge_cases.docx",
 ]
 
@@ -42,13 +42,13 @@ ZIP_WHEN = (2026, 1, 1, 0, 0, 0)
 # edits and nothing else -- one body paragraph before a tracked change, one comment before
 # it was rewritten -- so the pair isolates them, and `PAIR_SIDECAR` below records which
 # chunks that moves. The third string is the control: a paragraph no edit touches.
-PAIR_V2_POLLUTION = "excluded in all cases"
-PAIR_V3_POLLUTION = "excluded except for hostile-fire release"
-PAIR_V2_COMMENT = "Confirm limit against the binder."
-PAIR_V3_COMMENT = "Confirm limit vs. the binder - binder says $500k occurrence."
+PAIR_V2_SHORTFALL = "excluded in all cases"
+PAIR_V3_SHORTFALL = "excluded except for supply-delay release"
+PAIR_V2_COMMENT = "Confirm limit against the ledger."
+PAIR_V3_COMMENT = "Confirm limit vs. the ledger - ledger says $500k engagement."
 PAIR_UNTOUCHED = (
-    "Cancellation requires 30 days notice, 10 days for non-payment. The insured may not "
-    "assign the policy without consent."
+    "Cancellation requires 30 days notice, 10 days for non-payment. The partner may not "
+    "assign the permit without consent."
 )
 
 #: The pair's sidecar, typed by hand and written to ``program_review_pair.json`` (build spec,
@@ -59,7 +59,7 @@ PAIR_SIDECAR = {
     "fixture_pair": ["program_review_v2.docx", "program_review_v3.docx"],
     "labels_provenance": "spec",
     "note": (
-        "Hand-typed from the edit set build_endorsement_review defines, never derived from a "
+        "Hand-typed from the edit set build_attestation_review defines, never derived from a "
         "diff. program_review_v2.docx is program_review_v3.docx minus exactly the edits under "
         "changed -- one body paragraph before its tracked change, one comment before it was "
         "rewritten -- and everything else is carried over unchanged: every other block and "
@@ -83,7 +83,7 @@ PAIR_SIDECAR = {
             "change": "comment-text",
             "comment": {"id": "0", "v2": PAIR_V2_COMMENT, "v3": PAIR_V3_COMMENT},
             "section_path": [
-                "Program Review: Contractors General Liability",
+                "Program Review: Consultants Service Agreement",
                 "1. Coverage Terms",
             ],
             "note": (
@@ -97,11 +97,11 @@ PAIR_SIDECAR = {
             "chunk": 2,
             "change": "body-paragraph",
             "paragraph": {
-                "v2": "Pollution: " + PAIR_V2_POLLUTION,
-                "v3": "Pollution: " + PAIR_V3_POLLUTION,
+                "v2": "Shortfall: " + PAIR_V2_SHORTFALL,
+                "v3": "Shortfall: " + PAIR_V3_SHORTFALL,
             },
             "section_path": [
-                "Program Review: Contractors General Liability",
+                "Program Review: Consultants Service Agreement",
                 "2. Exclusions",
             ],
             "note": (
@@ -120,7 +120,7 @@ PAIR_SIDECAR = {
             "change": "none",
             "paragraph": {"v2": PAIR_UNTOUCHED, "v3": PAIR_UNTOUCHED},
             "section_path": [
-                "Program Review: Contractors General Liability",
+                "Program Review: Consultants Service Agreement",
                 "4. Notes",
             ],
             "note": (
@@ -147,73 +147,73 @@ def numbered(doc, text, level=0):
     return p
 
 
-def build_endorsement_review(name="program_review_v3.docx", *, revision=True, binder_comment=PAIR_V3_COMMENT):
+def build_attestation_review(name="program_review_v3.docx", *, revision=True, ledger_comment=PAIR_V3_COMMENT):
     """The program review, v3 by default and v2 -- the pair's earlier revision, 0e -- when
     ``revision`` is off: one tracked change and one comment rewritten are the whole of what
     separates them, so both revisions come out of one builder and cannot drift apart."""
     d = Document()
-    d.core_properties.author = "Underwriting"; d.core_properties.title = "MGU Program Review - Contractors GL"
+    d.core_properties.author = "Legal Review"; d.core_properties.title = "VND Program Review - Consultants GL"
     sec = d.sections[0]
-    sec.header.paragraphs[0].text = "CONFIDENTIAL - Carrier Program Review v3"
+    sec.header.paragraphs[0].text = "CONFIDENTIAL - Company Program Review v3"
     sec.footer.paragraphs[0].text = "Page footer: ref PR-2026-0142"
 
-    d.add_heading("Program Review: Contractors General Liability", 0)
+    d.add_heading("Program Review: Consultants Service Agreement", 0)
     d.add_heading("1. Coverage Terms", 1)
-    p1 = d.add_paragraph("The policy provides a Limit of Liability of $1,000,000 per occurrence and $2,000,000 aggregate. ")
-    r = p1.add_run("Additional insured status is granted by blanket endorsement where required by written contract.")
-    p2 = d.add_paragraph("A waiver of subrogation applies in favor of any party where required by written contract. ")
-    p2.add_run("Carrier may waive subrogation only with prior written consent.")
+    p1 = d.add_paragraph("The permit provides a Limit of Liability of $1,000,000 per engagement and $2,000,000 aggregate. ")
+    r = p1.add_run("Additional partner status is granted by blanket attestation where required by written contract.")
+    p2 = d.add_paragraph("A waiver of termination applies in favor of any party where required by written contract. ")
+    p2.add_run("Company may waive termination only with prior written consent.")
     d.add_heading("2. Exclusions", 1)
     numbered(d, "Coverage is excluded for damage arising from professional services.")
-    numbered(d, "This policy does not apply to bodily injury to employees of the insured (employer's liability carve-out).")
+    numbered(d, "This permit does not apply to physical harm to employees of the partner (employer's liability carve-out).")
     numbered(d, "Residential new-construction is not covered above three stories.", level=1)
-    p3 = d.add_paragraph("Pollution: ")
+    p3 = d.add_paragraph("Shortfall: ")
     if revision:
-        tracked(p3, PAIR_V2_POLLUTION, PAIR_V3_POLLUTION, "R. Alvarez")
+        tracked(p3, PAIR_V2_SHORTFALL, PAIR_V3_SHORTFALL, "R. Alvarez")
     else:
-        p3.add_run(PAIR_V2_POLLUTION)
+        p3.add_run(PAIR_V2_SHORTFALL)
 
     d.add_heading("3. Fee and Rate Schedule", 1)
     t = d.add_table(rows=4, cols=3); t.style = "Table Grid"
     hdr = t.rows[0].cells
-    hdr[0].text, hdr[1].text, hdr[2].text = "Class", "Rate", "Minimum Premium"
+    hdr[0].text, hdr[1].text, hdr[2].text = "Class", "Rate", "Minimum Invoice"
     rows = [("Carpentry", "12.50", "2,500"), ("Roofing", "28.00", "5,000")]
     for i, row in enumerate(rows, 1):
         for j, v in enumerate(row):
             t.rows[i].cells[j].text = v
-    m = t.rows[3].cells[0].merge(t.rows[3].cells[2]); m.text = "Rates subject to loss-control survey; see Fees tab."
+    m = t.rows[3].cells[0].merge(t.rows[3].cells[2]); m.text = "Rates subject to cost-control survey; see Fees tab."
 
     d.add_heading("4. Notes", 1)
     d.add_paragraph(PAIR_UNTOUCHED)
 
     # comments: (paragraph, run range, text, author, initials) + a reply
-    c1 = d.add_comment(runs=p1.runs[0], text=binder_comment, author="R. Alvarez", initials="RA")
-    d.add_comment(runs=p1.runs[0], text="Binder was superseded; $1M is right. Updating binder.", author="M. Chen", initials="MC")
-    d.add_comment(runs=r, text="Is blanket AI ongoing-ops only, or completed-ops too? Carrier form CG 20 10 vs 20 37.", author="R. Alvarez", initials="RA")
+    c1 = d.add_comment(runs=p1.runs[0], text=ledger_comment, author="R. Alvarez", initials="RA")
+    d.add_comment(runs=p1.runs[0], text="Ledger was superseded; $1M is right. Updating ledger.", author="M. Chen", initials="MC")
+    d.add_comment(runs=r, text="Is blanket IP ongoing-use only, or completed-use too? Company form AB 20 10 vs 20 37.", author="R. Alvarez", initials="RA")
     d.add_comment(runs=p2.runs[1], text="Consent language conflicts with section 1 (blanket waiver). Needs legal review.", author="Legal", initials="LG")
-    d.add_comment(runs=p3.runs[0], text="Pollution exclusion wording changed - flag for carrier sign-off.", author="M. Chen", initials="MC")
+    d.add_comment(runs=p3.runs[0], text="Shortfall exclusion wording changed - flag for company sign-off.", author="M. Chen", initials="MC")
     d.save(OUT / name)
 
 
-def build_endorsement_review_v2():
-    """The pair's earlier revision: :func:`build_endorsement_review` before its two edits."""
-    build_endorsement_review("program_review_v2.docx", revision=False, binder_comment=PAIR_V2_COMMENT)
+def build_attestation_review_v2():
+    """The pair's earlier revision: :func:`build_attestation_review` before its two edits."""
+    build_attestation_review("program_review_v2.docx", revision=False, ledger_comment=PAIR_V2_COMMENT)
 
 
 def build_variant():
     """Second doc, different wording for same concepts -> exercises term-group flagging."""
     d = Document()
-    d.core_properties.title = "Excess Liability Binder Summary"
-    d.add_heading("Binder Summary", 0)
-    d.add_heading("Insuring Agreement", 1)
-    d.add_paragraph("Maximum limits of insurance: $5,000,000 each occurrence. Insured parties may be added as additional insureds by endorsement.")
+    d.core_properties.title = "Extended Support Ledger Summary"
+    d.add_heading("Ledger Summary", 0)
+    d.add_heading("Services Agreement", 1)
+    d.add_paragraph("Maximum limits of liability: $5,000,000 each engagement. Partner parties may be added as additional partners by attestation.")
     d.add_heading("Conditions", 1)
-    d.add_paragraph("The insurer waives its right of recovery (subrogation) against parties named in a written contract.")
+    d.add_paragraph("The company waives its right of transfer (termination) against parties named in a written contract.")
     d.add_heading("Not Covered", 1)
-    d.add_paragraph("Claims resulting from pollutants, asbestos, or professional errors are excluded. Employee injury claims are outside coverage.")
-    d.add_paragraph("Fees: policy fee 250; broker fee 10% of premium. Cancelation: 60 days written notice.")
+    d.add_paragraph("Claims resulting from shortfalls, downtime, or professional errors are excluded. Employee injury claims are outside coverage.")
+    d.add_paragraph("Fees: permit fee 250; broker fee 10% of invoice. Cancelation: 60 days written notice.")
     d.add_comment(runs=d.paragraphs[-1].runs[0], text="Cancelation period differs from program review (30 days).", author="M. Chen", initials="MC")
-    d.save(OUT / "binder_summary.docx")
+    d.save(OUT / "ledger_summary.docx")
 
 
 def build_torture():
@@ -443,7 +443,7 @@ def main(argv=None):
     OUT.mkdir(exist_ok=True)
 
     if not args.sidecars_only:
-        for f in (build_endorsement_review_v2, build_endorsement_review, build_variant, build_torture):
+        for f in (build_attestation_review_v2, build_attestation_review, build_variant, build_torture):
             f()
         for name in FIXTURES:
             normalize_package(OUT / name)

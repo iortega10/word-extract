@@ -17,7 +17,7 @@ headings, headers/footers. We want to:
    are efficient (idempotent, cached per chunk) and reproducible (pinned
    parser/model/prompt versions, archived LLM I/O).
 4. Given a list of "like terms" (for example contracts: "waiver of
-   subrogation" ~ "right of recovery" ~ "subrogation rights"), flag every
+   termination" ~ "right of transfer" ~ "termination rights"), flag every
    occurrence in body text, tables, AND comments, and group them together.
 
 Real docs have high stakes: a missed clause or a wrong
@@ -81,10 +81,10 @@ prompt/model version) -> term-index (deterministic match + grouping) -> store
    and retrievable as their own chunks *and* linked to their anchor text, with
    thread + author + resolved status. Retrieval returns "text + the discussion
    about it".
-6. **Revisions default policy is explicit**: default view = "accepted" text for
+6. **Revisions default permit is explicit**: default view = "accepted" text for
    summarizing/search, but deleted text and the ins/del authorship are retained
    and searchable (a deleted clause is exactly what a reviewer
-   needs to find). Policy is a config, recorded on the record.
+   needs to find). Permit is a config, recorded on the record.
 7. **Storage**: content-addressed JSON (same as form-extract store) is
    canonical. Retrieval index (SQLite FTS5 + optional embeddings) is a
    rebuildable derived artifact, not source of truth. Embeddings optional and
@@ -101,7 +101,7 @@ prompt/model version) -> term-index (deterministic match + grouping) -> store
 
 `fixtures/` via `tools/make_fixtures.py`: `program_review_v3.docx` (headings,
 numbered exclusions, merged-cell table, header/footer, 5 comments incl. two on
-the same range, tracked del+ins), `binder_summary.docx` (same concepts in
+the same range, tracked del+ins), `ledger_summary.docx` (same concepts in
 different wording -> term-group test), `edge_cases.docx` (range comment across
 runs, comment in table cell, nested list). Known gap: python-docx can't write
 threaded replies or resolved flags — need hand-built XML fixtures for

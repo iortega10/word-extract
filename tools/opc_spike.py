@@ -384,7 +384,7 @@ def main(argv=None):
             sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
             problems = compare(paras, sidecar)
             agreement.append((path.name, problems))
-    others = [Path("fixtures/spec_threaded.docx"), Path("fixtures/binder_summary.docx"),
+    others = [Path("fixtures/spec_threaded.docx"), Path("fixtures/ledger_summary.docx"),
               Path("fixtures/edge_cases.docx"), Path("fixtures/program_review_v3.docx"),
               Path("local-private/review_sample.docx")]
     for path in others:

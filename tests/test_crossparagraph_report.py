@@ -45,8 +45,8 @@ REGISTRY = FIXTURES / "terms" / "synthetic.example.json"
 DOCUMENT = "officeDocument:0"
 COMMENTS_PART = "comments:0"
 
-AGGREGATE = TermGroup(canonical="aggregate limit", synonyms=["policy aggregate"])
-SUBROGATION = TermGroup(canonical="subrogation", synonyms=["right of subrogation"])
+AGGREGATE = TermGroup(canonical="aggregate limit", synonyms=["permit aggregate"])
+TERMINATION = TermGroup(canonical="termination", synonyms=["right of termination"])
 
 
 def _index(*groups: TermGroup):
@@ -149,7 +149,7 @@ def test_a_term_inside_one_paragraph_is_not_a_cross_paragraph_finding():
 
 
 def test_a_synonym_across_a_break_is_reported_even_when_the_group_is_hit_elsewhere():
-    stream = _paragraphs("right of", "subrogation now")
+    stream = _paragraphs("right of", "termination now")
     parsed = _parsed(
         [stream],
         _nodes(
@@ -157,9 +157,9 @@ def test_a_synonym_across_a_break_is_reported_even_when_the_group_is_hit_elsewhe
             ("p2", NodeKind.PARA, DOCUMENT, 9, 24, None),
         ),
     )
-    index = _index(SUBROGATION)
+    index = _index(TERMINATION)
     strict = dedupe_hits(match_document(index, parsed))
-    # "subrogation" alone opening the second paragraph is a strict hit ...
+    # "termination" alone opening the second paragraph is a strict hit ...
     assert [hit.match_type for hit in strict] == [MatchType.EXACT]
 
     findings = report.scan_document(index, parsed, strict, "built.docx")
@@ -167,7 +167,7 @@ def test_a_synonym_across_a_break_is_reported_even_when_the_group_is_hit_elsewhe
     # ... but the strict matcher still missed the longer synonym the break hides, and it
     # is against that longer text -- not against "any hit at all" -- that missed is judged.
     assert len(findings) == 1
-    assert findings[0].group == "subrogation"
+    assert findings[0].group == "termination"
     assert findings[0].match_type == MatchType.SYNONYM.value
     assert findings[0].missed is True
 

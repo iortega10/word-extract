@@ -166,7 +166,7 @@ def test_the_program_review_outline_nests_four_level_ones_under_its_title():
     """The one spec fixture with a real tree: a level-0 title with four level-1 sections."""
     parsed, _ = _walk(DOCX_BY_NAME["program_review_v3.docx"])
     (title,) = parsed.sections
-    assert (title.title, title.level) == ("Program Review: Contractors General Liability", 0)
+    assert (title.title, title.level) == ("Program Review: Consultants Service Agreement", 0)
     assert [(child.title, child.level) for child in title.children] == [
         ("1. Coverage Terms", 1),
         ("2. Exclusions", 1),
@@ -603,7 +603,7 @@ def test_assign_returns_the_forest_and_copies_the_nodes_it_was_given():
 
 
 def test_build_is_the_forest_assign_assigns_and_covers_the_body_only():
-    parsed, body = _walk(DOCX_BY_NAME["binder_summary.docx"])
+    parsed, body = _walk(DOCX_BY_NAME["ledger_summary.docx"])
     assert sections_mod.build(parsed.nodes, parsed.union_streams, body) == parsed.sections
     assert sections_mod.build(parsed.nodes, parsed.union_streams, "header:0") == []
     assert sections_mod.build([], parsed.union_streams, body) == []
@@ -623,32 +623,32 @@ def _paths(parsed) -> dict[str, list[str]]:
 
 def test_a_bold_line_mid_section_nests_under_the_innermost_levelled_section(tmp_path):
     """The defect this pins: a bold 'Important notice' popped every open section and the
-    headings after it landed under it. Hand-typed: Sublimits is Coverage's, Exclusions the
+    headings after it landed under it. Hand-typed: Subquotas is Coverage's, Exclusions the
     Title's, and the notice sits inside Limits."""
     body = (
-        _p("Policy", style="Title")
+        _p("Permit", style="Title")
         + _p("Coverage", style="Heading1")
         + _p("Limits", style="Heading2")
         + _p("limits text")
         + _p("Important notice", bold=True)
         + _p("notice text")
-        + _p("Sublimits", style="Heading2")
+        + _p("Subquotas", style="Heading2")
         + _p("sub text")
         + _p("Exclusions", style="Heading1")
     )
     parsed, _ = _synth(tmp_path, body)
     assert _flatten(parsed.sections) == [
-        ("Policy", 0),
+        ("Permit", 0),
         ("Coverage", 1),
         ("Limits", 2),
         ("Important notice", 3),
-        ("Sublimits", 2),
+        ("Subquotas", 2),
         ("Exclusions", 1),
     ]
     paths = _paths(parsed)
-    assert paths["notice text"] == ["Policy", "Coverage", "Limits", "Important notice"]
-    assert paths["sub text"] == ["Policy", "Coverage", "Sublimits"]
-    assert paths["Exclusions"] == ["Policy", "Exclusions"]
+    assert paths["notice text"] == ["Permit", "Coverage", "Limits", "Important notice"]
+    assert paths["sub text"] == ["Permit", "Coverage", "Subquotas"]
+    assert paths["Exclusions"] == ["Permit", "Exclusions"]
 
 
 def test_consecutive_unlevelled_headings_are_siblings_not_a_chain(tmp_path):
@@ -679,9 +679,9 @@ def test_an_unlevelled_heading_then_a_level_one_heading_are_siblings(tmp_path):
 
 
 def test_an_unlevelled_heading_under_a_title_is_its_child(tmp_path):
-    body = _p("Policy", style="Title") + _p("Notice", bold=True) + _p("x")
+    body = _p("Permit", style="Title") + _p("Notice", bold=True) + _p("x")
     parsed, _ = _synth(tmp_path, body)
-    assert _flatten(parsed.sections) == [("Policy", 0), ("Notice", 1)]
+    assert _flatten(parsed.sections) == [("Permit", 0), ("Notice", 1)]
 
 
 def test_a_heading_one_paragraph_set_to_body_text_level_takes_the_level_its_style_names(tmp_path):

@@ -2,7 +2,7 @@
 
 **Status: blocked on the user. Nothing here yet, and nothing fake has been added.**
 
-The synthetic fixtures one directory up (`program_review_v3.docx`, `binder_summary.docx`,
+The synthetic fixtures one directory up (`program_review_v3.docx`, `ledger_summary.docx`,
 `edge_cases.docx`, `spec_threaded.docx`) are hand-built and know their own answers — we
 wrote them, so verifying the parser against them is partly circular. To close the loop we
 need at least one document that a **real person authored in Word**, not a script, and that
@@ -19,7 +19,7 @@ exhibits the producer quirks the spec relies on:
 ## TODO
 
 - [ ] **User action:** drop a genuine Word-authored `.docx` (with a comment reply and a
-      tracked change) into this directory. Redact client names / premium figures first.
+      tracked change) into this directory. Redact client names / invoice figures first.
 - [ ] Record where it came from and that we have permission to use it (keep the source
       note out of this tracked README — see the conventions below).
 - [ ] Add a smoke-test path that runs over `fixtures/real/*.docx` as an explicit opt-in

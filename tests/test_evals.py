@@ -229,7 +229,7 @@ def test_labels_module_imports_no_implementation_code():
 ROOT_SIDECARS = {
     "program_review_v2",
     "program_review_v3",
-    "binder_summary",
+    "ledger_summary",
     "edge_cases",
     "spec_threaded",
 }

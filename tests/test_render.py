@@ -297,15 +297,15 @@ def test_a_chunk_of_a_part_that_did_not_stream_is_refused():
 
 
 def test_the_views_are_three_keys_and_the_union_is_the_one_that_shows_the_edit():
-    """The v3 pollution edit: accepted keeps the insertion, original the deletion, and the
+    """The v3 shortfall edit: accepted keeps the insertion, original the deletion, and the
     union holds both -- which is why the summarizer reads the union (D5).
     """
-    parsed, one = _only(V3, "hostile-fire release")
+    parsed, one = _only(V3, "supply-delay release")
     assert render.chunk_text(parsed, one, View.ACCEPTED) == (
-        "Pollution: excluded except for hostile-fire release"
+        "Shortfall: excluded except for supply-delay release"
     )
     assert render.chunk_text(parsed, one, View.ORIGINAL) == (
-        "Pollution: excluded in all cases"
+        "Shortfall: excluded in all cases"
     )
     assert render.chunk_text(parsed, one, View.SUPERSEDED) == ""
     assert one.size == 51
@@ -313,29 +313,29 @@ def test_the_views_are_three_keys_and_the_union_is_the_one_that_shows_the_edit()
 
     markup = render.render_union_markup(parsed, one)
     assert "excluded in all cases" in markup
-    assert "excluded except for hostile-fire release" in markup
+    assert "excluded except for supply-delay release" in markup
 
 
-def test_the_pollution_chunks_markup_is_the_format_it_says_it_is():
+def test_the_shortfall_chunks_markup_is_the_format_it_says_it_is():
     """One chunk of the hand-edited pair, spelled out: markup, comment context, manifest.
 
     The manifest is Turn 2's provisional derivation (``pending_changes``), so this string is
     the one place the whole rendering is pinned -- a change to either format lands here.
     """
-    parsed, one = _only(V3, "hostile-fire release")
+    parsed, one = _only(V3, "supply-delay release")
     assert render.render_union_markup(parsed, one) == "\n".join(
         [
-            'Pollution: [[del author="R. Alvarez" date="2026-09-01T10:00:00Z"]]'
+            'Shortfall: [[del author="R. Alvarez" date="2026-09-01T10:00:00Z"]]'
             "excluded in all cases[[/del]]"
             '[[ins author="R. Alvarez" date="2026-09-01T10:00:00Z"]]'
-            "excluded except for hostile-fire release[[/ins]]",
+            "excluded except for supply-delay release[[/ins]]",
             '[[comment by="M. Chen" date="2026-01-01T00:00:00Z" resolved="unknown"]]'
-            "Pollution:  => Pollution exclusion wording changed - flag for carrier sign-off."
+            "Shortfall:  => Shortfall exclusion wording changed - flag for company sign-off."
             "[[/comment]]",
             '[[revision id="del:900" kind="del" author="R. Alvarez" '
             'date="2026-09-01T10:00:00Z"]]excluded in all cases[[/revision]]',
             '[[revision id="ins:901" kind="ins" author="R. Alvarez" '
-            'date="2026-09-01T10:00:00Z"]]excluded except for hostile-fire release[[/revision]]',
+            'date="2026-09-01T10:00:00Z"]]excluded except for supply-delay release[[/revision]]',
         ]
     )
 
@@ -347,15 +347,15 @@ def test_the_hand_edited_pair_differs_by_its_marks_and_not_by_its_comments():
     folded over is the same text in both -- while the marks the edit left add a manifest and
     change the key. The order is the union's: the deletion's text comes first.
     """
-    before, before_chunk = _only(V2, "Pollution: ")
-    after, after_chunk = _only(V3, "hostile-fire release")
+    before, before_chunk = _only(V2, "Shortfall: ")
+    after, after_chunk = _only(V3, "supply-delay release")
     assert before.revisions == []
     before_lines = render.render_union_markup(before, before_chunk).split("\n")
     after_lines = render.render_union_markup(after, after_chunk).split("\n")
     assert before_lines == [
-        "Pollution: excluded in all cases",
+        "Shortfall: excluded in all cases",
         '[[comment by="M. Chen" date="2026-01-01T00:00:00Z" resolved="unknown"]]'
-        "Pollution:  => Pollution exclusion wording changed - flag for carrier sign-off."
+        "Shortfall:  => Shortfall exclusion wording changed - flag for company sign-off."
         "[[/comment]]",
     ]
     assert [line for line in after_lines if line.startswith("[[comment ")] == [
@@ -365,7 +365,7 @@ def test_the_hand_edited_pair_differs_by_its_marks_and_not_by_its_comments():
         '[[revision id="del:900" kind="del" author="R. Alvarez" '
         'date="2026-09-01T10:00:00Z"]]excluded in all cases[[/revision]]',
         '[[revision id="ins:901" kind="ins" author="R. Alvarez" '
-        'date="2026-09-01T10:00:00Z"]]excluded except for hostile-fire release[[/revision]]',
+        'date="2026-09-01T10:00:00Z"]]excluded except for supply-delay release[[/revision]]',
     ]
     assert before_chunk.content_hash != after_chunk.content_hash
     assert before_chunk.context_hash != after_chunk.context_hash
@@ -658,7 +658,7 @@ def _comment(part_id: str) -> Comment:
 
 def test_the_comment_set_can_be_narrowed_by_the_caller():
     """``comments`` is the caller's set: a caller passing none of them gets no context."""
-    parsed, one = _only(V3, "hostile-fire release")
+    parsed, one = _only(V3, "supply-delay release")
     full = render.render_union_markup(parsed, one)
     assert any(line.startswith("[[comment ") for line in full.split("\n"))
     assert not any(
@@ -670,7 +670,7 @@ def test_the_comment_set_can_be_narrowed_by_the_caller():
         line.startswith("[[comment ")
         for line in render.render_union_markup(parsed, one, comments=[other]).split("\n")
     )
-    only = next(c for c in parsed.comments if "Pollution" in c.anchor_text)
+    only = next(c for c in parsed.comments if "Shortfall" in c.anchor_text)
     narrow = render.render_union_markup(parsed, one, comments=[only])
     assert [line for line in narrow.split("\n") if line.startswith("[[comment ")] == [
         _comment_line(only)

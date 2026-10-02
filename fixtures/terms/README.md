@@ -4,7 +4,7 @@
 tool exists to flag) are **blocked on the user**: the term list is input, not something
 this repo can derive, and an invented one would read as a real one. So the only registry
 committed here is `synthetic.example.json`, hand-typed to exercise the registry format
-and the matcher, with `tags` that say `category` and nothing about any real policy.
+and the matcher, with `tags` that say `category` and nothing about any real permit.
 
 `LabelsProvenance` does not apply here: a registry carries no labels. It is a codec
 record (`TermRegistry`, `schema_version` envelope) with `TermGroup` entries whose

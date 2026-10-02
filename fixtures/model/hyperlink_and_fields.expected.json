@@ -18,21 +18,21 @@
   "labels_provenance": "spec",
   "paragraphs": [
     {
-      "accepted": "See the endorsement form",
+      "accepted": "See the attestation form",
       "clause": "E",
       "index": 0,
       "note": "w:hyperlink runs are ordinary content at their document position",
-      "original": "See the endorsement form",
+      "original": "See the attestation form",
       "spans": [
         {
           "end": 24,
           "stack": [],
           "start": 0,
-          "text": "See the endorsement form"
+          "text": "See the attestation form"
         }
       ],
       "superseded": "",
-      "union": "See the endorsement form"
+      "union": "See the attestation form"
     },
     {
       "accepted": "Endorsed",

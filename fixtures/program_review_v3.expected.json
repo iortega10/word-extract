@@ -1,31 +1,31 @@
 {
   "comments": [
     {
-      "anchor_text": "The policy provides a Limit of Liability of $1,000,000 per occurrence and $2,000,000 aggregate. ",
+      "anchor_text": "The permit provides a Limit of Liability of $1,000,000 per engagement and $2,000,000 aggregate. ",
       "author": "R. Alvarez",
       "id": "0",
       "initials": "RA",
       "para_id": null,
-      "text": "Confirm limit vs. the binder - binder says $500k occurrence."
+      "text": "Confirm limit vs. the ledger - ledger says $500k engagement."
     },
     {
-      "anchor_text": "The policy provides a Limit of Liability of $1,000,000 per occurrence and $2,000,000 aggregate. ",
+      "anchor_text": "The permit provides a Limit of Liability of $1,000,000 per engagement and $2,000,000 aggregate. ",
       "author": "M. Chen",
       "id": "1",
       "initials": "MC",
       "para_id": null,
-      "text": "Binder was superseded; $1M is right. Updating binder."
+      "text": "Ledger was superseded; $1M is right. Updating ledger."
     },
     {
-      "anchor_text": "Additional insured status is granted by blanket endorsement where required by written contract.",
+      "anchor_text": "Additional partner status is granted by blanket attestation where required by written contract.",
       "author": "R. Alvarez",
       "id": "2",
       "initials": "RA",
       "para_id": null,
-      "text": "Is blanket AI ongoing-ops only, or completed-ops too? Carrier form CG 20 10 vs 20 37."
+      "text": "Is blanket IP ongoing-use only, or completed-use too? Company form AB 20 10 vs 20 37."
     },
     {
-      "anchor_text": "Carrier may waive subrogation only with prior written consent.",
+      "anchor_text": "Company may waive termination only with prior written consent.",
       "author": "Legal",
       "id": "3",
       "initials": "LG",
@@ -33,12 +33,12 @@
       "text": "Consent language conflicts with section 1 (blanket waiver). Needs legal review."
     },
     {
-      "anchor_text": "Pollution: ",
+      "anchor_text": "Shortfall: ",
       "author": "M. Chen",
       "id": "4",
       "initials": "MC",
       "para_id": null,
-      "text": "Pollution exclusion wording changed - flag for carrier sign-off."
+      "text": "Shortfall exclusion wording changed - flag for company sign-off."
     }
   ],
   "fixture": "program_review_v3.docx",
@@ -52,14 +52,14 @@
     {
       "author": "R. Alvarez",
       "kind": "ins",
-      "text": "excluded except for hostile-fire release"
+      "text": "excluded except for supply-delay release"
     }
   ],
   "sections": [
     {
       "level": 0,
       "order": 0,
-      "text": "Program Review: Contractors General Liability"
+      "text": "Program Review: Consultants Service Agreement"
     },
     {
       "level": 1,

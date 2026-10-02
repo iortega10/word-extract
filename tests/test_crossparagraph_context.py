@@ -70,8 +70,8 @@ def _cell(text: str) -> str:
 INDEX = compile_registry(
     TermRegistry(
         groups=[
-            TermGroup(canonical="waiver of subrogation"),
-            TermGroup(canonical="named storm deductible"),
+            TermGroup(canonical="waiver of termination"),
+            TermGroup(canonical="response delay penalty"),
             TermGroup(canonical="aggregate limit", synonyms=["aggregate"]),
         ]
     )
@@ -86,28 +86,28 @@ def _findings(tmp_path: Path, body: str):
 
 def test_a_phrase_split_across_two_ordinary_paragraphs_is_a_paragraph_boundary(tmp_path):
     (finding,), _ = _findings(
-        tmp_path, _p("The carrier grants a waiver") + _p("of subrogation where required.")
+        tmp_path, _p("The company grants a waiver") + _p("of termination where required.")
     )
-    assert finding.group == "waiver of subrogation"
+    assert finding.group == "waiver of termination"
     assert finding.boundary == "paragraph"
     assert finding.group_hit_nearby is False
 
 
 def test_a_phrase_across_two_table_cells_is_a_cell_boundary_not_a_split_phrase(tmp_path):
-    body = "<w:tbl><w:tr>" + _cell("Named storm") + _cell("deductible applies") + "</w:tr></w:tbl>"
+    body = "<w:tbl><w:tr>" + _cell("Response delay") + _cell("penalty applies") + "</w:tr></w:tbl>"
     (finding,), _ = _findings(tmp_path, body)
     assert finding.boundary == "cell"
 
 
 def test_a_phrase_within_one_cell_across_two_paragraphs_is_not_a_cell_adjacency(tmp_path):
-    cell = "<w:tc>" + _p("Named storm") + _p("deductible applies") + "</w:tc>"
+    cell = "<w:tc>" + _p("Response delay") + _p("penalty applies") + "</w:tc>"
     (finding,), _ = _findings(tmp_path, "<w:tbl><w:tr>" + cell + "</w:tr></w:tbl>")
     assert finding.boundary == "paragraph"  # same cell: an ordinary paragraph break inside it
 
 
 def test_a_heading_and_the_text_under_it_is_a_heading_boundary(tmp_path):
     (finding,), _ = _findings(
-        tmp_path, _p("Named Storm", style="Heading1") + _p("Deductible: 5% of TIV.")
+        tmp_path, _p("response delay", style="Heading1") + _p("Penalty: 5% of TCV.")
     )
     assert finding.boundary == "heading"
 
@@ -122,7 +122,7 @@ def test_a_group_the_strict_matcher_already_reported_there_is_flagged(tmp_path):
 
 
 def test_the_new_fields_are_in_the_json_form(tmp_path):
-    (finding,), _ = _findings(tmp_path, _p("a waiver") + _p("of subrogation"))
+    (finding,), _ = _findings(tmp_path, _p("a waiver") + _p("of termination"))
     payload = finding.to_dict()
     assert payload["boundary"] == "paragraph" and payload["group_hit_nearby"] is False
 

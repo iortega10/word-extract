@@ -1,7 +1,7 @@
 {
   "comments": [
     {
-      "anchor_text": "The endorsement ",
+      "anchor_text": "The attestation ",
       "author": "D. Okafor",
       "id": "1",
       "initials": "DO",
@@ -14,7 +14,7 @@
       "id": "2",
       "initials": "SR",
       "para_id": "00000002",
-      "text": "Yes - three-year completed-ops tail, now confirmed resolved."
+      "text": "Yes - three-year completed-use tail, now confirmed resolved."
     }
   ],
   "fixture": "spec_threaded.docx",

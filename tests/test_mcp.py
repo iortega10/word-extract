@@ -21,7 +21,7 @@ The claims under test:
   real wire: initialize, a working call, a failing call.
 
 Fixture ground truth: the v2/v3 pair, five comments each, five sections each, two
-revisions in v3 only, four ``subrogation`` hits (three in v3), chunks stored in the
+revisions in v3 only, four ``termination`` hits (three in v3), chunks stored in the
 accepted view only -- so every answer below must *name* that state, never assume it.
 """
 from __future__ import annotations
@@ -97,12 +97,12 @@ def _exercise(server: FastMCP, documents: list[dict]) -> dict[str, object]:
     answers: dict[str, object] = {
         "list_documents": _call(server, "list_documents"),
         "get_outline": _call(server, "get_outline", doc=v3["title"]),
-        "find_terms": _call(server, "find_terms", group="subrogation"),
+        "find_terms": _call(server, "find_terms", group="termination"),
         "get_comments": _call(server, "get_comments", doc=v2["document_id"]),
         "get_revisions": _call(server, "get_revisions"),
-        "search": _call(server, "search", query="subrogation"),
+        "search": _call(server, "search", query="termination"),
         "compare": _call(
-            server, "compare", doc_a=v2["title"], doc_b=v3["title"], group="subrogation"
+            server, "compare", doc_a=v2["title"], doc_b=v3["title"], group="termination"
         ),
     }
     cited = next(hit for hit in _hits(answers["find_terms"]) if hit["chunk_id"])
@@ -194,7 +194,7 @@ def test_each_tool_answers_with_json_and_citations(
     assert outline["view"] == "accepted", "an outline's sections are accepted-view text"
     assert outline["summary"] is None and outline["has_pending"] is None
     assert outline["sections"], "the fixture's heading tree"
-    assert outline["sections"][0]["title"] == "Program Review: Contractors General Liability"
+    assert outline["sections"][0]["title"] == "Program Review: Consultants Service Agreement"
     assert outline["sections"][0]["heading_id"], "the address citations resolve through"
 
     comments = answers["get_comments"]
@@ -222,7 +222,7 @@ def test_each_tool_answers_with_json_and_citations(
     assert revision["citation"]["spans"]
 
     terms = answers["find_terms"]
-    assert terms["group"] == "subrogation" and terms["resolved_group"] == "subrogation"
+    assert terms["group"] == "termination" and terms["resolved_group"] == "termination"
     hits = _hits(terms)
     assert len(hits) == 4, "the pair's hits under the synthetic registry"
     for hit in hits:
@@ -244,7 +244,7 @@ def test_each_tool_answers_with_json_and_citations(
     assert chunk["citation"]["view"] == "accepted", "a rendered view answers with its view"
 
     found = answers["search"]
-    assert found["query"] == "subrogation"
+    assert found["query"] == "termination"
     assert found["term_list"] == terms["term_list"], "decision 3's one stored list"
     assert found["scope"] is None
     assert found["sources"] == list(SOURCES)
@@ -256,12 +256,12 @@ def test_each_tool_answers_with_json_and_citations(
         assert isinstance(result["locations"], list), "results stay addressable"
     term_results = [result for result in found["results"] if result["term_group"]]
     assert term_results, "the term tier matched"
-    assert {result["term_group"] for result in term_results} == {"subrogation"}
+    assert {result["term_group"] for result in term_results} == {"termination"}
 
     diff = answers["compare"]
     assert diff["document_a"] == v2["document_id"]
     assert diff["document_b"] == v3["document_id"]
-    assert diff["group"] == "subrogation" and diff["resolved_group"] == "subrogation"
+    assert diff["group"] == "termination" and diff["resolved_group"] == "termination"
     assert diff["term_list"] == terms["term_list"]
     (comparison,) = diff["views"]
     assert comparison["view"] == "accepted", "the pair shares the accepted view"
@@ -288,7 +288,7 @@ def test_failed_lookups_and_bad_arguments_name_the_state(server: FastMCP) -> Non
     assert "unknown view 'union'" in str(bad_view.value)
     assert "accepted" in str(bad_view.value), "the error names the views"
 
-    terms = _call(server, "find_terms", group="subrogation")
+    terms = _call(server, "find_terms", group="termination")
     cited = next(hit for hit in _hits(terms) if hit["chunk_id"])
     with pytest.raises(ToolError) as wrong_view:
         _call(server, "get_chunk", chunk_id=cited["chunk_id"], view="original")
@@ -297,15 +297,15 @@ def test_failed_lookups_and_bad_arguments_name_the_state(server: FastMCP) -> Non
     )
 
     with pytest.raises(ToolError) as bad_source:
-        _call(server, "search", query="subrogation", sources=["bogus"])
+        _call(server, "search", query="termination", sources=["bogus"])
     assert "bogus" in str(bad_source.value), "unknown tier names are rejected"
 
     with pytest.raises(ToolError) as bad_scope:
-        _call(server, "search", query="subrogation", scope="nope")
+        _call(server, "search", query="termination", scope="nope")
     assert "no document 'nope' in this store" in str(bad_scope.value)
 
     with pytest.raises(ToolError) as bad_list:
-        _call(server, "find_terms", group="subrogation", term_list="nope")
+        _call(server, "find_terms", group="termination", term_list="nope")
     assert "term list 'nope' is not stored" in str(bad_list.value)
     assert terms["term_list"] in str(bad_list.value), "the error names what is stored"
 

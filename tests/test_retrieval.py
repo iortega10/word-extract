@@ -304,8 +304,8 @@ def test_evaluate_retrieval_scores_a_real_set_through_the_query_layer(tmp_path):
     fixtures = _retrieval_case(
         tmp_path,
         [
-            _example("subrogation", [_citation(document=DOCUMENT)]),
-            _example("waiver of subrogation", [_citation(document=DOCUMENT, chunk=0)]),
+            _example("termination", [_citation(document=DOCUMENT)]),
+            _example("waiver of termination", [_citation(document=DOCUMENT, chunk=0)]),
         ],
     )
     report = harness.evaluate_retrieval(fixtures)
@@ -321,7 +321,7 @@ def test_evaluate_retrieval_scores_a_real_set_through_the_query_layer(tmp_path):
 def test_an_ordinal_the_store_cannot_show_fails_the_layer(tmp_path):
     """A green retrieval layer cannot be vacuous: a chunk that does not exist is a miss."""
     fixtures = _retrieval_case(
-        tmp_path, [_example("subrogation", [_citation(document=DOCUMENT, chunk=99)])]
+        tmp_path, [_example("termination", [_citation(document=DOCUMENT, chunk=99)])]
     )
     report = harness.evaluate_retrieval(fixtures)
     assert report is not None
@@ -338,7 +338,7 @@ def test_a_query_set_whose_term_list_is_missing_skips_every_example(tmp_path):
     (fixtures / "evals" / "queries.json").write_text(
         json.dumps(
             _query_set(
-                [_example("subrogation", [_citation(document=DOCUMENT)])],
+                [_example("termination", [_citation(document=DOCUMENT)])],
                 term_list="terms/gone.json",
             )
         ),
@@ -349,5 +349,5 @@ def test_a_query_set_whose_term_list_is_missing_skips_every_example(tmp_path):
     assert report.rows == ()
     assert report.result is None
     assert report.skipped == (
-        ("subrogation", "the set's term list is not on disk where it names it"),
+        ("termination", "the set's term list is not on disk where it names it"),
     )

@@ -63,7 +63,7 @@ V3 = "program_review_v3.docx"
 #: One shared store's documents: the v2/v3 pair, the hits fixture, and the fixtures whose
 #: threading, revision and gap unknowns must survive the read.
 DOCS = (
-    FIXTURES / "binder_summary.docx",
+    FIXTURES / "ledger_summary.docx",
     FIXTURES / V2,
     FIXTURES / V3,
     FIXTURES / "spec_threaded.docx",
@@ -78,7 +78,7 @@ CANNED_TEXT = "(canned client: no model was asked)"
 
 #: Comments each document holds: parse records, hand-checked in the fixtures' sidecars.
 COMMENT_COUNTS = {
-    "binder_summary.docx": 1,
+    "ledger_summary.docx": 1,
     "deleted_paragraph_mark.docx": 0,
     V2: 5,
     V3: 5,
@@ -126,9 +126,9 @@ def _snapshot(root: Path) -> dict[str, tuple[bytes, int]]:
 
 
 def _hit_chunks(store: Store, title: str) -> set[str]:
-    """The chunk ids ``find_terms`` places the subrogation group's hits in for one title."""
-    result = find_terms(store, "subrogation", doc=title)
-    assert result.resolved_group == "subrogation"
+    """The chunk ids ``find_terms`` places the termination group's hits in for one title."""
+    result = find_terms(store, "termination", doc=title)
+    assert result.resolved_group == "termination"
     assert len(result.documents) == 1
     return {
         hit.chunk_id
@@ -140,7 +140,7 @@ def _hit_chunks(store: Store, title: str) -> set[str]:
 
 def _exercise(store) -> tuple:
     """All eight queries in call order: one comparable answer, no side effects."""
-    hits = find_terms(store, "subrogation", doc=V3)
+    hits = find_terms(store, "termination", doc=V3)
     chunk_id = next(
         hit.chunk_id
         for section in hits.documents[0].sections
@@ -154,7 +154,7 @@ def _exercise(store) -> tuple:
         tuple(get_comments(store)),
         get_revisions(store),
         hits,
-        search(store, "subrogation"),
+        search(store, "termination"),
         compare(store, V2, V3),
     )
 
@@ -243,10 +243,10 @@ def test_a_chunk_row_carries_both_renderings_and_the_comments_markup_cites(store
     row = get_chunk(store, first.id, "accepted", doc=V3)
     assert row.document_id == _by_title(list_documents(store))[V3].document_id
     assert row.chunk_id == first.id and row.view is View.ACCEPTED
-    assert row.section_path == ("Program Review: Contractors General Liability", "1. Coverage Terms")
+    assert row.section_path == ("Program Review: Consultants Service Agreement", "1. Coverage Terms")
     assert row.node_ids == tuple(first.node_ids)
     assert row.text.startswith(
-        "The policy provides a Limit of Liability of $1,000,000 per occurrence and $2,000"
+        "The permit provides a Limit of Liability of $1,000,000 per engagement and $2,000"
     )
     assert len(row.comments) == 4
     #: The row's comment set and the markup's context lines are one rule (the chunker's),
@@ -266,7 +266,7 @@ def test_a_chunk_row_carries_both_renderings_and_the_comments_markup_cites(store
         if "[[del" in chunk_row.markup
     )
     assert row.section_path[-1] == "2. Exclusions"
-    assert "excluded except for hostile-fire release" in row.text
+    assert "excluded except for supply-delay release" in row.text
     assert "excluded in all cases" not in row.text
     assert "[[del" not in row.text and "[[ins" not in row.text
     #: The union is the summarizer's input: both sides of the change stay visible there
@@ -297,7 +297,7 @@ def test_lookups_that_could_pick_raise_naming_the_state(stored):
     with pytest.raises(LookupError):
         get_revisions(store, "nope.docx")
     with pytest.raises(LookupError):
-        search(store, "subrogation", scope="nope.docx")
+        search(store, "termination", scope="nope.docx")
     with pytest.raises(LookupError):
         compare(store, V3, "nope.docx")
 
@@ -368,7 +368,7 @@ def test_comment_filters_are_exact_author_and_full_section_paths(stored):
     full = get_comments(
         store,
         V3,
-        section=("Program Review: Contractors General Liability", "2. Exclusions"),
+        section=("Program Review: Consultants Service Agreement", "2. Exclusions"),
     )
     assert len(full) == 1
     assert full[0].author == "M. Chen"
@@ -395,8 +395,8 @@ def test_revisions_carry_their_text_sections_and_document_counts(stored):
     assert deleted.kind is RevisionKind.DEL and deleted.author == "R. Alvarez"
     assert deleted.text == "excluded in all cases"
     assert inserted.kind is RevisionKind.INS
-    assert inserted.text == "excluded except for hostile-fire release"
-    section = ("Program Review: Contractors General Liability", "2. Exclusions")
+    assert inserted.text == "excluded except for supply-delay release"
+    section = ("Program Review: Consultants Service Agreement", "2. Exclusions")
     assert deleted.section_paths == (section,) and inserted.section_paths == (section,)
     assert deleted.spans and deleted.citation.node_id
     assert (v3.unattributed_revisions, v3.unattributed_gaps) == (0, [])
@@ -426,13 +426,13 @@ def test_revisions_carry_their_text_sections_and_document_counts(stored):
     assert unrecorded.unattributed_gaps == ["unrecorded_revision_kind"]
     assert unrecorded.unattributed_revisions == 0
 
-    for title in ("binder_summary.docx", V2, "threading_edge_cases.docx", "unanchored_comment.docx"):
+    for title in ("ledger_summary.docx", V2, "threading_edge_cases.docx", "unanchored_comment.docx"):
         assert by_title[title].revisions == ()
 
 
 def test_a_revision_section_filter_keeps_every_document_visible(stored):
     store = Store(stored.root)
-    section = ("Program Review: Contractors General Liability", "2. Exclusions")
+    section = ("Program Review: Consultants Service Agreement", "2. Exclusions")
     result = get_revisions(store, section=section)
     assert result.doc is None
     assert {doc.title for doc in result.documents} == set(COMMENT_COUNTS)
@@ -455,49 +455,49 @@ def test_a_revision_section_filter_keeps_every_document_visible(stored):
 
 def test_find_terms_resolves_canonical_synonyms_and_nothing_at_all(stored):
     store = Store(stored.root)
-    direct = find_terms(store, "subrogation")
-    assert direct.resolved_group == "subrogation"
+    direct = find_terms(store, "termination")
+    assert direct.resolved_group == "termination"
     titles = [doc.title for doc in direct.documents]
-    assert titles == ["binder_summary.docx", V2, V3]
+    assert titles == ["ledger_summary.docx", V2, V3]
 
-    binder = direct.documents[0]
-    assert [section.section_path for section in binder.sections] == [
-        ("Binder Summary", "Conditions")
+    ledger = direct.documents[0]
+    assert [section.section_path for section in ledger.sections] == [
+        ("Ledger Summary", "Conditions")
     ]
-    assert [hit.match_type for hit in binder.sections[0].hits] == [
+    assert [hit.match_type for hit in ledger.sections[0].hits] == [
         MatchType.SYNONYM,
         MatchType.EXACT,
     ]
     v3 = next(doc for doc in direct.documents if doc.title == V3)
     assert {section.section_path for section in v3.sections} == {
-        ("Program Review: Contractors General Liability", "1. Coverage Terms")
+        ("Program Review: Consultants Service Agreement", "1. Coverage Terms")
     }
     assert {hit.chunk_id for section in v3.sections for hit in section.hits} == set(
         _hit_chunks(store, V3)
     )
     assert all(hit.views for hit in v3.sections[0].hits)
 
-    via_synonym = find_terms(store, "waiver of subrogation")
-    assert via_synonym.resolved_group == "subrogation"
+    via_synonym = find_terms(store, "waiver of termination")
+    assert via_synonym.resolved_group == "termination"
     assert [doc.title for doc in via_synonym.documents] == titles
     assert [doc.sections for doc in via_synonym.documents] == [
         doc.sections for doc in direct.documents
     ]
 
-    unresolved = find_terms(store, "subrogated")
+    unresolved = find_terms(store, "terminated")
     assert unresolved.resolved_group is None
     assert unresolved.documents == ()
 
 
 def test_find_terms_section_filter_is_a_full_title_path(stored):
     store = Store(stored.root)
-    full = find_terms(store, "subrogation", section=("Binder Summary", "Conditions"))
-    assert [doc.title for doc in full.documents] == ["binder_summary.docx"]
+    full = find_terms(store, "termination", section=("Ledger Summary", "Conditions"))
+    assert [doc.title for doc in full.documents] == ["ledger_summary.docx"]
 
-    bare = find_terms(store, "subrogation", section=("Conditions",))
+    bare = find_terms(store, "termination", section=("Conditions",))
     assert bare.documents == ()
 
-    scoped = find_terms(store, "subrogation", doc=V3)
+    scoped = find_terms(store, "termination", doc=V3)
     assert [doc.title for doc in scoped.documents] == [V3]
     assert scoped.term_list
 
@@ -507,9 +507,9 @@ def test_find_terms_section_filter_is_a_full_title_path(stored):
 
 def test_search_states_the_question_it_answered(stored):
     store = Store(stored.root)
-    result = search(store, "subrogation")
-    assert result.query == "subrogation"
-    assert result.resolved_group == "subrogation"
+    result = search(store, "termination")
+    assert result.query == "termination"
+    assert result.resolved_group == "termination"
     assert result.scope is None
     assert result.sources == SOURCES
     assert result.views == (View.ACCEPTED, View.ORIGINAL)
@@ -517,39 +517,39 @@ def test_search_states_the_question_it_answered(stored):
 
     titles = {row.document_id: row.title for row in list_documents(store)}
     assert {titles[found.document_id] for found in result.results} == {
-        "binder_summary.docx",
+        "ledger_summary.docx",
         V2,
         V3,
     }
     assert all("term" in found.sources for found in result.results)
-    assert all(found.term_group == "subrogation" for found in result.results)
+    assert all(found.term_group == "termination" for found in result.results)
     tiers = [found.tier for found in result.results]
     assert tiers == sorted(tiers)
 
 
 def test_search_scopes_and_filters_and_echoes_what_it_ran_under(stored):
     store = Store(stored.root)
-    scoped = search(store, "subrogation", scope=V3)
+    scoped = search(store, "termination", scope=V3)
     assert scoped.scope == V3
     v3_id = _by_title(list_documents(store))[V3].document_id
     assert {found.document_id for found in scoped.results} == {v3_id}
     assert scoped.results
 
-    filtered = search(store, "subrogation", sources=("term",))
+    filtered = search(store, "termination", sources=("term",))
     assert filtered.sources == ("term",)
     titles = {row.document_id: row.title for row in list_documents(store)}
     assert {titles[found.document_id] for found in filtered.results} == {
-        "binder_summary.docx",
+        "ledger_summary.docx",
         V2,
         V3,
     }
     assert all("term" in found.sources for found in filtered.results)
 
-    accepted = search(store, "subrogation", views=[View.ACCEPTED])
+    accepted = search(store, "termination", views=[View.ACCEPTED])
     assert accepted.views == (View.ACCEPTED,)
 
     with pytest.raises(ValueError, match="unknown sources"):
-        search(store, "subrogation", sources=("footnote",))
+        search(store, "termination", sources=("footnote",))
 
 
 def test_search_reaches_the_summary_tier_and_admits_a_miss(stored):
@@ -596,19 +596,19 @@ def test_compare_splits_chunks_and_group_hits_per_side(stored):
     assert view.comments_changed[0] not in a_ids | b_ids
     assert view.unchanged_chunks == 4  # chunks 0, 1, 3, 4 share an id; 0's comment differs
 
-    grouped = compare(store, "binder_summary.docx", V3, group="subrogation")
-    assert grouped.group == "subrogation" and grouped.resolved_group == "subrogation"
-    binder_hits = _hit_chunks(store, "binder_summary.docx")
+    grouped = compare(store, "ledger_summary.docx", V3, group="termination")
+    assert grouped.group == "termination" and grouped.resolved_group == "termination"
+    ledger_hits = _hit_chunks(store, "ledger_summary.docx")
     v3_hits = _hit_chunks(store, V3)
-    assert binder_hits and v3_hits
+    assert ledger_hits and v3_hits
     view = grouped.views[0]
     #: The fixed semantics: each side names the chunks the *other* side lacks the group
     #: in, so the same chunk id carrying the group in both documents names neither side.
-    assert set(view.hits_only_in_a) == binder_hits - v3_hits
-    assert set(view.hits_only_in_b) == v3_hits - binder_hits
+    assert set(view.hits_only_in_a) == ledger_hits - v3_hits
+    assert set(view.hits_only_in_b) == v3_hits - ledger_hits
     assert set(view.hits_only_in_a).isdisjoint(view.hits_only_in_b)
 
-    shared = compare(store, V2, V3, group="subrogation").views[0]
+    shared = compare(store, V2, V3, group="termination").views[0]
     assert _hit_chunks(store, V2) == v3_hits
     assert shared.hits_only_in_a == () and shared.hits_only_in_b == ()
 
@@ -617,17 +617,17 @@ def test_compare_refuses_one_document_and_documents_sharing_no_view(tmp_path):
     root = tmp_path / "views"
     run(FIXTURES / V3, REGISTRY, store_root=root, run_id="accepted-v3")
     run(
-        FIXTURES / "binder_summary.docx",
+        FIXTURES / "ledger_summary.docx",
         REGISTRY,
         store_root=root,
         view=View.ORIGINAL,
-        run_id="original-binder",
+        run_id="original-ledger",
     )
     store = Store(root)
     with pytest.raises(ValueError, match="two different documents"):
         compare(store, V3, V3)
     with pytest.raises(LookupError, match="share no stored view"):
-        compare(store, V3, "binder_summary.docx")
+        compare(store, V3, "ledger_summary.docx")
 
 
 # --- purity: read-only, determinism ----------------------------------------------------
@@ -654,21 +654,21 @@ def test_a_store_holding_several_term_lists_is_never_chosen_for_you(tmp_path):
     run(FIXTURES / V3, REGISTRY, store_root=root, run_id="first")
     other = tmp_path / "other-terms.json"
     other.write_text(
-        REGISTRY.read_text(encoding="utf-8").replace('"policy aggregate"', '"policy cap"'),
+        REGISTRY.read_text(encoding="utf-8").replace('"permit aggregate"', '"permit cap"'),
         encoding="utf-8",
     )
     run(FIXTURES / V3, other, store_root=root, run_id="second")
     store = Store(root)
 
     with pytest.raises(ValueError, match="several term lists"):
-        search(store, "subrogation")
+        search(store, "termination")
     with pytest.raises(ValueError, match="several term lists"):
-        find_terms(store, "subrogation")
+        find_terms(store, "termination")
     with pytest.raises(ValueError, match="not stored"):
-        search(store, "subrogation", term_list="checklist-2021")
+        search(store, "termination", term_list="checklist-2021")
 
     chosen = term_list_hash(load_terms(other))
-    answered = search(store, "subrogation", term_list=chosen)
+    answered = search(store, "termination", term_list=chosen)
     assert answered.term_list == chosen
     assert answered.results
 
@@ -698,8 +698,8 @@ def test_the_machine_local_sample_answers_every_query(tmp_path):
 
     assert isinstance(get_comments(store), list)
     assert isinstance(get_revisions(store).documents, tuple)
-    assert find_terms(store, "subrogation").term_list
-    assert search(store, "subrogation").scope is None
+    assert find_terms(store, "termination").term_list
+    assert search(store, "termination").scope is None
     #: One document can only answer compare by refusing: there is no second side.
     with pytest.raises(ValueError, match="two different documents"):
         compare(store, title, title)

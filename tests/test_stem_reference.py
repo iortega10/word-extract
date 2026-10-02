@@ -72,8 +72,8 @@ def test_a_failed_longest_suffix_condition_ends_the_step(word, stem):
     assert porter_stem(word) == stem
 
 
-def test_the_insurance_party_words_share_a_stem_which_is_why_stemming_is_opt_in():
-    """Porter's true behavior: insured / insurer / insurance are one stem. They name
-    different parties in a policy, so a registry must opt a group in to stemming, never a
-    default (``TermGroup.stemming``)."""
-    assert {porter_stem(w) for w in ("insured", "insurer", "insurance", "insurers")} == {"insur"}
+def test_words_that_name_different_things_share_a_stem_which_is_why_stemming_is_opt_in():
+    """Porter's true behavior: universe / university / universal are one stem. They name
+    different things, so a registry must opt a group in to stemming, never a default
+    (``TermGroup.stemming``)."""
+    assert {porter_stem(w) for w in ("universe", "university", "universal", "universes")} == {"univers"}

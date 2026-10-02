@@ -83,7 +83,7 @@ SAMPLES = [
         resolved_identity="mchen",
         date="2026-09-01T10:00:00Z",
         anchor=Span("word/document.xml", 5, 20),
-        anchor_text="recovery",
+        anchor_text="transfer",
         parent_id="0F0E0D0C",
         threading_status=ThreadingStatus.VERIFIED,
         resolved=False,
@@ -104,14 +104,14 @@ SAMPLES = [
         disputed_rules=["bold"],
     ),
     TermGroup(
-        canonical="subrogation",
-        synonyms=["waiver of recovery", "waiver of subrogation"],
+        canonical="termination",
+        synonyms=["waiver of transfer", "waiver of termination"],
         stemming="porter",
         rules={"case_sensitive": False},
         tags={"category": "coverage"},
     ),
     TermHit(
-        group="subrogation",
+        group="termination",
         present_in={View.ACCEPTED, View.ORIGINAL},
         spans=[Span("word/document.xml", 30, 46)],
         view_spans=[
@@ -153,7 +153,7 @@ SAMPLES = [
     ),
     UnionStream(
         part_id="word/document.xml",
-        text="right of recoverysubrogation\n",
+        text="right of transfertermination\n",
         spans=[
             ElementarySpan(start=0, end=9),
             ElementarySpan(start=9, end=17, stack=["r1"]),

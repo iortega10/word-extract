@@ -6,7 +6,7 @@ The expected stems are **not** produced by ``wordextract.stem``: they come from 
 A stemmer tested only against a table it produced proves that it agrees with itself; this
 is the external check the build spec asks for (Turn 6b: "tested against external published
 vectors"). Words come from English text already on the machine (Python's documentation and
-standard library) plus an insurance vocabulary, sampled deterministically.
+standard library) plus a contract vocabulary, sampled deterministically.
 
 Needs ``pip install nltk`` (not a project dependency: it is a dev-time generator only).
 
@@ -25,16 +25,17 @@ except ImportError:  # pragma: no cover - a dev-time tool
 
 OUT = Path(__file__).resolve().parents[1] / "fixtures" / "stem" / "porter_reference_vectors.tsv"
 
-INSURANCE = (
-    "insured insurer insurance insurable insureds insurers subrogation subrogations subrogated "
-    "waiver waivers exclusion exclusions excluded excluding included including inclusion limits "
-    "limited limitation liability liabilities liable coverage covered covers covering endorsement "
-    "endorsements deductible deductibles premium premiums aggregate aggregated occurrence "
-    "occurrences cancellation cancelled canceling contract contractor contractors contractual "
-    "indemnity indemnify indemnification indemnified reinsurance reinsured reinsurer negligence "
-    "negligent negligently agreement agreements settlement payment payments requirement "
-    "requirements statement statements amendment amendments replacement adjustment adjustments "
-    "enforcement document documents element elements movement placement argument instrument"
+VOCABULARY = (
+    "universe universes university universities universal universally customer customers vendor "
+    "vendors liability liabilities liable termination terminations terminated terminating renew "
+    "renewal renewals renewed renewing waiver waivers exclusion exclusions excluded excluding "
+    "included including inclusion limits limited limitation covered covers covering endorsement "
+    "endorsements invoice invoices aggregate aggregated cancellation cancelled canceling contract "
+    "contracts contractor contractors contractual indemnity indemnify indemnification indemnified "
+    "reliability negligence negligent negligently agreement agreements settlement payment "
+    "payments requirement requirements statement statements amendment amendments replacement "
+    "adjustment adjustments enforcement document documents element elements movement placement "
+    "argument instrument"
 ).split()
 
 
@@ -52,7 +53,7 @@ def main() -> None:
             continue
         words.update(w.lower() for w in re.findall(r"[A-Za-z]{3,20}", text))
     ordered = sorted(words)
-    sample = set(ordered[::25]) | set(INSURANCE)
+    sample = set(ordered[::25]) | set(VOCABULARY)
     # every word the ment-family defect touched is pinned, whatever the sample caught
     sample |= {w for w in ordered if w.endswith(("ment", "ments", "menting", "mented"))}
     stemmer = PorterStemmer(mode="ORIGINAL_ALGORITHM")

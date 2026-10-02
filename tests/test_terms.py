@@ -76,9 +76,9 @@ EXAMPLE_PATH = FIXTURES / "terms" / "synthetic.example.json"
 
 # --- hand-typed term groups ----------------------------------------------------------
 
-SUBROGATION = TermGroup(
-    canonical="subrogation",
-    synonyms=["right of subrogation", "right of recovery", "waiver of subrogation"],
+TERMINATION = TermGroup(
+    canonical="termination",
+    synonyms=["right of termination", "right of transfer", "waiver of termination"],
     stemming="porter",
     tags={"category": "coverage"},
 )
@@ -89,18 +89,18 @@ NONCOMPLIANCE = TermGroup(
 )
 AGGREGATE = TermGroup(
     canonical="aggregate limit",
-    synonyms=["policy aggregate"],
+    synonyms=["permit aggregate"],
     tags={"category": "limits"},
 )
-INSURED = TermGroup(
-    canonical="named insured",
-    synonyms=["additional insured"],
+PARTNER = TermGroup(
+    canonical="named partner",
+    synonyms=["additional partner"],
     tags={"category": "parties"},
 )
 
 #: Typed out again rather than imported from the test fixture, so the shipped example
 #: registry is checked against a second reading of the same literals.
-EXAMPLE_GROUPS = [SUBROGATION, NONCOMPLIANCE, AGGREGATE, INSURED]
+EXAMPLE_GROUPS = [TERMINATION, NONCOMPLIANCE, AGGREGATE, PARTNER]
 
 
 def _registry(*groups: TermGroup) -> TermRegistry:
@@ -143,8 +143,8 @@ def _example_a_stream() -> UnionStream:
     """``text-model-spec.md`` §6 example A: a delete then an insert, no separator."""
     return _stream(
         ([], "right of "),
-        (["del:1"], "recovery"),
-        (["ins:2"], "subrogation"),
+        (["del:1"], "transfer"),
+        (["ins:2"], "termination"),
         ([], TERMINATOR),
     )
 
@@ -152,8 +152,8 @@ def _example_a_stream() -> UnionStream:
 # --- normalization (§ build spec 6a) -------------------------------------------------
 
 def test_case_punctuation_and_whitespace_normalize_alike():
-    assert normalize("  Waiver  of,\tSUBROGATION!  ") == "waiver of subrogation"
-    assert normalize("Waiver Of Subrogation.") == normalize("waiver  of subrogation")
+    assert normalize("  Waiver  of,\tTERMINATION!  ") == "waiver of termination"
+    assert normalize("waiver of termination.") == normalize("waiver  of termination")
 
 
 def test_the_hyphen_family_joins_and_a_space_separates():
@@ -161,14 +161,14 @@ def test_the_hyphen_family_joins_and_a_space_separates():
     for hyphen in sorted(HYPHENS):
         assert tokenize(f"non{hyphen}compliance") == ("noncompliance",), hyphen
     assert tokenize("non compliance") == ("non", "compliance")
-    assert tokenize("right ofsubrogation") == ("right", "ofsubrogation")
+    assert tokenize("right oftermination") == ("right", "oftermination")
 
 
 def test_a_hyphen_after_a_token_fuses_what_follows_it():
     """The price of the rule: a hyphen *joins*, so it never separates a token from the
     text after it -- which is exactly what makes the corpus seam faithful."""
-    assert tokenize("subrogation-clause") == ("subrogationclause",)
-    assert tokenize("subrogation - clause") == ("subrogation", "clause")
+    assert tokenize("termination-clause") == ("terminationclause",)
+    assert tokenize("termination - clause") == ("termination", "clause")
 
 
 def test_the_fused_seam_token_is_a_faithful_match_not_a_false_positive():
@@ -195,9 +195,9 @@ def test_punctuation_only_and_empty_text_have_no_tokens():
 
 
 def test_normalization_is_one_rule_for_registry_and_corpus():
-    index = _index(TermGroup(canonical="Waiver of Subrogation"))
-    assert [m.group for m in match_text(index, "the WAIVER  of,  subrogation!")] == [
-        "Waiver of Subrogation"
+    index = _index(TermGroup(canonical="waiver of termination"))
+    assert [m.group for m in match_text(index, "the WAIVER  of,  termination!")] == [
+        "waiver of termination"
     ]
 
 
@@ -205,9 +205,9 @@ def test_normalization_is_one_rule_for_registry_and_corpus():
 
 def test_a_registry_rejects_what_could_never_match_or_would_match_everywhere():
     with pytest.raises(ValueError, match="duplicate"):
-        _registry(SUBROGATION, TermGroup(canonical="subrogation"))
+        _registry(TERMINATION, TermGroup(canonical="termination"))
     with pytest.raises(ValueError, match="paragraph boundary"):
-        _registry(TermGroup(canonical="right of\nsubrogation"))
+        _registry(TermGroup(canonical="right of\ntermination"))
     with pytest.raises(ValueError, match="no tokens"):
         _registry(TermGroup(canonical="  ---  "))
     with pytest.raises(ValueError, match="no tokens"):
@@ -215,48 +215,48 @@ def test_a_registry_rejects_what_could_never_match_or_would_match_everywhere():
 
 
 def test_the_registry_round_trips_through_the_codec():
-    registry = _registry(SUBROGATION, AGGREGATE)
+    registry = _registry(TERMINATION, AGGREGATE)
     assert from_json(TermRegistry, to_json(registry)) == registry
 
 
 def test_term_list_hash_ignores_the_order_the_term_list_was_typed_in():
-    assert term_list_hash(_registry(SUBROGATION, AGGREGATE)) == term_list_hash(
-        _registry(AGGREGATE, SUBROGATION)
+    assert term_list_hash(_registry(TERMINATION, AGGREGATE)) == term_list_hash(
+        _registry(AGGREGATE, TERMINATION)
     )
     reordered = TermGroup(
-        canonical="subrogation",
-        synonyms=list(reversed(SUBROGATION.synonyms)),
+        canonical="termination",
+        synonyms=list(reversed(TERMINATION.synonyms)),
         stemming="porter",
         tags={"category": "coverage"},
     )
     assert term_list_hash(_registry(reordered, AGGREGATE)) == term_list_hash(
-        _registry(SUBROGATION, AGGREGATE)
+        _registry(TERMINATION, AGGREGATE)
     )
 
 
 def test_one_synonym_change_changes_the_term_list_hash():
-    base = term_list_hash(_registry(SUBROGATION))
-    assert term_list_hash(_registry(TermGroup(canonical="subrogation"))) != base
-    assert term_list_hash(_registry(TermGroup(canonical="subrogation", synonyms=["waiver"]))) != base
+    base = term_list_hash(_registry(TERMINATION))
+    assert term_list_hash(_registry(TermGroup(canonical="termination"))) != base
+    assert term_list_hash(_registry(TermGroup(canonical="termination", synonyms=["waiver"]))) != base
 
 
 def test_every_term_group_field_participates_in_the_term_list_hash():
     """flip-one-input for the term list: nothing on a group can change silently."""
-    base = term_list_hash(_registry(SUBROGATION, AGGREGATE))
+    base = term_list_hash(_registry(TERMINATION, AGGREGATE))
     for flipped in (
-        TermGroup(canonical="subrogations", synonyms=SUBROGATION.synonyms, stemming="porter", tags=SUBROGATION.tags),
-        TermGroup(canonical="subrogation", synonyms=["waiver of subrogation"], stemming="porter", tags=SUBROGATION.tags),
-        TermGroup(canonical="subrogation", synonyms=SUBROGATION.synonyms, stemming=None, tags=SUBROGATION.tags),
-        TermGroup(canonical="subrogation", synonyms=SUBROGATION.synonyms, stemming="snowball", tags=SUBROGATION.tags),
-        TermGroup(canonical="subrogation", synonyms=SUBROGATION.synonyms, stemming="porter", rules={"allow": "x"}, tags=SUBROGATION.tags),
-        TermGroup(canonical="subrogation", synonyms=SUBROGATION.synonyms, stemming="porter", tags={"category": "limits"}),
+        TermGroup(canonical="terminations", synonyms=TERMINATION.synonyms, stemming="porter", tags=TERMINATION.tags),
+        TermGroup(canonical="termination", synonyms=["waiver of termination"], stemming="porter", tags=TERMINATION.tags),
+        TermGroup(canonical="termination", synonyms=TERMINATION.synonyms, stemming=None, tags=TERMINATION.tags),
+        TermGroup(canonical="termination", synonyms=TERMINATION.synonyms, stemming="snowball", tags=TERMINATION.tags),
+        TermGroup(canonical="termination", synonyms=TERMINATION.synonyms, stemming="porter", rules={"allow": "x"}, tags=TERMINATION.tags),
+        TermGroup(canonical="termination", synonyms=TERMINATION.synonyms, stemming="porter", tags={"category": "limits"}),
     ):
         assert term_list_hash(_registry(flipped, AGGREGATE)) != base, flipped
 
 
 def test_the_store_is_content_addressed_by_the_term_list_hash(tmp_path):
     store = registry_store(tmp_path / "term_registry")
-    registry = _registry(SUBROGATION, AGGREGATE)
+    registry = _registry(TERMINATION, AGGREGATE)
     record, written = save_registry(store, registry)
     assert written is True and record == registry
 
@@ -268,7 +268,7 @@ def test_the_store_is_content_addressed_by_the_term_list_hash(tmp_path):
     assert load_registry(store, "0" * 64) is None
 
     # the same term list, typed in another order, is the same record -- not a second file
-    again, written_again = save_registry(store, _registry(AGGREGATE, SUBROGATION))
+    again, written_again = save_registry(store, _registry(AGGREGATE, TERMINATION))
     assert written_again is False and again == registry
     assert registry_hashes(store) == [digest]
 
@@ -282,10 +282,10 @@ def test_the_shipped_example_registry_is_the_canonical_registry_it_claims():
 
 def test_the_example_registry_matches_its_own_terms():
     index = compile_registry(load_registry_text(EXAMPLE_PATH.read_text(encoding="utf-8")))
-    hits = match_text(index, "this policy is subject to noncompliance and waiver of subrogation")
+    hits = match_text(index, "this permit is subject to noncompliance and waiver of termination")
     assert [(hit.group, hit.match_type.value) for hit in hits] == [
         ("non-compliance", "exact"),
-        ("subrogation", "synonym"),
+        ("termination", "synonym"),
     ]
 
 
@@ -297,52 +297,52 @@ def test_the_match_types_are_ranked_exact_synonym_stem():
 
 
 def test_an_exact_match_is_exact_and_a_synonym_match_is_synonym():
-    index = _index(SUBROGATION)
-    assert match_text(index, "The subrogation clause") == [
-        TermMatch(group="subrogation", match_type=MatchType.EXACT, start=4, end=15)
+    index = _index(TERMINATION)
+    assert match_text(index, "The termination clause") == [
+        TermMatch(group="termination", match_type=MatchType.EXACT, start=4, end=15)
     ]
-    assert match_text(index, "any waiver of subrogation applies") == [
-        TermMatch(group="subrogation", match_type=MatchType.SYNONYM, start=4, end=25)
+    assert match_text(index, "any waiver of termination applies") == [
+        TermMatch(group="termination", match_type=MatchType.SYNONYM, start=4, end=25)
     ]
-    assert match_text(index, "the right of recovery") == [
-        TermMatch(group="subrogation", match_type=MatchType.SYNONYM, start=4, end=21)
+    assert match_text(index, "the right of transfer") == [
+        TermMatch(group="termination", match_type=MatchType.SYNONYM, start=4, end=21)
     ]
 
 
 def test_matching_is_whole_tokens_never_substrings():
     # a group without a stemmer matches only the whole token: the substring is never a hit
-    index = _index(TermGroup(canonical="subrogation"), TermGroup(canonical="of"))
-    assert match_text(index, "subrogations") == []
-    assert match_text(index, "subrogation") == [
-        TermMatch(group="subrogation", match_type=MatchType.EXACT, start=0, end=11)
+    index = _index(TermGroup(canonical="termination"), TermGroup(canonical="of"))
+    assert match_text(index, "terminations") == []
+    assert match_text(index, "termination") == [
+        TermMatch(group="termination", match_type=MatchType.EXACT, start=0, end=11)
     ]
     # a one-token term is a token, not two characters
-    assert [(m.group, m.start) for m in match_text(index, "office of the insured")] == [("of", 7)]
+    assert [(m.group, m.start) for m in match_text(index, "office of the partner")] == [("of", 7)]
 
 
 def test_a_stemmer_is_what_reaches_a_whole_token_variant_never_a_substring():
-    """``subrogations`` is a hit of ``subrogation`` only because ``porter`` maps both to
+    """``terminations`` is a hit of ``termination`` only because ``porter`` maps both to
     ``subrog`` -- reported as ``stem``, and only for a group that asked for stemming."""
-    index = _index(SUBROGATION, TermGroup(canonical="of"))
-    assert match_text(index, "subrogations") == [
-        TermMatch(group="subrogation", match_type=MatchType.STEM, start=0, end=12)
+    index = _index(TERMINATION, TermGroup(canonical="of"))
+    assert match_text(index, "terminations") == [
+        TermMatch(group="termination", match_type=MatchType.STEM, start=0, end=12)
     ]
 
 
 def test_a_form_occurs_as_a_contiguous_token_sequence_or_not_at_all():
-    index = _index(TermGroup(canonical="right of subrogation"))
-    assert [m.start for m in match_text(index, "the right of subrogation clause")] == [4]
-    assert match_text(index, "the right subrogation of clause") == []
+    index = _index(TermGroup(canonical="right of termination"))
+    assert [m.start for m in match_text(index, "the right of termination clause")] == [4]
+    assert match_text(index, "the right termination of clause") == []
 
 
 def test_every_disjoint_match_is_reported():
-    index = _index(SUBROGATION)
-    assert [m.start for m in match_text(index, "subrogation and subrogation")] == [0, 16]
+    index = _index(TERMINATION)
+    assert [m.start for m in match_text(index, "termination and termination")] == [0, 16]
 
 
 def test_the_longest_span_wins_over_the_match_type():
-    index = _index(TermGroup(canonical="waiver", synonyms=["waiver of subrogation"]))
-    assert match_text(index, "a waiver of subrogation clause") == [
+    index = _index(TermGroup(canonical="waiver", synonyms=["waiver of termination"]))
+    assert match_text(index, "a waiver of termination clause") == [
         TermMatch(group="waiver", match_type=MatchType.SYNONYM, start=2, end=23)
     ]
 
@@ -350,9 +350,9 @@ def test_the_longest_span_wins_over_the_match_type():
 def test_the_leftmost_span_wins_when_two_spans_are_the_same_length():
     """A tie on span length is reachable, so the second rule of the precedence gets its
     turn: both candidates are 14 characters, so the leftmost wins."""
-    index = _index(TermGroup(canonical="of subrogation", synonyms=["subrogation of"]))
-    assert match_text(index, "of subrogation of") == [
-        TermMatch(group="of subrogation", match_type=MatchType.EXACT, start=0, end=14)
+    index = _index(TermGroup(canonical="of termination", synonyms=["termination of"]))
+    assert match_text(index, "of termination of") == [
+        TermMatch(group="of termination", match_type=MatchType.EXACT, start=0, end=14)
     ]
 
 
@@ -413,16 +413,16 @@ def test_stem_forms_never_leak_into_the_forms_the_term_list_wrote():
 def test_a_stem_hit_loses_to_an_exact_hit_on_the_same_span():
     """``exact > synonym > stem`` settles before dedupe: the canonical's own token is one
     hit, reported as exact, even though its stem form also matches there."""
-    index = _index(TermGroup(canonical="subrogation", stemming="porter"))
-    assert match_text(index, "subrogation") == [
-        TermMatch(group="subrogation", match_type=MatchType.EXACT, start=0, end=11)
+    index = _index(TermGroup(canonical="termination", stemming="porter"))
+    assert match_text(index, "termination") == [
+        TermMatch(group="termination", match_type=MatchType.EXACT, start=0, end=11)
     ]
 
 
 def test_an_unknown_stemming_algorithm_is_a_loud_failure():
     """A ``stemming`` naming no shipped algorithm is a registry the matcher cannot honour;
     it must fail at compile, not silently match nothing (the miss is the failure mode)."""
-    registry = _registry(TermGroup(canonical="subrogation", stemming="snowball"))
+    registry = _registry(TermGroup(canonical="termination", stemming="snowball"))
     with pytest.raises(ValueError, match="snowball"):
         compile_registry(registry)
 
@@ -446,45 +446,45 @@ def test_rules_and_tags_cannot_steer_the_matcher():
     """D6: the matcher is generic, so a group's own config is registry data it does not
     read. Only ``canonical`` and ``synonyms`` widen what a group matches -- which is what
     makes "an unapproved candidate never affects hits" structural rather than a promise."""
-    plain = _index(TermGroup(canonical="subrogation"))
+    plain = _index(TermGroup(canonical="termination"))
     configured = _index(
         TermGroup(
-            canonical="subrogation",
-            rules={"fuzzy": {"threshold": 0.8}, "regex": "subrogat.*"},
+            canonical="termination",
+            rules={"fuzzy": {"threshold": 0.8}, "regex": "terminat.*"},
             tags={"category": "coverage", "approved": "yes"},
         )
     )
     assert configured == plain
-    for text in ("subrogation", "subrogations", "waiver of subrogation"):
+    for text in ("termination", "terminations", "waiver of termination"):
         assert match_text(configured, text) == match_text(plain, text)
 
 
 def test_matching_never_crosses_a_paragraph_boundary():
-    index = _index(TermGroup(canonical="right of subrogation"))
-    assert match_text(index, "right of" + TERMINATOR + "subrogation") == []
+    index = _index(TermGroup(canonical="right of termination"))
+    assert match_text(index, "right of" + TERMINATOR + "termination") == []
     # a w:br / w:tab is content inside the paragraph, so a phrase may cross it (§8)
-    assert [m.start for m in match_text(index, "right of\u000b subrogation")] == [0]
+    assert [m.start for m in match_text(index, "right of\u000b termination")] == [0]
 
 
 def test_the_same_inputs_give_the_same_matches_every_time():
-    text = "waiver of subrogation and noncompliance, twice: waiver of subrogation"
-    index = _index(SUBROGATION, NONCOMPLIANCE)
+    text = "waiver of termination and noncompliance, twice: waiver of termination"
+    index = _index(TERMINATION, NONCOMPLIANCE)
     first = match_text(index, text)
     assert first == match_text(index, text)
-    assert first == match_text(_index(NONCOMPLIANCE, SUBROGATION), text)
+    assert first == match_text(_index(NONCOMPLIANCE, TERMINATION), text)
     assert [(m.group, m.start, m.end) for m in first] == [
-        ("subrogation", 0, 21),
+        ("termination", 0, 21),
         ("non-compliance", 26, 39),
-        ("subrogation", 48, 69),
+        ("termination", 48, 69),
     ]
 
 
 def test_two_typing_orders_compile_to_the_same_index():
-    assert _index(SUBROGATION, AGGREGATE) == _index(
+    assert _index(TERMINATION, AGGREGATE) == _index(
         AGGREGATE,
         TermGroup(
-            canonical="subrogation",
-            synonyms=list(reversed(SUBROGATION.synonyms)),
+            canonical="termination",
+            synonyms=list(reversed(TERMINATION.synonyms)),
             stemming="porter",
             tags={"category": "coverage"},
         ),
@@ -496,16 +496,16 @@ def test_two_typing_orders_compile_to_the_same_index():
 def test_example_a_is_two_hits_in_one_group():
     """The spec's headline case: the deleted text is a hit in ``original`` and the
     inserted text a hit in ``accepted``, both of one group."""
-    index = _index(TermGroup(canonical="right of subrogation", synonyms=["right of recovery"]))
+    index = _index(TermGroup(canonical="right of termination", synonyms=["right of transfer"]))
     stream = _example_a_stream()
 
     accepted = project(stream, View.ACCEPTED)
     original = project(stream, View.ORIGINAL)
-    assert accepted.text == "right of subrogation" + TERMINATOR
-    assert original.text == "right of recovery" + TERMINATOR
+    assert accepted.text == "right of termination" + TERMINATOR
+    assert original.text == "right of transfer" + TERMINATOR
 
     (inserted,) = match_projection(index, accepted, node_id="n1")
-    assert inserted.group == "right of subrogation"
+    assert inserted.group == "right of termination"
     assert inserted.match_type is MatchType.EXACT
     assert inserted.present_in == {View.ACCEPTED}
     assert inserted.view_spans == [ViewSpan(View.ACCEPTED, 0, 20)]
@@ -520,15 +520,15 @@ def test_example_a_is_two_hits_in_one_group():
 
 
 def test_the_raw_union_false_adjacency_is_never_a_hit():
-    index = _index(TermGroup(canonical="right of subrogation", synonyms=["right of recovery"]))
+    index = _index(TermGroup(canonical="right of termination", synonyms=["right of transfer"]))
     assert match_text(index, _example_a_stream().text) == []
 
 
 def test_view_spans_are_whole_part_offsets_not_paragraph_relative():
-    index = _index(SUBROGATION)
-    projection = _whole_part("Coverage applies worldwide.", "The subrogation clause.")
+    index = _index(TERMINATION)
+    projection = _whole_part("Coverage applies worldwide.", "The termination clause.")
     assert projection.text == (
-        "Coverage applies worldwide." + TERMINATOR + "The subrogation clause." + TERMINATOR
+        "Coverage applies worldwide." + TERMINATOR + "The termination clause." + TERMINATOR
     )
 
     (hit,) = match_projection(
@@ -539,14 +539,14 @@ def test_view_spans_are_whole_part_offsets_not_paragraph_relative():
     assert hit.spans == [Span("word/document.xml", 32, 43)]
 
     # the whole part in one call is still matched paragraph by paragraph, in order
-    every = match_projection(index, _whole_part("a subrogation clause", "another subrogation"), node_id="n1")
+    every = match_projection(index, _whole_part("a termination clause", "another termination"), node_id="n1")
     assert [h.match_type for h in every] == [MatchType.EXACT, MatchType.EXACT]
     assert [h.view_spans[0].start for h in every] == [2, 29]
 
 
 def test_dedupe_hits_keeps_one_hit_per_group_node_view_and_span():
-    index = _index(SUBROGATION)
-    projection = _whole_part("a subrogation clause")
+    index = _index(TERMINATION)
+    projection = _whole_part("a termination clause")
     hits = match_projection(index, projection, node_id="n1")
     assert dedupe_hits(hits + hits) == hits
     other = match_projection(index, projection, node_id="n2")
@@ -556,7 +556,7 @@ def test_dedupe_hits_keeps_one_hit_per_group_node_view_and_span():
 def test_dedupe_hits_addresses_a_view_less_hit_by_its_union_span():
     """6c's comment hits carry no view; the same address at the same node still folds."""
     hit = TermHit(
-        group="subrogation",
+        group="termination",
         node_id="comment:0000001A",
         spans=[Span("word/comments.xml", 3, 14)],
         location=LocationKind.COMMENT,
@@ -612,8 +612,8 @@ def _parsed(
 def test_a_part_that_did_not_stream_is_a_loud_failure():
     """A part with no union stream has no text to address a hit in, which is not the same
     as a part with no hits in it: the miss is the failure mode, so it is a ``ValueError``."""
-    index = _index(SUBROGATION)
-    parsed = _parsed([_paragraphs("a subrogation clause", part_id=DOCUMENT)], [])
+    index = _index(TERMINATION)
+    parsed = _parsed([_paragraphs("a termination clause", part_id=DOCUMENT)], [])
     with pytest.raises(ValueError, match="comments:0"):
         match_part(index, parsed, COMMENTS_PART)
 
@@ -621,11 +621,11 @@ def test_a_part_that_did_not_stream_is_a_loud_failure():
 def test_one_paragraph_is_matched_in_each_view_on_its_own():
     """Example A through the 6c API: one paragraph, and the words it holds differ per view,
     so the two views are two hits in one group -- each addressed in the whole part."""
-    index = _index(TermGroup(canonical="right of subrogation", synonyms=["right of recovery"]))
+    index = _index(TermGroup(canonical="right of termination", synonyms=["right of transfer"]))
     stream = _stream(
         ([], "right of "),
-        (["del:1"], "recovery"),
-        (["ins:2"], "subrogation"),
+        (["del:1"], "transfer"),
+        (["ins:2"], "termination"),
         ([], TERMINATOR),
         part_id=DOCUMENT,
     )
@@ -656,9 +656,9 @@ def test_one_paragraph_is_matched_in_each_view_on_its_own():
 def test_one_group_at_one_node_in_one_union_span_is_one_hit_in_both_views():
     """Where what the views disagree about sits *outside* the hit, both views hold the same
     union range: that is one hit found in two views (D6's ``present_in`` set)."""
-    index = _index(SUBROGATION)
+    index = _index(TERMINATION)
     stream = _stream(
-        (["del:1"], "draft "), ([], "a subrogation clause"), ([], TERMINATOR), part_id=DOCUMENT
+        (["del:1"], "draft "), ([], "a termination clause"), ([], TERMINATOR), part_id=DOCUMENT
     )
     parsed = _parsed([stream], _nodes(("p1", NodeKind.PARA, DOCUMENT, 6, 26, None)))
 
@@ -679,8 +679,8 @@ def test_one_group_at_one_node_in_one_union_span_is_one_hit_in_both_views():
 def test_a_paragraph_the_view_elided_is_not_matched():
     """Matching sees the view's paragraphs, never the union's: text this view deleted is in
     no paragraph of it, so it is no hit -- in ``original``, where it is a paragraph, it is."""
-    index = _index(SUBROGATION)
-    stream = _stream((["del:1"], "a subrogation clause"), ([], TERMINATOR), part_id=DOCUMENT)
+    index = _index(TERMINATION)
+    stream = _stream((["del:1"], "a termination clause"), ([], TERMINATOR), part_id=DOCUMENT)
     parsed = _parsed([stream], _nodes(("p1", NodeKind.PARA, DOCUMENT, 0, 22, None)))
 
     assert match_part(index, parsed, DOCUMENT) == []
@@ -695,13 +695,13 @@ def test_a_hit_says_which_kind_of_place_it_sits_in():
     """The kind is the *part*'s, except inside a table: a footnote and an endnote are both
     ``FOOTNOTE`` nodes, so only the parts tell those two hits apart. A container is not a
     matching unit, so the table whose text it holds is not a second hit."""
-    index = _index(SUBROGATION)
+    index = _index(TERMINATION)
     streams = [
-        _paragraphs("body subrogation", "cell subrogation", part_id=DOCUMENT),
-        _paragraphs("header subrogation", part_id="header:0"),
-        _paragraphs("footer subrogation", part_id="footer:0"),
-        _paragraphs("footnote subrogation", part_id="footnotes:0"),
-        _paragraphs("endnote subrogation", part_id="endnotes:0"),
+        _paragraphs("body termination", "cell termination", part_id=DOCUMENT),
+        _paragraphs("header termination", part_id="header:0"),
+        _paragraphs("footer termination", part_id="footer:0"),
+        _paragraphs("footnote termination", part_id="footnotes:0"),
+        _paragraphs("endnote termination", part_id="endnotes:0"),
     ]
     nodes = _nodes(
         ("b1", NodeKind.PARA, DOCUMENT, 0, 16, None),
@@ -733,27 +733,27 @@ def test_a_comments_part_has_no_locations_of_its_own():
     """A comment's own words stream in a part of their own, but they are not in the node
     tree: they are read off the ``Comment`` record by :func:`match_comments`, never matched
     as text of the part they streamed from -- which is where a node would put them."""
-    index = _index(SUBROGATION)
-    stream = _paragraphs("a subrogation clause", part_id=COMMENTS_PART)
+    index = _index(TERMINATION)
+    stream = _paragraphs("a termination clause", part_id=COMMENTS_PART)
     parsed = _parsed([stream], _nodes(("c1", NodeKind.PARA, COMMENTS_PART, 0, 22, None)))
 
-    assert stream.text.startswith("a subrogation clause")  # the words *are* there to match
+    assert stream.text.startswith("a termination clause")  # the words *are* there to match
     assert match_part(index, parsed, COMMENTS_PART) == []
     assert match_document(index, parsed) == []
 
 
 def test_a_comment_body_is_a_hit_whose_location_is_the_comment():
-    index = _index(SUBROGATION)
-    document = _paragraphs("the subrogation clause", part_id=DOCUMENT)
-    comments = _paragraphs("please check the subrogation wording", part_id=COMMENTS_PART)
+    index = _index(TERMINATION)
+    document = _paragraphs("the termination clause", part_id=DOCUMENT)
+    comments = _paragraphs("please check the termination wording", part_id=COMMENTS_PART)
     nodes = _nodes(("p1", NodeKind.PARA, DOCUMENT, 0, 22, None))
     comment = Comment(
         para_id="0000001A",
         author="Reviewer",
         initials="RE",
         anchor=Span(DOCUMENT, 4, 15),
-        anchor_text="subrogation",
-        text="please check the subrogation wording",
+        anchor_text="termination",
+        text="please check the termination wording",
         text_span=Span(COMMENTS_PART, 0, 36),
     )
     parsed = _parsed([document, comments], nodes, [comment])
@@ -761,7 +761,7 @@ def test_a_comment_body_is_a_hit_whose_location_is_the_comment():
     body, hit = match_document(index, parsed)
     assert (body.node_id, body.location) == ("p1", LocationKind.BODY)
 
-    assert hit.group == "subrogation"
+    assert hit.group == "termination"
     assert hit.match_type is MatchType.EXACT
     assert hit.node_id == "comment:0000001A"  # reaches the ``Comment`` the hit came from
     assert hit.location is LocationKind.COMMENT
@@ -775,12 +775,12 @@ def test_a_comment_body_is_a_hit_whose_location_is_the_comment():
 
 
 def test_a_comment_with_no_anchor_is_a_hit_with_no_context_node():
-    index = _index(SUBROGATION)
+    index = _index(TERMINATION)
     comment = Comment(
         para_id="0000002B",
         author="Reviewer",
         initials="RE",
-        text="subrogation",
+        text="termination",
         text_span=Span(COMMENTS_PART, 0, 11),
     )
     (hit,) = match_comments(index, _parsed([], [], [comment]))
@@ -790,17 +790,17 @@ def test_a_comment_with_no_anchor_is_a_hit_with_no_context_node():
 
 def test_a_comment_whose_part_did_not_stream_claims_nothing():
     """Its words are known, but the range they were read from is not -- so nothing at all."""
-    index = _index(SUBROGATION)
+    index = _index(TERMINATION)
     comment = Comment(
         para_id="0000001A",
         author="Reviewer",
         initials="RE",
         anchor=Span(DOCUMENT, 4, 15),
-        anchor_text="subrogation",
-        text="please check the subrogation wording",
+        anchor_text="termination",
+        text="please check the termination wording",
     )
     parsed = _parsed(
-        [_paragraphs("the subrogation clause", part_id=DOCUMENT)],
+        [_paragraphs("the termination clause", part_id=DOCUMENT)],
         _nodes(("p1", NodeKind.PARA, DOCUMENT, 0, 22, None)),
         [comment],
     )
@@ -812,8 +812,8 @@ def test_a_text_box_is_not_matched_as_the_part_it_sits_in():
     """The gap: a text box's words are its own fragment's, and no fragment streams yet. The
     offsets below *are* a range of the part, holding the same word, so reading them as the
     part's is exactly the mistake the fragment check is there to prevent."""
-    index = _index(SUBROGATION)
-    stream = _paragraphs("a subrogation clause", part_id=DOCUMENT)
+    index = _index(TERMINATION)
+    stream = _paragraphs("a termination clause", part_id=DOCUMENT)
     box = Node(
         id="b1",
         kind=NodeKind.PARA,
@@ -823,7 +823,7 @@ def test_a_text_box_is_not_matched_as_the_part_it_sits_in():
     )
     parsed = _parsed([stream], [box])
 
-    assert stream.text[2:13] == "subrogation"  # what a part-addressed reading would say
+    assert stream.text[2:13] == "termination"  # what a part-addressed reading would say
     assert match_part(index, parsed, DOCUMENT) == []
     assert match_document(index, parsed) == []
 
@@ -895,10 +895,10 @@ def test_a_hit_is_a_move_hit_only_when_its_whole_wording_was_moved():
     """Wording that only *neighbours* a moved run is not the moved text, so it claims no group
     and is never paired: ``right of`` sits outside the ``moveTo``, so the hit that spans both
     is not a move hit, while the term that is entirely inside the mark is."""
-    index = _index(TermGroup(canonical="right of subrogation"), TermGroup(canonical="Section 4"))
+    index = _index(TermGroup(canonical="right of termination"), TermGroup(canonical="Section 4"))
     stream = _stream(
         ([], "right of "),
-        (["moveTo:6"], "subrogation"),
+        (["moveTo:6"], "termination"),
         ([], " see "),
         (["moveTo:6"], "Section 4"),
         ([], TERMINATOR),
@@ -909,16 +909,16 @@ def test_a_hit_is_a_move_hit_only_when_its_whole_wording_was_moved():
     )
 
     by_group = {hit.group: hit for hit in match_part(index, parsed, DOCUMENT)}
-    assert by_group["right of subrogation"].move_group_id is None
+    assert by_group["right of termination"].move_group_id is None
     assert by_group["Section 4"].move_group_id == "mg1"
 
 
 def test_a_hit_that_is_not_moved_has_no_group():
     """An ordinary hit carries no ``move_group_id``, which is what keeps the dedupe below off
     it: only a hit whose wording *was* moved is in the move fold's way."""
-    index = _index(SUBROGATION)
+    index = _index(TERMINATION)
     stream = _stream(
-        ([], "right of "), (["del:1"], "recovery"), (["ins:2"], "subrogation"),
+        ([], "right of "), (["del:1"], "transfer"), (["ins:2"], "termination"),
         ([], TERMINATOR), part_id=DOCUMENT,
     )
     parsed = _parsed([stream], _nodes(("p1", NodeKind.PARA, DOCUMENT, 0, 28, None)))
@@ -929,13 +929,13 @@ def test_a_hit_that_is_not_moved_has_no_group():
 def test_a_move_in_a_comment_body_carries_its_group_too():
     """A comment's words are matched like any other text, so a move inside one is the same
     fact: the hit stays view-less and still names the move group its wording sits under."""
-    index = _index(SUBROGATION)
-    comments = _stream((["moveTo:6"], "subrogation"), part_id=COMMENTS_PART)
+    index = _index(TERMINATION)
+    comments = _stream((["moveTo:6"], "termination"), part_id=COMMENTS_PART)
     comment = Comment(
         para_id="0000001A",
         author="Reviewer",
         initials="RE",
-        text="subrogation",
+        text="termination",
         text_span=Span(COMMENTS_PART, 0, 11),
     )
     parsed = _parsed([comments], [], [comment], revisions=_one_move())
@@ -963,8 +963,8 @@ def test_the_query_time_dedupe_folds_the_two_hits_of_one_move():
 def test_the_dedupe_leaves_hits_that_are_not_moves_alone():
     """Two ordinary occurrences of a group are two hits, not one: nothing without a
     ``move_group_id`` is in the fold's way."""
-    index = _index(SUBROGATION)
-    stream = _paragraphs("a subrogation clause", "the subrogation clause", part_id=DOCUMENT)
+    index = _index(TERMINATION)
+    stream = _paragraphs("a termination clause", "the termination clause", part_id=DOCUMENT)
     nodes = _nodes(
         ("p0", NodeKind.PARA, DOCUMENT, 0, 22, None),
         ("p1", NodeKind.PARA, DOCUMENT, 23, 45, None),
@@ -996,7 +996,7 @@ def test_the_dedupe_pairs_repeated_occurrences_inside_one_move():
     hits = match_document(index, parsed)
     assert len(hits) == 4
     folded = dedupe_moves(hits, parsed.union_streams)
-    assert [hit.node_id for hit in folded] == ["p1", "p1"]  # one per occurrence, not four
+    assert [hit.node_id for hit in folded] == ["p1", "p1"]  # one per engagement, not four
     assert sorted(hit.spans[0].start for hit in folded) == [24, 38]
 
 
@@ -1030,11 +1030,11 @@ def test_the_dedupe_folds_a_move_whose_two_ends_are_in_one_paragraph():
 def test_the_dedupe_does_not_fold_a_move_whose_two_ends_hold_different_words():
     """The key holds the wording the hit is made of, so a move whose ends say different things
     (both forms of one group) is two rows: the fold is for the *same* wording at two places."""
-    index = _index(SUBROGATION)
+    index = _index(TERMINATION)
     stream = _stream(
-        (["moveFrom:5"], "right of subrogation"),
+        (["moveFrom:5"], "right of termination"),
         ([], TERMINATOR),
-        (["moveTo:6"], "right of recovery"),
+        (["moveTo:6"], "right of transfer"),
         ([], TERMINATOR),
         part_id=DOCUMENT,
     )
@@ -1045,7 +1045,7 @@ def test_the_dedupe_does_not_fold_a_move_whose_two_ends_hold_different_words():
     parsed = _parsed([stream], nodes, revisions=_one_move())
 
     hits = match_document(index, parsed)
-    assert [hit.group for hit in hits] == ["subrogation", "subrogation"]
+    assert [hit.group for hit in hits] == ["termination", "termination"]
     assert [hit.move_group_id for hit in hits] == ["mg1", "mg1"]
     assert dedupe_moves(hits, parsed.union_streams) == hits  # different words, so no fold
 
@@ -1096,18 +1096,18 @@ def _spans(index: TermIndex, text: str) -> list[tuple[str, int, int]]:
 
 
 def test_a_plain_form_matches_the_hyphenated_spelling_in_the_text():
-    """``hold-harmless`` was silently missed by ``hold harmless`` before (hyphens joined)."""
-    index = _index(TermGroup(canonical="hold harmless"))
-    assert _spans(index, "Hold-harmless agreement") == [("hold harmless", 0, 13)]
-    assert _spans(index, "hold\u2010harmless") == [("hold harmless", 0, 13)]  # U+2010
-    assert _spans(index, "hold\u2011harmless") == [("hold harmless", 0, 13)]  # U+2011
-    assert _spans(index, "hold harmless") == [("hold harmless", 0, 13)]
+    """``hand-delivery`` was silently missed by ``hand delivery`` before (hyphens joined)."""
+    index = _index(TermGroup(canonical="hand delivery"))
+    assert _spans(index, "Hand-delivery agreement") == [("hand delivery", 0, 13)]
+    assert _spans(index, "hand\u2010delivery") == [("hand delivery", 0, 13)]  # U+2010
+    assert _spans(index, "hand\u2011delivery") == [("hand delivery", 0, 13)]  # U+2011
+    assert _spans(index, "hand delivery") == [("hand delivery", 0, 13)]
 
 
 def test_a_hyphenated_form_matches_the_spaced_and_the_joined_spelling():
-    index = _index(TermGroup(canonical="hold-harmless"))
-    for text in ("hold-harmless", "hold harmless", "holdharmless", "HOLD  HARMLESS"):
-        assert [g for g, _, _ in _spans(index, text)] == ["hold-harmless"], text
+    index = _index(TermGroup(canonical="hand-delivery"))
+    for text in ("hand-delivery", "hand delivery", "handdelivery", "HAND  DELIVERY"):
+        assert [g for g, _, _ in _spans(index, text)] == ["hand-delivery"], text
 
 
 def test_the_joined_reading_still_matches_a_prefix_compound():
@@ -1128,41 +1128,41 @@ def test_an_unrelated_hyphen_elsewhere_never_changes_a_hit():
     contains: the split reading runs for hyphenated forms either way."""
     index = _index(
         TermGroup(canonical="non-compliance"),
-        TermGroup(canonical="right of subrogation"),
+        TermGroup(canonical="right of termination"),
     )
-    plain = _spans(index, "a non compliance and a right of subrogation here")
-    with_hyphen = _spans(index, "a non compliance and a right of subrogation here x-y")
+    plain = _spans(index, "a non compliance and a right of termination here")
+    with_hyphen = _spans(index, "a non compliance and a right of termination here x-y")
     assert [g for g, _, _ in plain] == [g for g, _, _ in with_hyphen] == [
         "non-compliance",
-        "right of subrogation",
+        "right of termination",
     ]
     assert [(s, e) for _, s, e in plain] == [(s, e) for _, s, e in with_hyphen]
 
 
 def test_a_hyphen_never_makes_a_fused_seam_a_hit():
-    """``right ofsubrogation`` is not ``right of subrogation`` under any reading."""
-    index = _index(TermGroup(canonical="right of subrogation"))
-    assert match_text(index, "right ofsubrogation") == []
-    assert match_text(index, "right ofsubrogation x-y") == []
-    assert match_text(index, "right of-subrogation") != []  # a hyphen IS a separator there
+    """``right oftermination`` is not ``right of termination`` under any reading."""
+    index = _index(TermGroup(canonical="right of termination"))
+    assert match_text(index, "right oftermination") == []
+    assert match_text(index, "right oftermination x-y") == []
+    assert match_text(index, "right of-termination") != []  # a hyphen IS a separator there
 
 
 def test_hyphenated_hits_address_the_source_characters():
-    index = _index(TermGroup(canonical="hold harmless"))
-    text = "see hold-harmless here"
+    index = _index(TermGroup(canonical="hand delivery"))
+    text = "see hand-delivery here"
     (hit,) = match_text(index, text)
-    assert text[hit.start : hit.end] == "hold-harmless"
+    assert text[hit.start : hit.end] == "hand-delivery"
 
 
 def test_split_forms_are_compiled_and_the_index_is_order_independent():
-    one = _index(TermGroup(canonical="hold-harmless"), TermGroup(canonical="aggregate limit"))
-    two = _index(TermGroup(canonical="aggregate limit"), TermGroup(canonical="hold-harmless"))
+    one = _index(TermGroup(canonical="hand-delivery"), TermGroup(canonical="aggregate limit"))
+    two = _index(TermGroup(canonical="aggregate limit"), TermGroup(canonical="hand-delivery"))
     assert one == two
     assert {form.tokens for form in one.split_forms} == {
-        ("hold", "harmless"),
+        ("hand", "delivery"),
         ("aggregate", "limit"),
     }
-    assert {form.tokens for form in one.forms} == {("holdharmless",), ("aggregate", "limit")}
+    assert {form.tokens for form in one.forms} == {("handdelivery",), ("aggregate", "limit")}
 
 
 def test_the_matcher_version_records_the_matcher_and_the_nested_stemmer():
@@ -1214,9 +1214,9 @@ def _reference_match_text(index: TermIndex, text: str) -> list[TermMatch]:
 
 def _corpus_registry() -> TermIndex:
     return _index(
-        TermGroup(canonical="subrogation", synonyms=["right of subrogation", "right of recovery"]),
-        TermGroup(canonical="aggregate limit", synonyms=["policy aggregate", "aggregate"]),
-        TermGroup(canonical="named insured", synonyms=["additional insured", "insured"]),
+        TermGroup(canonical="termination", synonyms=["right of termination", "right of transfer"]),
+        TermGroup(canonical="aggregate limit", synonyms=["permit aggregate", "aggregate"]),
+        TermGroup(canonical="named partner", synonyms=["additional partner", "partner"]),
         TermGroup(canonical="limit of liability", synonyms=["limit", "liability"]),
     )
 
@@ -1247,7 +1247,7 @@ def test_the_index_equals_the_linear_scan_on_random_hyphen_free_text():
     import random
 
     rng = random.Random(7)
-    words = "the insured limit aggregate of right subrogation recovery policy liability additional".split()
+    words = "the partner limit aggregate of right termination transfer permit liability additional".split()
     index = _corpus_registry()
     for _ in range(300):
         text = "\n".join(

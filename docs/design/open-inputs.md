@@ -18,7 +18,7 @@ Last updated: 2026-09-30 (during Turn 6b validation).
 - **Needed from the user:** even 5-10 real groups would help. Especially welcome:
   - groups where variants name *different* things (universe / university / universal, the
     classic stem-overreach risk), so we can decide which groups must NOT opt in to stemming;
-  - hyphenated compounds (hold-harmless, loss-control, non-compliance).
+  - hyphenated compounds (hand-delivery, cost-control, non-compliance).
 - **Where real lists may come from.** Not from a former employer's curated vocabularies, which
   are typically confidential. Build them from **public sources** (public standards,
   model laws, public regulations, standard definitions), or

@@ -39,7 +39,7 @@ reproducibility, not scale.
   documented, deterministic rule (Turn 3). Never fuse text scores, embeddings or model
   scores into one number.
 - **Views are always named.** No tool defaults to accepted-only silently: every response
-  states the view(s) it used. The summarizer's own view policy is `union-markup` (D5).
+  states the view(s) it used. The summarizer's own view permit is `union-markup` (D5).
 - **Everything except the model's text is byte-reproducible**; the model's text is
   reproducible by replaying the archived call. The core's `LLMCall.latency_ms` and any
   timestamp are **recorded-only** and never enter a summary record or a key.
@@ -111,7 +111,7 @@ text; the tests rebuild text with a helper. Production code needs the same, once
     => <comment text>[[/comment]]`;
   - a **revision manifest** follows: one line per revision touching the chunk, from
     `pending_changes` (Turn 2), so the model is told the facts it must not invent.
-  Test: hand-typed expected strings for the `program_review_v3` pollution paragraph (the
+  Test: hand-typed expected strings for the `program_review_v3` shortfall paragraph (the
   tracked deletion and insertion), a nested `del` inside an `ins`, and a move; a chunk with
   no revisions renders as its plain union text plus context.
 
@@ -228,7 +228,7 @@ not be silently absent: expose a **document-level** `unattributed_revisions` cou
 relevant `known_gaps` ids on the document row and on `get_revisions`, so a reviewer sees
 that the document has revisions no chunk accounts for.
 
-**Regression test (the D5 exit test):** in `program_review_v3`, the pollution exclusion has
+**Regression test (the D5 exit test):** in `program_review_v3`, the shortfall exclusion has
 a pending deletion ("excluded in all cases") and insertion. The summary record for that
 chunk must report `has_pending = true` with both revisions listed (author `R. Alvarez`),
 and a query for "was this exclusion deleted?" must surface the deletion with author and

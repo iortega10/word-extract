@@ -73,7 +73,7 @@ def test_hits_prints_the_stored_hit_records(tmp_path, capsys):
     assert printed.err == ""
     rows = json.loads(printed.out)
     assert len(rows) == FIXTURE_HITS
-    assert [row["group"] for row in rows].count("subrogation") == 2
+    assert [row["group"] for row in rows].count("termination") == 2
     # one JSON object per hit, with every field of the record
     assert set(rows[0]) == {
         "group",

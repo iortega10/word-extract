@@ -3,7 +3,7 @@
   "corpora": [
     {
       "files": [
-        "binder_summary.docx",
+        "ledger_summary.docx",
         "edge_cases.docx",
         "model/breaks_and_specials.docx",
         "model/comment_in_deletion.docx",
@@ -35,7 +35,7 @@
     },
     {
       "files": [
-        "binder_summary.docx",
+        "ledger_summary.docx",
         "edge_cases.docx",
         "model/breaks_and_specials.docx",
         "model/comment_in_deletion.docx",
@@ -68,7 +68,7 @@
     },
     {
       "files": [
-        "binder_summary.docx",
+        "ledger_summary.docx",
         "edge_cases.docx",
         "model/breaks_and_specials.docx",
         "model/comment_in_deletion.docx",

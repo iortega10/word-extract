@@ -53,7 +53,7 @@ chunk hash, hit and cache key names the projection and the inputs it depends on.
 - Masks close gaps **within a paragraph only**, never across paragraph
   boundaries. Views are what get matched and summarized; the union is only an
   address space (matching raw union invents adjacencies no view asserts, e.g.
-  `right of [del recovery][ins subrogation]` -> false hit "recovery subrogation").
+  `right of [del transfer][ins termination]` -> false hit "transfer termination").
 - Consequence: `Node.text` becomes `view_text(view)`; a comment anchored in a
   deleted run has an ordinary non-empty range.
 - `textmodel_version` bundles union/ancestor semantics + revision application order.
@@ -97,7 +97,7 @@ chunk hash, hit and cache key names the projection and the inputs it depends on.
   **two hits, one per location**, each carrying the shared `move_group_id`, and
   are deduped in the term index **at query time**.
 
-### D5. Revision default policy (changed from the proposal)
+### D5. Revision default permit (changed from the proposal)
 "Accepted default, deleted searchable" is rejected: a pending deletion of an
 exclusion makes the accepted-view summary say no exclusion exists, and
 searchable-but-unsummarized text is invisible to the routing layer. "Original"
@@ -105,7 +105,7 @@ default fails symmetrically (hides an inserted exclusion). Decided:
 - The summarizer input is the **union with revision markup** plus a revision manifest.
 - Summary records carry a deterministic structured **`pending_changes`** field
   (what/by whom/when), populated from revision records, NOT from LLM prose.
-- View/policy is a hash input everywhere, so different policies never collide on a cache key.
+- View/permit is a hash input everywhere, so different licenses never collide on a cache key.
 
 ### D6. Term matching: in package, generic, deterministic
 - Span matching is a pure function of the resolved node tree, so it lives here;
@@ -120,8 +120,8 @@ default fails symmetrically (hides an inserted exclusion). Decided:
 - Matching unit = paragraph per view. `TermHit.present_in` is a set of
   `{accepted, original, superseded}`; hits carry `spans: list` in union coords
   plus `view_spans: list[ViewSpan(view, start, end)]` (sorted by view, offsets in
-  the whole-part view projection with terminators kept). `right of recovery`
-  (original) and `right of subrogation` (accepted) are two hits in one group.
+  the whole-part view projection with terminators kept). `right of transfer`
+  (original) and `right of termination` (accepted) are two hits in one group.
 - Cross-paragraph phrases: deferred, with the miss **measured** (a permissive
   cross-paragraph matcher run offline on the golden set only; non-zero finds
   promote it). `superseded`: mask + fixture only in Phase 1, not a matcher target.

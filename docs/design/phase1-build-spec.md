@@ -252,7 +252,7 @@ new or changed record, plus a test that an old-version blob is rejected.
   in its own fragment (`Span.fragment_id` = host node id + ordinal), so host
   document order is undisturbed. Recorded as a known gap.
 - **Gap-closing keeps no placeholder** (Word itself renders `right of ` +
-  accepted `subrogation` as `right ofsubrogation` when the space sat inside
+  accepted `termination` as `right oftermination` when the space sat inside
   the deleted run). Tests document that miss, and a `w:br` inside a deleted run.
 - **Offline-reproduction closure** (for Turn 7): `UnionStream` + pinned views
   projection + the term registry. "From the stored node tree alone" is wrong.
@@ -386,7 +386,7 @@ the cap.
 
 ## Turn 6: term registry and matcher (6a to 6e)
 
-- **6a registry + exact/synonym + overlap policy.** Persistent, versioned JSON
+- **6a registry + exact/synonym + overlap permit.** Persistent, versioned JSON
   canonical (core `Collection`). `term_list_hash` over a canonical
   serialization; `matcher_version` and `term_list_hash` stamped on every run.
   `TermGroup` is generic; `tags` are opaque. Match over normalized **token
@@ -415,7 +415,7 @@ the cap.
   report-only, permissive matcher over the golden set; reports phrases it finds
   that the real matcher missed. Not package code; never promoted here.
 
-Tests: `right of recovery` (original) and `right of subrogation` (accepted) are
+Tests: `right of transfer` (original) and `right of termination` (accepted) are
 two hits in one group; the raw-union false adjacency is never a hit; synonym,
 stem and overlap cases; hit inside a comment; determinism; one synonym changed
 changes `term_list_hash`; an unapproved candidate never affects hits.

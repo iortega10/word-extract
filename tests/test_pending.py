@@ -4,7 +4,7 @@ Two derivations, both read off the union stacks (never off the raw union, never 
 revision records alone):
 
 * :func:`~wordextract.pending.pending_changes` -- one chunk's manifest entries in the
-  spec's shape. The pollution chunk of ``program_review_v3`` pins the whole entry --
+  spec's shape. The shortfall chunk of ``program_review_v3`` pins the whole entry --
   span offsets into the committed union stream, author, date, order -- because that is
   the chunk the D5 story turns on; the nested and moved fixtures pin the cases a flat
   document cannot show (nesting, move groups); two synthetic packages pin what no
@@ -104,10 +104,10 @@ def _entries(parsed, chunks) -> list[dict]:
     return [entry for one in chunks for entry in pending_changes(parsed, one)]
 
 
-def _pollution(parsed, chunks):
+def _shortfall(parsed, chunks):
     """The one ``program_review_v3`` chunk the tracked revision lives in."""
     (found,) = [
-        one for one in chunks if "Pollution:" in chunk_text(parsed, one, View.ACCEPTED)
+        one for one in chunks if "Shortfall:" in chunk_text(parsed, one, View.ACCEPTED)
     ]
     return found
 
@@ -115,10 +115,10 @@ def _pollution(parsed, chunks):
 # --- one chunk's entries ----------------------------------------------------------------
 
 
-def test_the_pollution_chunk_names_exactly_the_two_revisions_it_holds():
+def test_the_shortfall_chunk_names_exactly_the_two_revisions_it_holds():
     """Span offsets, author, date and order, pinned against the committed stream."""
     parsed, _part_id, chunks = _parse(DOCUMENT)
-    entries = pending_changes(parsed, _pollution(parsed, chunks))
+    entries = pending_changes(parsed, _shortfall(parsed, chunks))
     assert entries == [
         {
             "revision_id": "del:900",
@@ -135,7 +135,7 @@ def test_the_pollution_chunk_names_exactly_the_two_revisions_it_holds():
             "author": ALVAREZ[0],
             "date": ALVAREZ[1],
             "spans": [{"part_id": "officeDocument:0", "start": 694, "end": 734}],
-            "text_excerpt": "excluded except for hostile-fire release",
+            "text_excerpt": "excluded except for supply-delay release",
             "move_group_id": None,
         },
     ]
@@ -220,8 +220,8 @@ def test_an_excerpt_exactly_at_the_limit_keeps_no_marker(tmp_path):
 
 def test_a_chunk_naming_no_nodes_touches_no_revision():
     parsed, _part_id, chunks = _parse(DOCUMENT)
-    pollution = _pollution(parsed, chunks)
-    assert pending_changes(parsed, replace(pollution, node_ids=[])) == []
+    shortfall = _shortfall(parsed, chunks)
+    assert pending_changes(parsed, replace(shortfall, node_ids=[])) == []
 
 
 def test_a_part_whose_union_stream_did_not_survive_reports_nothing():
@@ -229,8 +229,8 @@ def test_a_part_whose_union_stream_did_not_survive_reports_nothing():
     summarize path never reaches here -- but if asked, the answer is ``[]``, not a guess.
     """
     parsed, _part_id, chunks = _parse(DOCUMENT)
-    pollution = _pollution(parsed, chunks)
-    assert pending_changes(replace(parsed, union_streams=[]), pollution) == []
+    shortfall = _shortfall(parsed, chunks)
+    assert pending_changes(replace(parsed, union_streams=[]), shortfall) == []
 
 
 def test_two_revisions_opening_at_the_same_offset_sort_by_id(tmp_path):
@@ -251,11 +251,11 @@ def test_two_revisions_opening_at_the_same_offset_sort_by_id(tmp_path):
 
 def test_a_chunk_set_covering_the_document_attributes_every_revision():
     parsed, _part_id, chunks = _parse(DOCUMENT)
-    pollution = _pollution(parsed, chunks)
+    shortfall = _shortfall(parsed, chunks)
     assert document_pending(parsed, chunks) == DocumentPending(unattributed_revisions=0)
 
-    # every chunk but the pollution one: neither revision was shown, so both are unattributed
-    others = [one for one in chunks if one is not pollution]
+    # every chunk but the shortfall one: neither revision was shown, so both are unattributed
+    others = [one for one in chunks if one is not shortfall]
     assert document_pending(parsed, others) == DocumentPending(unattributed_revisions=2)
     # no chunk set at all is the honest "none of them", not an error
     assert document_pending(parsed, []) == DocumentPending(unattributed_revisions=2)
@@ -318,8 +318,8 @@ def test_a_summary_record_carries_the_deletions_its_canned_prose_never_mentions(
     record = run(DOCUMENT, EXAMPLE_REGISTRY, store_root=root, run_id="ingest")
     parsed = stored_parse(record, store_root=root)
     chunks = stored_chunks(record, store_root=root)
-    pollution = _pollution(parsed, chunks)
-    clean = next(one for one in chunks if one is not pollution)
+    shortfall = _shortfall(parsed, chunks)
+    clean = next(one for one in chunks if one is not shortfall)
 
     result = summarize(
         Store(root),
@@ -329,8 +329,8 @@ def test_a_summary_record_carries_the_deletions_its_canned_prose_never_mentions(
     )
     by_id = {outcome.chunk_id: outcome for outcome in result.outcomes}
 
-    summary = by_id[pollution.id].summary
-    assert summary.pending_changes == pending_changes(parsed, pollution)
+    summary = by_id[shortfall.id].summary
+    assert summary.pending_changes == pending_changes(parsed, shortfall)
     assert [entry["revision_id"] for entry in summary.pending_changes] == ["del:900", "ins:901"]
     assert summary.has_pending is True
     # the canned answer never heard of the deletion; the record beside it still states it

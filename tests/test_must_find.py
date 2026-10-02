@@ -28,7 +28,7 @@ FIXTURES = ROOT / "fixtures"
 EVALS = FIXTURES / "evals"
 
 #: A phrase that is in ``program_review_v3.docx`` -- read out of the document, not the run.
-IN_THE_DOCUMENT = "waiver of subrogation"
+IN_THE_DOCUMENT = "waiver of termination"
 
 
 def _labels(documents: dict, *, label_set="test", term_list="terms/synthetic.json"):
@@ -148,7 +148,7 @@ def _query_set() -> dict:
         "term_list": "terms/synthetic.json",
         "examples": [
             {
-                "query": "what is the deductible?",
+                "query": "what is the chargeback?",
                 "expected_citations": [{"document": "program_review_v3.docx"}],
             }
         ],
@@ -236,8 +236,8 @@ def test_evaluate_l2_scores_with_a_query_set_and_grades_in_the_same_directory(tm
                 "program_review_v3.docx": _document(
                     IN_THE_DOCUMENT,
                     expected_extra=[
-                        ("additional insured", "true_positive"),
-                        ("subrogation", "stem_match"),
+                        ("additional partner", "true_positive"),
+                        ("termination", "stem_match"),
                     ],
                 )
             },
@@ -349,7 +349,7 @@ def test_the_harness_scores_a_human_label_set_through_the_pipeline(tmp_path, mon
             "term_list": "terms/synthetic.json",
             "documents": {
                 "program_review_v3.docx": _document(
-                    IN_THE_DOCUMENT, expected_extra=[("subrogation", "stem_match")]
+                    IN_THE_DOCUMENT, expected_extra=[("termination", "stem_match")]
                 )
             },
         },

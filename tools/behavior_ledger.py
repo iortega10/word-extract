@@ -307,26 +307,26 @@ STRESS_PARAMS = ChunkParams(size_cap=60, min_size=15, list_run=2)
 #: deliberately and re-recorded, never edited to make a diff go away.
 PROBE_REGISTRY = TermRegistry(
     groups=[
-        TermGroup(canonical="hold harmless"),
+        TermGroup(canonical="hand delivery"),
         TermGroup(canonical="non-compliance", synonyms=["noncompliance"]),
         TermGroup(
-            canonical="subrogation",
-            synonyms=["right of subrogation", "right of recovery"],
+            canonical="termination",
+            synonyms=["right of termination", "right of transfer"],
             stemming="porter",
         ),
         TermGroup(canonical="exclusion", stemming="porter"),
-        TermGroup(canonical="insured", stemming="porter"),
+        TermGroup(canonical="universe", stemming="porter"),
         TermGroup(canonical="aggregate limit", synonyms=["aggregate"]),
     ]
 )
 PROBE_TEXTS = (
-    "Hold-harmless and hold harmless clauses; holdharmless; hold\u2011harmless.",
+    "Hand-delivery and hand delivery clauses; handdelivery; hand\u2011delivery.",
     "Non-compliance, noncompliance and NON\u00adCOMPLIANCE; non compliance.",
-    "The right of subrogation; rights of subrogations; right ofsubrogation; subrogation-clause.",
+    "The right of termination; rights of terminations; right oftermination; termination-clause.",
     "Exclusions apply; excluded; excluding; exclusion; the exclusion-zone.",
-    "The insured notified the insurer about insurance; insureds.",
+    "The universe notified the university about universal; universes.",
     "The aggregate\nlimit applies; aggregate limit; Aggregate  Limit; aggregates.",
-    "waiver of right of recovery and a RIGHT OF SUBROGATION.\nSecond paragraph: subrogation.",
+    "waiver of right of transfer and a RIGHT OF TERMINATION.\nSecond paragraph: termination.",
 )
 
 #: The views a chunk's plain text is fingerprinted in: the two a summarizer could be handed
@@ -352,9 +352,9 @@ PROBE_SUMMARY_INPUTS = {
 #: of the rank fingerprint: changing it changes every rank fingerprint, deliberately
 #: re-recorded, never edited to make a diff go away.
 RANK_QUERIES = (
-    "subrogation",
-    "right of recovery",
-    "insured",
+    "termination",
+    "right of transfer",
+    "partner",
     "canned",
 )
 

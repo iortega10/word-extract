@@ -47,8 +47,8 @@ those still apply and are not repeated here.
   relevance number and no embedding source (Phase 3).
 - **Term tier needs an exact registry form.** A query that is not a group's canonical or
   synonym form has no term tier; there is no stemming or fuzzy resolution of the query.
-- **The text tier reads one hyphen form.** `hold-harmless` does not text-match
-  "hold harmless"; the term tier covers registered groups under both readings.
+- **The text tier reads one hyphen form.** `hand-delivery` does not text-match
+  "hand delivery"; the term tier covers registered groups under both readings.
 - **Text matches stay inside a paragraph**, as the matcher's do; a phrase split across two
   paragraphs is missed by design (`tools/crossparagraph_report.py` measures how often).
 - **Only the body part is chunked.** Text in headers, footers, footnotes and endnotes is

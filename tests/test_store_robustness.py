@@ -30,7 +30,7 @@ from wordextract.terms import TermRegistry
 ROOT = Path(__file__).resolve().parents[1]
 DOCUMENT = ROOT / "fixtures" / "program_review_v3.docx"
 REGISTRY = TermRegistry(
-    groups=[TermGroup(canonical="exclusion"), TermGroup(canonical="subrogation")]
+    groups=[TermGroup(canonical="exclusion"), TermGroup(canonical="termination")]
 )
 
 

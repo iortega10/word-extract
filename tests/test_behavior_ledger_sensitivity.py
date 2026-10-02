@@ -145,7 +145,7 @@ def test_the_probe_exercises_what_the_corpus_cannot():
     kinds = {match.match_type.value for match in found}
     assert kinds == {"exact", "synonym", "stem"}
     groups = {match.group for match in found}
-    assert {"hold harmless", "non-compliance", "subrogation", "exclusion", "insured"} <= groups
+    assert {"hand delivery", "non-compliance", "termination", "exclusion", "universe"} <= groups
     assert len(found) >= 20
 
 

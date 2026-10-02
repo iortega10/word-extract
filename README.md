@@ -8,7 +8,7 @@ footnotes, parsed into an addressable, stored tree, with **reproducible term fla
 It is a sibling of [`form-extract`](https://github.com/iortega10/form-extract), built for the case where someone sends a
 Word document full of comments and tracked changes and you need to find, cite and compare
 what it says, in any setting with messy documents where a missed clause or a wrong attribution
-is a real failure (contracts, policies, reviews, audits, regulated work) or where you need to get
+is a real failure (contracts, licenses, reviews, audits, regulated work) or where you need to get
 a document to an LLM cleanly.
 
 > **Status.** Phase 1 (the deterministic parse, structure, term matching, store and evals) and

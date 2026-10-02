@@ -324,7 +324,7 @@ def test_adding_a_term_list_re_summarizes_nothing(tmp_path):
     bigger = tmp_path / "bigger.json"
     registry = load_registry_text(EXAMPLE_REGISTRY.read_text(encoding="utf-8"))
     bigger.write_text(
-        dump_registry(TermRegistry(groups=[*registry.groups, TermGroup(canonical="pollution")])),
+        dump_registry(TermRegistry(groups=[*registry.groups, TermGroup(canonical="shortfall")])),
         encoding="utf-8",
     )
     grown = run(DOCUMENT, bigger, store_root=root, run_id="big")

@@ -39,8 +39,8 @@ ALL_DOCX = sorted(FIXTURES.rglob("*.docx"))
 
 #: ``text-model-spec.md`` section 6 example A, hand-typed: two disjoint revision runs
 #: with no separator between them in the union, so a raw-union match would invent
-#: ``recoverysubrogation``. No 0a fixture covers it.
-EXAMPLE_A = ("right of recoverysubrogation", "right of subrogation", "right of recovery", "")
+#: ``transfertermination``. No 0a fixture covers it.
+EXAMPLE_A = ("right of transfertermination", "right of termination", "right of transfer", "")
 
 #: The examples the build spec's "every worked example A to E" is checked against.
 WORKED_EXAMPLES = ("A", "B", "C", "D", "E")
@@ -84,8 +84,8 @@ def _stream(*pieces: tuple[list[str], str]) -> UnionStream:
 def _example_a() -> UnionStream:
     return _stream(
         ([], "right of "),
-        (["del:1"], "recovery"),
-        (["ins:2"], "subrogation"),
+        (["del:1"], "transfer"),
+        (["ins:2"], "termination"),
         ([], TERMINATOR),
     )
 
@@ -192,29 +192,29 @@ def test_example_a_views_are_the_spec_strings():
     ):
         assert project(stream, view, start, end).text == expected
         # the false adjacency a raw-union match would find is in no view at all
-        assert "recoverysubrogation" not in project(stream, view).text
+        assert "transfertermination" not in project(stream, view).text
 
 
 def test_example_a_whole_part_keeps_the_terminator_in_every_view():
     stream = _example_a()
-    assert project(stream, View.ACCEPTED).text == "right of subrogation" + TERMINATOR
-    assert project(stream, View.ORIGINAL).text == "right of recovery" + TERMINATOR
+    assert project(stream, View.ACCEPTED).text == "right of termination" + TERMINATOR
+    assert project(stream, View.ORIGINAL).text == "right of transfer" + TERMINATOR
     assert project(stream, View.SUPERSEDED).text == TERMINATOR
 
 
 def test_no_placeholder_is_inserted_where_the_deleted_space_was():
     """§8: gap-closing keeps no placeholder. With the space inside the deleted run,
-    the accepted view is Word's own rendering ``right ofsubrogation`` -- the miss is
+    the accepted view is Word's own rendering ``right oftermination`` -- the miss is
     documented, not papered over with a space the union does not have."""
     stream = _stream(
         ([], "right of"),
         (["del:1"], " "),
-        (["ins:2"], "subrogation"),
+        (["ins:2"], "termination"),
         ([], TERMINATOR),
     )
     (start, end, _), = _paragraph_slices(stream)
     accepted = project(stream, View.ACCEPTED, start, end)
-    assert accepted.text == "right ofsubrogation"
+    assert accepted.text == "right oftermination"
     assert project(stream, View.ORIGINAL, start, end).text == "right of "
     assert project(stream, View.SUPERSEDED, start, end).text == ""
     assert [(run.view_start, run.view_end) for run in accepted.runs] == [(0, 8), (8, 19)]
@@ -318,7 +318,7 @@ def test_a_view_range_inside_one_run_maps_to_exactly_that_text():
     stream = _example_a()
     accepted = project(stream, View.ACCEPTED)
     assert accepted.union_range(9, 20) == Span(stream.part_id, 17, 28)
-    assert stream.text[17:28] == accepted.text[9:20] == "subrogation"
+    assert stream.text[17:28] == accepted.text[9:20] == "termination"
 
 
 def test_the_offset_map_refuses_ranges_it_cannot_address():
@@ -387,8 +387,8 @@ def test_projection_is_deterministic_for_a_package(path):
 # --- union_spans: one span per retained run, never the elided text ----------------
 
 
-def _pollution():
-    """program_review_v3's tracked pollution paragraph, projected through both views."""
+def _shortfall():
+    """program_review_v3's tracked shortfall paragraph, projected through both views."""
     from wordextract.walker import walk_document
 
     parsed = walk_document(opc.Package(FIXTURES / "program_review_v3.docx"))
@@ -396,21 +396,21 @@ def _pollution():
     node = next(
         n
         for n in parsed.nodes
-        if n.spans and stream.text[n.spans[0].start : n.spans[0].end].startswith("Pollution")
+        if n.spans and stream.text[n.spans[0].start : n.spans[0].end].startswith("Shortfall")
     )
     span = node.spans[0]
     return stream, span
 
 
 def test_union_spans_skip_the_elided_text_a_covering_span_includes():
-    """Hand-typed: 'Pollution: ' is 11 characters at union 662; the accepted rest is 40
+    """Hand-typed: 'Shortfall: ' is 11 characters at union 662; the accepted rest is 40
     characters at 694, because the 21 deleted characters 'excluded in all cases' sit at
     673..694 and are elided from the accepted view."""
     from wordextract.model import Span
 
-    stream, span = _pollution()
+    stream, span = _shortfall()
     accepted = project(stream, View.ACCEPTED, span.start, span.end)
-    assert accepted.text == "Pollution: excluded except for hostile-fire release"
+    assert accepted.text == "Shortfall: excluded except for supply-delay release"
     assert accepted.union_spans(0, len(accepted.text)) == [
         Span(accepted.part_id, 662, 673),
         Span(accepted.part_id, 694, 734),
@@ -422,14 +422,14 @@ def test_union_spans_skip_the_elided_text_a_covering_span_includes():
 def test_union_spans_of_the_original_view_are_one_contiguous_span():
     from wordextract.model import Span
 
-    stream, span = _pollution()
+    stream, span = _shortfall()
     original = project(stream, View.ORIGINAL, span.start, span.end)
-    assert original.text == "Pollution: excluded in all cases"
+    assert original.text == "Shortfall: excluded in all cases"
     assert original.union_spans(0, len(original.text)) == [Span(original.part_id, 662, 694)]
 
 
 def test_union_spans_of_a_range_inside_one_run_is_that_one_span():
-    stream, span = _pollution()
+    stream, span = _shortfall()
     accepted = project(stream, View.ACCEPTED, span.start, span.end)
     for start, end in ((0, 5), (2, 9), (12, 20), (30, 51)):
         assert accepted.union_spans(start, end) == [accepted.union_range(start, end)]
@@ -439,10 +439,10 @@ def test_union_spans_clip_a_range_that_starts_and_ends_mid_run():
     """A range that straddles the gap is the tail of one run and the head of the next."""
     from wordextract.model import Span
 
-    stream, span = _pollution()
+    stream, span = _shortfall()
     accepted = project(stream, View.ACCEPTED, span.start, span.end)
-    # view 5..16 is 'tion: exclu' -> union 667..673 (tail of run 0) and 694..699 (head of run 1)
-    assert accepted.text[5:16] == "tion: exclu"
+    # view 5..16 is 'fall: exclu' -> union 667..673 (tail of run 0) and 694..699 (head of run 1)
+    assert accepted.text[5:16] == "fall: exclu"
     assert accepted.union_spans(5, 16) == [
         Span(accepted.part_id, 667, 673),
         Span(accepted.part_id, 694, 699),
@@ -468,7 +468,7 @@ def test_union_spans_merge_runs_that_are_contiguous_in_the_union():
 
 
 def test_union_spans_refuse_a_range_they_cannot_address():
-    stream, span = _pollution()
+    stream, span = _shortfall()
     accepted = project(stream, View.ACCEPTED, span.start, span.end)
     for bad in ((3, 3), (5, 2), (-1, 4), (0, len(accepted.text) + 1)):
         with pytest.raises(ValueError):
@@ -498,7 +498,7 @@ def test_retained_before_maps_a_union_offset_to_where_the_view_kept_it():
     """Hand-typed on the tracked-deletion paragraph: both views keep union 662..673, then
     the deleted 673..694 leaves the accepted view 21 characters left of the union, while
     the original view keeps all of it and elides the inserted run instead."""
-    stream, _ = _pollution()
+    stream, _ = _shortfall()
     accepted = project(stream, View.ACCEPTED)
     original = project(stream, View.ORIGINAL)
     assert accepted.retained_before(662) == 662
@@ -507,7 +507,7 @@ def test_retained_before_maps_a_union_offset_to_where_the_view_kept_it():
     assert accepted.retained_before(700) == 679
     assert accepted.retained_before(734) == 713
     assert accepted.retained_before(len(stream.text)) == len(accepted.text)
-    assert accepted.text[662:713] == "Pollution: excluded except for hostile-fire release"
+    assert accepted.text[662:713] == "Shortfall: excluded except for supply-delay release"
     assert original.retained_before(694) == 694
     assert original.retained_before(734) == 694  # the inserted run is not in this view
     assert original.retained_before(len(stream.text)) == len(original.text)
@@ -515,7 +515,7 @@ def test_retained_before_maps_a_union_offset_to_where_the_view_kept_it():
 
 def test_retained_before_maps_a_range_this_view_elided_to_one_offset():
     """Which is how a caller tells an elided location from a kept one: its two ends agree."""
-    stream, _ = _pollution()
+    stream, _ = _shortfall()
     original = project(stream, View.ORIGINAL)
     # union 694..734 is one inserted span, and this view kept none of it
     assert original.retained_before(694) == original.retained_before(734)
@@ -579,7 +579,7 @@ def test_ranged_projection_equals_the_linear_scan_on_every_range(path):
 
 
 def test_an_empty_range_projects_to_nothing():
-    stream, span = _pollution()
+    stream, span = _shortfall()
     for view in VIEWS:
         assert project(stream, view, span.start, span.start).text == ""
         assert project(stream, view, span.end, span.end).runs == ()

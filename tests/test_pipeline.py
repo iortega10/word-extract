@@ -80,7 +80,7 @@ def test_hits_are_read_back_and_need_no_document(tmp_path):
 
     hits = stored_hits(record, store_root=root)
     assert len(hits) == FIXTURE_HITS
-    assert [hit.group for hit in hits].count("subrogation") == 2
+    assert [hit.group for hit in hits].count("termination") == 2
 
 
 def test_hits_are_the_stored_records_not_a_recomputation(tmp_path):

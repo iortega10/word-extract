@@ -3,8 +3,8 @@
 Every claim here is a *behavioral* one about the store, not a fixture fact: an artifact is
 named after the key its own inputs recompute to, a second ingest of the same bytes rewrites
 nothing, and a hit survives the ``.docx`` being deleted. The document and term list are the
-shipped fixtures (``program_review_v3.docx``: three hits, ``named insured`` once and
-``subrogation`` twice); the second document is ``edge_cases.docx``.
+shipped fixtures (``program_review_v3.docx``: three hits, ``named partner`` once and
+``termination`` twice); the second document is ``edge_cases.docx``.
 
 Nothing here hand-builds a registry with a *different* hash to make a key move by hand:
 ``term_list_hash`` is derived from the term list, so a new term list must be a new term list.
@@ -59,7 +59,7 @@ DOCUMENT = FIXTURES / "program_review_v3.docx"
 OTHER_DOCUMENT = FIXTURES / "edge_cases.docx"
 EXAMPLE_REGISTRY = FIXTURES / "terms" / "synthetic.example.json"
 
-#: The fixture document's hits: `named insured` once, `subrogation` twice (a move's two
+#: The fixture document's hits: `named partner` once, `termination` twice (a move's two
 #: locations, so the count is the matcher's and not a query's).
 FIXTURE_HITS = 3
 
@@ -164,7 +164,7 @@ def test_the_stored_artifacts_are_what_a_live_run_derives(tmp_path):
 
     # the store holds the matcher's record, not a query's view of it: hits are stored
     # unfolded, so every hit the matcher reported is still there.
-    assert [hit.group for hit in hits] == ["named insured", "subrogation", "subrogation"]
+    assert [hit.group for hit in hits] == ["named partner", "termination", "termination"]
 
 
 def test_a_no_op_re_ingest_hits_everything_and_writes_only_a_run_record(tmp_path):
@@ -364,7 +364,7 @@ def test_a_new_term_list_re_parses_and_re_chunks_nothing(tmp_path):
     first = ingest(store, DOCUMENT, registry=registry)
     before = _state(store.root)
 
-    wider = TermRegistry(groups=[*registry.groups, TermGroup(canonical="deductible")])
+    wider = TermRegistry(groups=[*registry.groups, TermGroup(canonical="chargeback")])
     second = ingest(store, DOCUMENT, registry=wider)
     after = _state(store.root)
 

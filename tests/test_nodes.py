@@ -274,8 +274,8 @@ def test_the_optional_parent_map_answers_what_the_derived_one_does(path):
         )
 
 
-def test_the_binder_summary_comment_anchors_on_the_paragraph_that_holds_it():
-    parsed = _walk(DOCX_BY_NAME["binder_summary.docx"])
+def test_the_ledger_summary_comment_anchors_on_the_paragraph_that_holds_it():
+    parsed = _walk(DOCX_BY_NAME["ledger_summary.docx"])
     (comment,) = parsed.comments
     node = _by_id(parsed)[nodes_mod.anchor_node(parsed, comment.anchor)]
     assert node.kind is NodeKind.PARA and node.part_id == BODY
@@ -378,7 +378,7 @@ def test_a_node_the_forest_does_not_cover_gets_the_empty_path():
 
 
 def test_the_answer_is_a_copy_a_caller_cannot_use_to_edit_the_node():
-    parsed = _walk(DOCX_BY_NAME["binder_summary.docx"])
+    parsed = _walk(DOCX_BY_NAME["ledger_summary.docx"])
     node = next(node for node in parsed.nodes if node.section_path)
     answer = nodes_mod.section_of(parsed, node.id)
     assert answer == node.section_path and answer is not node.section_path

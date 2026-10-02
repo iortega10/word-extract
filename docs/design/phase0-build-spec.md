@@ -126,7 +126,7 @@ Fields come from D2 to D8; do not invent extras.
 - moveTo/moveFrom classification and `move_group_id`;
 - the within-paragraph gap-closing rule, and that it never closes across a
   paragraph boundary;
-- **worked examples** at minimum: `right of [del recovery][ins subrogation]`;
+- **worked examples** at minimum: `right of [del transfer][ins termination]`;
   a `w:del` nested inside a `w:ins`; a move; a comment range that starts in a
   deleted run; text inside `w:hyperlink` and a field result.
 - explicit "unspecified" list for Open risk #2 (table cells, footnotes,

@@ -49,7 +49,7 @@ def test_adding_a_fixture_adds_a_corpus_version_and_bumps_no_component_version(t
     before = ledger.load_ledger(ledger_path)
     assert all(key.endswith("|corpus:1") for key in before["parse"])
 
-    shutil.copy(FIXTURES / "binder_summary.docx", fixtures / "binder_summary.docx")
+    shutil.copy(FIXTURES / "ledger_summary.docx", fixtures / "ledger_summary.docx")
     problems = ledger.check(ledger.load_ledger(ledger_path), fixtures_dir=fixtures)
     assert any(p.startswith("corpus:") and "--new-corpus" in p for p in problems)  # noticed
 
@@ -72,7 +72,7 @@ def test_adding_a_fixture_adds_a_corpus_version_and_bumps_no_component_version(t
 def test_a_behavior_change_hidden_in_the_same_commit_as_a_new_fixture_is_refused(tmp_path, monkeypatch, capsys):
     fixtures, ledger_path = _isolated(tmp_path, monkeypatch)
     assert _run(fixtures, ledger_path) == 0
-    shutil.copy(FIXTURES / "binder_summary.docx", fixtures / "binder_summary.docx")
+    shutil.copy(FIXTURES / "ledger_summary.docx", fixtures / "ledger_summary.docx")
     # the behavior changes too (the view mask), without a version bump
     monkeypatch.setattr(views, "keeps", lambda stack, view: True)
     capsys.readouterr()
