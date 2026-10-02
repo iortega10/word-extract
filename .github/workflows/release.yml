@@ -72,9 +72,12 @@ jobs:
 
   publish-main:
     # word-extract pins docextract-core, so the core must be on the index first.
+    # A pending publisher is unique per (owner, repo, workflow, environment), so the second
+    # project needs its own environment name: PyPI refuses to register the same combination
+    # for two project names.
     needs: publish-core
     runs-on: ubuntu-latest
-    environment: ${{ contains(github.ref_name, 'rc') && 'testpypi' || 'pypi' }}
+    environment: ${{ contains(github.ref_name, 'rc') && 'testpypi-main' || 'pypi-main' }}
     permissions:
       id-token: write
     steps:
