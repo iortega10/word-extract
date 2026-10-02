@@ -30,7 +30,9 @@ device. A PyPI release is permanent and public; a version number can never be re
    `>=0.1.0,<0.2` for the real `0.1.0`.
 2. Run `python -m pytest -q` and `python tools/update_behavior_ledger.py --check` locally.
 3. Dry run: set the versions to `0.1.0rc1`, commit, tag `v0.1.0rc1`. The workflow publishes to **TestPyPI**. In a clean virtualenv:
-   `pip install --pre --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ word-extract`
+   `pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ "word-extract[mcp]==0.1.0rc1"`
+   (pin the version rather than using `--pre`, which would also pull pre-release dependencies
+   such as a beta `lxml`)
    and run `wordextract ingest ...` on a fixture.
 4. Real release: tag `v0.1.0`. The workflow tests, builds, runs `twine check`, then publishes
    the core and then `word-extract` to PyPI.
