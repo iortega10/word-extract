@@ -65,6 +65,18 @@ those still apply and are not repeated here.
   unchanged chunk is reported separately in `comments_changed`. There is no sense that one
   document is a revision of another: both ids are named by the caller.
 
+## MCP server
+
+- **Tool results are the document's own text, verbatim.** Chunk text, comments and revision
+  excerpts reach the connected client model unescaped, so a hostile document could try to
+  steer it (prompt injection). The tools are read-only and cannot write, but a client should
+  treat every result as data and never as instructions.
+- **Results are JSON text, not MCP structured content**; a client parses the string.
+- **Read-only, local, stdio only.** No authentication or network transport is provided; the
+  server serves whichever store path it was started with to whoever launched it.
+- **`mcp` is an optional extra** (`pip install "word-extract[mcp]"`); without it `serve`
+  exits 2 and everything else is unaffected.
+
 ## Store and catalog
 
 - **"Latest run" is a file mtime.** The run log carries no clock, so copying or restoring a
