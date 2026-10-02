@@ -346,4 +346,16 @@ def _value(kind: Any) -> str:
     return kind.value if hasattr(kind, "value") else str(kind)
 
 
-__all__ = ["RENDER_VERSION", "chunk_text", "render_union_markup"]
+#: Public names for the helpers the retrieval layer shares with this module.
+chunk_leaves = _leaves
+leaf_text = _leaf_text
+part_stream = _stream
+
+__all__ = [
+    "RENDER_VERSION",
+    "chunk_leaves",
+    "chunk_text",
+    "leaf_text",
+    "part_stream",
+    "render_union_markup",
+]

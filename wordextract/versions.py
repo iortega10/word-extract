@@ -35,6 +35,12 @@ RENDER_VERSION = "2"
 #: ``RENDER_VERSION`` it is a ledger/reviewer signal, not a key member -- a summary's key is
 #: taken over the rendered bytes, so the derivation reaches a key only through them.
 PENDING_VERSION = "1"
+#: The version of the retrieval and ranking derivation (Phase 2, Turn 3): how a query is
+#: resolved to a term group, which sources a chunk is labeled with, and in what order the
+#: results come back. Like ``PENDING_VERSION`` it is a ledger/reviewer signal, not a key
+#: member: nothing is stored under it, and a summary's key is taken over the rendered
+#: bytes, which ranking never touches.
+RANK_VERSION = "1"
 
 
 @dataclass(frozen=True)

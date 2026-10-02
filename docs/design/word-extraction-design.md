@@ -201,7 +201,26 @@ default fails symmetrically (hides an inserted exclusion). Decided:
   match, ordered by a **fixed source-priority tiering** (term hits, then text,
   then summary), deterministic tie-breaks, one result per chunk with all its
   sources listed. **No blended relevance score.** Embeddings, if ever added, are
-  a separately labeled fourth source (Phase 3).
+  a separately labeled fourth source (Phase 3). The rule (Turn 3, `rank.py`):
+  - The query is **resolved through the registry** — both sides through the
+    matcher's `normalize`, equality against a group's canonical or synonym form
+    only (no stem, no fuzzy guess, no substring). No match, no term tier; a
+    query equal to forms of several groups is an error naming them. The term
+    list is the caller's or the store's only one — zero or several stored lists
+    is an error naming the candidates.
+  - Text match is normalized **token containment** over `chunk_text`, per view,
+    never the raw union. Summary match is the same containment over a chunk's
+    summary text and topics; a summary contributes no view (written from union
+    markup) and no node (the summary cites its chunk).
+  - Ordering is (tier, document id, node order, chunk id) — a total sort, so the
+    same inputs give the same order every time. Comment hits dedupe into their
+    anchor chunk. The two hits of a move fold at query time (`dedupe_moves`, in
+    the order `match_document` returned them; never reordered first): one
+    result, whose two locations keep both addresses when both ends sit in one
+    chunk.
+  - Each result records source(s), view(s), citation (document, chunk, node or
+    `comment:<id>`, union spans) and the term group, if any. No numeric
+    relevance exists anywhere on the record.
 - Scale target is about 25 documents; correctness and reproducibility over
   throughput. FTS5 is optional at this scale.
 - Detailed build order: `phase2-build-spec.md`.

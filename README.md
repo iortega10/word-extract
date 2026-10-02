@@ -17,8 +17,9 @@ a document to an LLM cleanly.
 > [Open inputs](#open-inputs)). Phase 2 (summaries, search, an MCP server) is specified in
 > `docs/design/phase2-build-spec.md`; its Turn 0 helpers (read-only store, chunk text and
 > revision-markup rendering, document catalog) Turn 1 (per-chunk summaries cached on the
-> rendered input, `python -m wordextract summarize`) and Turn 2 (`pending_changes`: the
-> revisions each chunk carries, derived from the parse and never from model text) are built. Nothing in Phase 1 calls an LLM.
+> rendered input, `python -m wordextract summarize`) Turn 2 (`pending_changes`: the
+> revisions each chunk carries, derived from the parse and never from model text) and Turn 3
+> (retrieval and ranking: term, text and summary tiers in a fixed order) are built. Nothing in Phase 1 calls an LLM.
 
 ## What it does
 

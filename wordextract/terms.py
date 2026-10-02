@@ -179,6 +179,10 @@ def _token_offsets(text: str, split_hyphens: bool = False) -> list[tuple[str, in
     return found
 
 
+#: The public name of the tokenizer with source offsets (retrieval reuses it).
+token_offsets = _token_offsets
+
+
 def _fold(raw: str) -> str:
     return unicodedata.normalize("NFC", raw.casefold())
 

@@ -35,6 +35,10 @@ committed ``.docx`` under ``fixtures/``, the synthetic registry, default chunker
 * **pending**, ``PENDING_VERSION``: ``pending_changes`` over each fixture's default body cuts
   -- the entries a summary record and the manifest carry -- plus ``document_pending``'s
   document-level count and gap ids, so both halves of Turn 2's derivation are fingerprinted.
+* **rank**, ``RANK_VERSION``: Turn 3's retrieval over each fixture's default cuts -- a fixed
+  query set run through ``wordextract.rank.rank`` with the synthetic registry and canned
+  (literal, never modeled) summaries, so resolution, tiering, dedupe and ordering are all
+  under one fingerprint.
 
 :func:`check` is the test's half (it reports every disagreement) and :func:`record` is
 :mod:`update_behavior_ledger`'s (it appends, and refuses to overwrite). The ledger starts
@@ -72,6 +76,11 @@ from wordextract import render as rendering  # noqa: E402
 from wordextract.chunker import DEFAULT_PARAMS, chunk  # noqa: E402
 from wordextract.model import View  # noqa: E402
 from wordextract.pending import document_pending, pending_changes  # noqa: E402
+from wordextract.rank import (  # noqa: E402
+    DocumentInput,
+    SummaryRef,
+    rank as rank_results,
+)
 from wordextract.store import body_part_id, summary_key  # noqa: E402
 from wordextract.chunker import ChunkParams  # noqa: E402
 from wordextract.model import TermGroup  # noqa: E402
@@ -96,6 +105,7 @@ COMPONENTS = (
     "render",
     "summary_key",
     "pending",
+    "rank",
 )
 
 #: Which constant a component's version string is built from -- what to bump. The
@@ -110,6 +120,7 @@ VERSION_CONSTANTS = {
     "render": "RENDER_VERSION",
     "summary_key": "SUMMARIZER_VERSION (or OUTPUT_SCHEMA_VERSION)",
     "pending": "PENDING_VERSION",
+    "rank": "RANK_VERSION",
 }
 
 #: The corpus. ``fixtures/real`` is machine-local (see the module docstring), so it is
@@ -163,7 +174,7 @@ CORPUS_PATH = _ROOT / "tests" / "ledger" / "corpus.json"
 
 #: The components whose fingerprint is over the corpus. ``contracts`` is over the record
 #: definitions alone, so it is keyed by the schema version and nothing else.
-CORPUS_DEPENDENT = ("parse", "views", "chunks", "matcher", "render", "summary_key", "pending")
+CORPUS_DEPENDENT = ("parse", "views", "chunks", "matcher", "render", "summary_key", "pending", "rank")
 
 _CORPUS_HEADER = (
     "The ledger's fixture corpora, oldest first: each version lists the fixtures (paths "
@@ -232,6 +243,7 @@ def version_strings() -> dict[str, str]:
         "render": rendering.RENDER_VERSION,
         "summary_key": versions.SUMMARIZER_VERSION,
         "pending": versions.PENDING_VERSION,
+        "rank": versions.RANK_VERSION,
     }
 
 
@@ -321,12 +333,40 @@ PROBE_SUMMARY_INPUTS = {
 }
 
 
+#: Turn 3's fixed query set, chosen so every path the ranking takes is under one
+#: fingerprint: a canonical form that resolves and merges term+text on the same chunk,
+#: a **synonym** that resolves and produces term-only results (the hit's chunk whose view
+#: text lacks the query's words), an unregistered word that is text-tier only, and
+#: ``canned``, which matches only the canned summaries' own text -- the summary tier,
+#: guaranteed to fire even where no fixture text carries a term. Part of the *definition*
+#: of the rank fingerprint: changing it changes every rank fingerprint, deliberately
+#: re-recorded, never edited to make a diff go away.
+RANK_QUERIES = (
+    "subrogation",
+    "right of recovery",
+    "insured",
+    "canned",
+)
+
+
+def _canned_summary(built) -> SummaryRef:
+    """One chunk's canned summary: a literal of the section path, never a model's answer."""
+    path = " > ".join(built.section_path) if built.section_path else "the document"
+    return SummaryRef(
+        chunk_id=built.id,
+        text=f"Canned ledger summary of {path}",
+        topics=tuple(built.section_path) or ("document",),
+    )
+
+
 def _document_pieces(root: Path, name: str) -> dict[str, Any]:
     """Everything one fixture contributes to the corpus fingerprints, parsed once."""
-    index = _registry_index(root)
+    registry = _registry(root)
+    index = compile_registry(registry)
     parsed = walk_document(opc.Package(root / name))
     body = body_part_id(parsed)
     default = list(chunk(parsed, body, params=DEFAULT_PARAMS))
+    hits = match_document(index, parsed)
     return {
         "parse": encode(parsed),
         "views": [
@@ -342,7 +382,7 @@ def _document_pieces(root: Path, name: str) -> dict[str, Any]:
             encode({field_: getattr(built, field_) for field_ in CHUNK_FIELDS})
             for built in chunk(parsed, body, params=STRESS_PARAMS)
         ],
-        "matcher": encode(match_document(index, parsed)),
+        "matcher": encode(hits),
         "render": encode(
             [
                 {
@@ -372,12 +412,39 @@ def _document_pieces(root: Path, name: str) -> dict[str, Any]:
                 "document": document_pending(parsed, default),
             }
         ),
+        "rank": encode(
+            [
+                {
+                    "query": query,
+                    "results": rank_results(
+                        query,
+                        (
+                            DocumentInput(
+                                document_id=name,
+                                parsed=parsed,
+                                chunks=tuple(default),
+                                hits=hits,
+                                summaries=tuple(
+                                    _canned_summary(built) for built in default
+                                ),
+                            ),
+                        ),
+                        registry=registry,
+                        views=RENDER_VIEWS,
+                    ),
+                }
+                for query in RANK_QUERIES
+            ]
+        ),
     }
 
 
+def _registry(root: Path) -> TermRegistry:
+    return load_registry_text((root / TERM_LIST).read_text(encoding="utf-8"))
+
+
 def _registry_index(root: Path):
-    registry = load_registry_text((root / TERM_LIST).read_text(encoding="utf-8"))
-    return compile_registry(registry)
+    return compile_registry(_registry(root))
 
 
 def _assemble(pieces: Mapping[str, dict[str, Any]], names: list[str], root: Path) -> dict[str, str]:
@@ -398,6 +465,7 @@ def _assemble(pieces: Mapping[str, dict[str, Any]], names: list[str], root: Path
         "render": sha256_json({n: pieces[n]["render"] for n in names}),
         "summary_key": sha256_json({n: pieces[n]["summary_key"] for n in names}),
         "pending": sha256_json({n: pieces[n]["pending"] for n in names}),
+        "rank": sha256_json({n: pieces[n]["rank"] for n in names}),
     }
 
 

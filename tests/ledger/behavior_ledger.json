@@ -24,6 +24,11 @@
     "1|corpus:2": "43c4808317e94f74cc14b8f288e910133353947f906db5115bdadc6f97a7fc14",
     "1|corpus:3": "333f3ac07a6c31b3408640b376d21c814040ad4ce67ef76960e508e4e24c1fdc"
   },
+  "rank": {
+    "1|corpus:1": "80e90d2801ea43f9baa6835ae484ee1d6d3de0cd7dd1a42600693cf82e31e2fd",
+    "1|corpus:2": "253a8d668cfc864bb2e26b348e6e8f24164dcc8fb7f0a0b5afca6f5b87ad1f91",
+    "1|corpus:3": "5bc24e941bc8841faea4bbb9a01ff77c5dde95d3f0fb1b922795b4488328e807"
+  },
   "render": {
     "1|corpus:1": "54caac6e416fffd527dcbf41250bcda3babd50ca2e3c9be687a06f6c6672b5ef",
     "1|corpus:2": "3fab58f085364b40bdfdd105c3d716e7e4f6cb3d7bd826fa26683543a3e92fd7",

@@ -89,6 +89,37 @@ def test_a_key_member_change_without_a_bump_is_caught(monkeypatch):
     assert "summary_key" in _components(ledger.check())
 
 
+def test_a_rank_text_tier_change_without_a_bump_is_caught(monkeypatch):
+    """The text tier's own reading of a chunk -- patched at the rank module's lookup, so
+    only the rank fingerprint can move."""
+    from wordextract import rank as rank_module
+
+    monkeypatch.setattr(rank_module, "leaf_text", lambda stream, leaf, view: "")
+    assert "rank" in _components(ledger.check())
+
+
+def test_a_rank_source_order_change_without_a_bump_is_caught(monkeypatch):
+    """``sources`` is tier order, and a set's iteration order must never decide it: if the
+    tier weights move, the recorded rank fingerprint has to disagree."""
+    from wordextract import rank as rank_module
+
+    monkeypatch.setitem(rank_module._TIER, "text", -1)
+    assert "rank" in _components(ledger.check())
+
+
+def test_the_rank_query_set_exercises_every_source_combination():
+    """Every source and the merge of term+text must fire over the committed corpus; a query
+    set that quietly matches nothing would record a fingerprint nothing can move."""
+    root = Path(__file__).resolve().parents[1] / "fixtures"
+    seen = {
+        tuple(result["sources"])
+        for name in ledger.discovered(root)
+        for entry in ledger._document_pieces(root, name)["rank"]
+        for result in entry["results"]
+    }
+    assert {("term",), ("term", "text"), ("text",), ("summary",)} <= seen
+
+
 def test_the_probe_exercises_what_the_corpus_cannot():
     """The corpus alone yields almost no hits; the probe is what makes the matcher
     fingerprint sensitive to normalization, hyphen readings, stems and overlap."""

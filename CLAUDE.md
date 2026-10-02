@@ -51,8 +51,11 @@ Outside pytest the packages must be importable: either `pip install -e` as above
   `document_pending`, summary records carrying the manifest entries plus the tri-state
   `has_pending`, catalog rows carrying `unattributed_revisions` / `unattributed_gaps`, and the
   render manifest fed by the same derivation; `RENDER_VERSION` 1→2, new `PENDING_VERSION`, the
-  ledger's `pending` component green). Turn 3 (retrieval and ranking, `rank.py` plus the D12
-  amendment) is next. No real provider is wired: a client is named on the
+  ledger's `pending` component green). **Turn 3 is done and validated** (retrieval and ranking:
+  `rank.py`'s registry-resolved term tier, token containment over text and summaries, the fixed
+  tiering with comment and move dedupe; D12 amended with the rule; `RANK_VERSION` plus the
+  ledger's `rank` component over a fixed query set; the six spec tests in `tests/test_rank.py`).
+  Turn 4 (roll-up) is next. No real provider is wired: a client is named on the
   command line and configured outside the repo.
 
 ## Rules that are easy to break (each was a real defect once)
