@@ -75,7 +75,13 @@ Outside pytest the packages must be importable: either `pip install -e` as above
   `create_mcp`/`serve`, the `serve` CLI command and `python -m wordextract.mcp`, `mcp` as an
   optional extra with the quarantine and exit-2 tests, and `tests/test_mcp.py` over the
   v2/v3 pair including a raw-stdio protocol test against a spawned server; full suite green,
-  ledger check green). Turn 7 next per `docs/design/phase2-build-spec.md`.
+  ledger check green). **Turn 7 is done and validated** (`evals/l3.py` human-graded
+  L3 tooling, `evals/retrieval.py` query-set scoring, and the cost section and v2/v3 cache
+  check in the harness; with no human labels L2, L3 and retrieval report "not evaluated" and
+  gate nothing). **Phase 2 is built and validated**, and closes conditionally on inputs only
+  the owner can supply: a real query set, a summarizer provider and model, human L3 grades, a
+  Word-saved document and real term lists (`docs/design/open-inputs.md`,
+  `docs/design/phase2-gaps.md`).
   No real provider is wired: a client is named on the
   command line and configured outside the repo.
 

@@ -1,0 +1,45 @@
+{
+  "_comment": [
+    "FORMAT DOCUMENTATION ONLY -- this file is never scored.",
+    "retrieval.iter_query_sets skips every '*.example.json' (the rule must_find.example.json",
+    "lives under): the requests and citations below are invented placeholders. A query set",
+    "is a set of questions a person actually asked of these documents, with the citations an",
+    "honest answer must contain (docs/design/open-inputs.md section 3). Copy this file to",
+    "fixtures/evals/<your-set>.json, replace every placeholder, and point it at documents in",
+    "fixtures/real/. Each question appears exactly once in a set.",
+    "A citation is addressed in the set's own vocabulary: document is relative to the",
+    "fixtures directory; chunk is the 0-based ordinal in the accepted view's chunk list (the",
+    "same numbering the pair sidecar's changed entries use), omitted or null to expect the",
+    "document at any chunk."
+  ],
+  "query_set": "queries.example",
+  "labels_provenance": "human",
+  "term_list": "terms/real_term_list.json",
+  "examples": [
+    {
+      "query": "a question you actually asked, in the words you actually typed",
+      "expected_citations": [
+        {
+          "document": "real/the-document-you-asked-about.docx",
+          "chunk": 0,
+          "note": "why this chunk answers the question, so a reader can check the citation"
+        },
+        {
+          "document": "real/another-document.docx",
+          "note": "chunk omitted: any chunk of this document satisfies the citation"
+        }
+      ],
+      "note": "what a good answer looks like for this question"
+    },
+    {
+      "query": "a second question; each question appears exactly once in a set",
+      "expected_citations": [
+        {
+          "document": "real/the-document-you-asked-about.docx",
+          "chunk": 3,
+          "note": "the chunk that carries the answer, counted 0-based over the accepted view"
+        }
+      ]
+    }
+  ]
+}

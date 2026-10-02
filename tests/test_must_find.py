@@ -140,6 +140,121 @@ def test_two_label_sets_with_one_name_are_an_error(tmp_path):
         iter_must_find(directory)
 
 
+def _query_set() -> dict:
+    """A query set valid for :func:`wordextract.evals.retrieval.iter_query_sets`."""
+    return {
+        "query_set": "example",
+        "labels_provenance": "human",
+        "term_list": "terms/synthetic.json",
+        "examples": [
+            {
+                "query": "what is the deductible?",
+                "expected_citations": [{"document": "program_review_v3.docx"}],
+            }
+        ],
+    }
+
+
+def _gradeset() -> dict:
+    """A grades file valid for :func:`wordextract.evals.l3.iter_grades`."""
+    return {
+        "gradeset": "example",
+        "labels_provenance": "human",
+        "rubric": {
+            "criteria": [
+                {
+                    "id": "faithful",
+                    "question": "Is every claim in the chunk supported by the document?",
+                    "grades": ["yes", "no"],
+                }
+            ]
+        },
+        "grades": [
+            {
+                "document": "program_review_v3.docx",
+                "chunk_id": "c0",
+                "prompt_hash": "sha256:deadbeef",
+                "model": "canned",
+                "criteria": {"faithful": "yes"},
+            }
+        ],
+    }
+
+
+def test_the_files_the_other_eval_loaders_own_are_not_parsed_as_labels(tmp_path):
+    """``queries*.json`` and ``l3_grades*.json`` sit in the same ``fixtures/evals``
+    directory as a label set, and must-find globs ``*.json`` there. It must leave them
+    alone: both are valid for the loaders that own them, and parsing either as labels
+    fails on keys labels do not have -- crashing the whole eval run on a directory that
+    is perfectly valid for every loader in it.
+    """
+    from wordextract.evals import l3, retrieval
+
+    directory = tmp_path / "evals"
+    directory.mkdir()
+    (directory / "labels.json").write_text(
+        json.dumps(
+            {
+                "label_set": "program-review",
+                "labels_provenance": "human",
+                "term_list": "terms/synthetic.json",
+                "documents": {"program_review_v3.docx": _document(IN_THE_DOCUMENT)},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (directory / "queries.json").write_text(json.dumps(_query_set()), encoding="utf-8")
+    (directory / "l3_grades.json").write_text(json.dumps(_gradeset()), encoding="utf-8")
+
+    # each file is valid for the loader whose glob claims it ...
+    assert set(retrieval.iter_query_sets(directory)) == {"example"}
+    assert set(l3.iter_grades(directory)) == {"example"}
+    # ... and must-find scores only its own label set
+    assert set(iter_must_find(directory)) == {"program-review"}
+
+
+def test_other_loaders_tracks_the_globs_the_other_two_loaders_use():
+    """The skip list is the other loaders' filename prefixes; if a glob changes, this
+    fails rather than must-find silently parsing the renamed file as labels."""
+    from wordextract.evals import l3, retrieval
+
+    for glob in (retrieval.QUERY_GLOB, l3.GRADE_GLOB):
+        assert glob.startswith(must_find.OTHER_LOADERS)
+
+
+def test_evaluate_l2_scores_with_a_query_set_and_grades_in_the_same_directory(tmp_path):
+    """End to end for the collision: a fixtures directory holding a human label set plus
+    the other two loaders' files scores L2 normally instead of crashing on the scan.
+    """
+    fixtures = _case(
+        tmp_path,
+        {
+            "label_set": "program-review",
+            "labels_provenance": "human",
+            "term_list": "terms/synthetic.json",
+            "documents": {
+                "program_review_v3.docx": _document(
+                    IN_THE_DOCUMENT,
+                    expected_extra=[
+                        ("additional insured", "true_positive"),
+                        ("subrogation", "stem_match"),
+                    ],
+                )
+            },
+        },
+    )
+    (fixtures / "evals" / "queries.json").write_text(json.dumps(_query_set()), encoding="utf-8")
+    (fixtures / "evals" / "l3_grades.json").write_text(json.dumps(_gradeset()), encoding="utf-8")
+
+    report = harness.evaluate_l2(fixtures)
+    assert report is not None
+    (row,) = report.rows
+    assert row.document == "program_review_v3.docx"
+    assert row.found == row.must_find == 1
+    assert row.missed == () and row.unclassified == ()
+    assert report.result is True
+
+
 # ---------------------------------------------------------------- the scorer
 
 

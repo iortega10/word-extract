@@ -34,13 +34,15 @@ def test_metrics_table_shape_and_gates():
         "labels",
     }
     layers = {layer["layer"]: layer for layer in table["quality"]}
-    assert set(layers) == {"L1", "L2", "L3"}
+    assert set(layers) == {"L1", "L2", "L3", "retrieval"}
 
     assert layers["L1"]["gated"] is True
     assert layers["L1"]["gate"] == {"metric": "exact_fact_accuracy", "op": "==", "value": 1.0}
     assert layers["L2"]["gated"] is True
     assert layers["L2"]["gate"] == {"metric": "recall", "op": "==", "value": 1.0}
     assert layers["L3"]["gated"] is False and layers["L3"]["gate"] is None
+    assert layers["retrieval"]["gated"] is True
+    assert layers["retrieval"]["gate"] == {"metric": "citation_recall", "op": "==", "value": 1.0}
 
     for layer in table["quality"]:
         assert layer["rows"] == [] and layer["n"] == 0 and layer["result"] is None
@@ -120,6 +122,19 @@ def test_the_cli_exits_non_zero_on_a_fixtures_path_that_does_not_exist(tmp_path,
     assert "gated layers failed: L1" in capsys.readouterr().err
 
 
+def test_the_cli_help_states_how_l2_finds_its_label_files(capsys):
+    """There is no flag that names a label file: ``--help`` is where the operator learns
+    the one selection rule and that no label file exists until a human adds one."""
+    from wordextract.evals.__main__ import main
+
+    with pytest.raises(SystemExit) as exit:
+        main(["--help"])
+    assert exit.value.code == 0
+    out = capsys.readouterr().out
+    assert "example.json" in out and "queries" in out and "l3_grades" in out
+    assert "open-inputs section 3" in out
+
+
 def test_run_scores_l1_green_and_leaves_l2_not_evaluated():
     table = run(FIXTURES)
     # every committed sidecar, root and fixtures/model alike, is counted
@@ -134,6 +149,12 @@ def test_run_scores_l1_green_and_leaves_l2_not_evaluated():
     assert layers["L2"]["metrics"] == {}
     assert layers["L2"]["note"].startswith("not evaluated")
     assert layers["L3"]["result"] is None
+    # L3 sampled the canned pass but no human graded it: reported with metrics, never gated
+    assert layers["L3"]["note"].startswith("not graded")
+    assert layers["L3"]["metrics"]["graded"] == 0 and layers["L3"]["metrics"]["samples"] > 0
+    # retrieval has no human query set, so it measured nothing and gates nothing
+    assert layers["retrieval"]["result"] is None
+    assert "no human query set" in layers["retrieval"]["note"]
     assert gate_failures(table) == []
 
     # the roster is populated, and every path on it is False until a Word doc lands
@@ -142,6 +163,29 @@ def test_run_scores_l1_green_and_leaves_l2_not_evaluated():
     assert (cov["verified_paths"], cov["coverage"]) == (0, 0.0)
     # the real fixtures need a producer doc that does not exist yet
     assert cov["documents"] == 0
+
+
+def test_run_reports_cost_per_document_and_the_pair_cache_row():
+    """The cost section reports the canned pass: real calls and hits, never dollars."""
+    table = run(FIXTURES)
+    cost = table["cost"]
+    assert cost["gated"] is False  # reported beside quality, never folded into a gate
+    documents = {row["document"] for row in cost["rows"]}
+    assert {"program_review_v2.docx", "program_review_v3.docx"} <= documents
+    # no price table, and the canned client reports no token counts
+    assert all(row["cost_usd"] is None for row in cost["rows"])
+    assert cost["metrics"]["cost_usd"] is None
+    assert cost["metrics"]["tokens"] is None
+    assert cost["metrics"]["calls"] > 0
+    assert "cost_usd stays None without a price table" in cost["note"]
+    # the v2/v3 row: a cold store re-summarized exactly the sidecar's changed chunks
+    cache = cost["cache"]
+    assert list(cache["pair"]) == ["program_review_v2.docx", "program_review_v3.docx"]
+    assert cache["matches_sidecar"] is True
+    assert set(cache["changed_chunks"]) == {0, 2}
+    assert set(cache["called_chunks"]) == {0, 2}
+    assert cache["hit_rate"] > 0
+    assert "exactly the sidecar's changed chunks re-summarized" in cache["note"]
 
 
 def test_run_is_json_serializable_and_l1_is_per_family():
@@ -311,7 +355,7 @@ def test_cli_emits_the_metrics_table_as_pure_stdout_json():
     assert proc.returncode == 0, proc.stderr
     # strict: json.loads rejects a trailing diagnostic line, so this is the purity check
     table = json.loads(proc.stdout)
-    assert [layer["layer"] for layer in table["quality"]] == ["L1", "L2", "L3"]
+    assert [layer["layer"] for layer in table["quality"]] == ["L1", "L2", "L3", "retrieval"]
     assert table["quality"][0]["result"] is True
     assert table["labels"]["spec"] == 25
     # the "L2 was not evaluated" diagnostic is stderr's, never stdout's
@@ -376,6 +420,21 @@ def test_the_producer_verified_roster_is_fixed_and_all_false_without_a_word_doc(
     assert set(harness.STAGE_PATHS) <= set(names)
     assert {f"open-inputs#2: {name}" for name in harness.UNVERIFIED_CONSTRUCTS} <= set(names)
     assert {f"gap: {gap}" for gap in harness._walker_gaps().values()} <= set(names)
+
+
+def test_every_stage_path_exists_and_the_phase2_modules_are_named():
+    """A roster entry naming no file on disk could never be verified by mistake, and the
+    Phase 2 modules stay on the list until a Word-produced document exercises them."""
+    for path in harness.STAGE_PATHS:
+        assert path.startswith("wordextract/")
+        assert (ROOT / path).exists(), path
+    assert {
+        "wordextract/summarize.py",
+        "wordextract/pending.py",
+        "wordextract/rank.py",
+        "wordextract/query.py",
+        "wordextract/mcp/",
+    } <= set(harness.STAGE_PATHS)
 
 
 def test_naming_a_path_outside_the_roster_is_an_error():

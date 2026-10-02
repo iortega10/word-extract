@@ -3,6 +3,13 @@
 The table is **all** stdout carries, so ``python -m wordextract.evals | jq`` works and the
 output is a fixture. Every diagnostic -- a gated layer that was not evaluated, why the exit
 code is what it is -- goes to stderr.
+
+L2 needs must-find labels, which only a human can supply (open-inputs section 3). The
+``--fixtures`` directory is scanned for them as ``*.json`` minus the files other loaders own
+(``queries*.json``, ``l3_grades*.json``) and minus ``*.example.json`` (the format's
+documentation, built from invented phrases). Those three names are the whole selection
+rule, and it lives in exactly one place (``must_find.iter_must_find``) -- there is no
+``--must-find-file`` override that could drift from it.
 """
 from __future__ import annotations
 
@@ -17,7 +24,13 @@ from .harness import gate_failures, run
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m wordextract.evals",
-        description="Emit the Phase 1 eval metrics table: L1 (parse), L2 (must-find), L3.",
+        description=(
+            "Emit the eval metrics table: L1 (parse), L2 (must-find), L3, retrieval. "
+            "L2 loads every *.json under --fixtures except *.example.json and the files "
+            "the other eval loaders own (queries*.json, l3_grades*.json); no label file "
+            "exists until a human adds one (open-inputs section 3), so L2 usually reports "
+            "'not evaluated'."
+        ),
     )
     parser.add_argument("--fixtures", default="fixtures", help="fixtures directory (default: fixtures)")
     parser.add_argument("--out", default=None, help="write JSON here instead of stdout")

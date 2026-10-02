@@ -57,6 +57,11 @@ import json
 MUST_FIND_SUFFIX = ".json"
 EXAMPLE_SUFFIX = ".example.json"
 
+#: Files other eval loaders own (``queries*.json``, ``l3_grades*.json``): must-find globs
+#: ``*.json`` broadly, so it leaves their files alone rather than parsing a query set as
+#: labels and failing on a key it does not know.
+OTHER_LOADERS = ("queries", "l3_grades")
+
 #: The only provenance the must-find list may carry (open-inputs section 3).
 HUMAN = "human"
 
@@ -332,12 +337,15 @@ def iter_must_find(directory: str | Path) -> dict[str, MustFindSet]:
 
     ``*.example.json`` is the format's documentation and is skipped by name: it carries
     invented phrases (a must-find list may only come from a real document), so scoring it
-    would put a number on something no human ever labelled.
+    would put a number on something no human ever labelled. The files other eval loaders
+    own (:data:`OTHER_LOADERS` -- a query set, an L3 grades file) are skipped for the same
+    reason in kind: they are not label sets, and parsing one as labels would fail on keys
+    must-find does not know.
     """
     directory = Path(directory)
     found: dict[str, MustFindSet] = {}
     for path in sorted(directory.glob(f"*{MUST_FIND_SUFFIX}")):
-        if path.name.endswith(EXAMPLE_SUFFIX):
+        if path.name.endswith(EXAMPLE_SUFFIX) or path.name.startswith(OTHER_LOADERS):
             continue
         labels = load_must_find(path)
         if labels.label_set in found:

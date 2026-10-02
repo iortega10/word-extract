@@ -11,19 +11,15 @@ what it says, in any setting with messy documents where a missed clause or a wro
 is a real failure (contracts, policies, reviews, audits, regulated work) or where you need to get
 a document to an LLM cleanly.
 
-> **Status.** Phase 1 (the deterministic parse, structure, term matching, store and evals) is
-> built and validated. It closed **conditionally**: the term matcher is tested only against a
-> synthetic registry, and nothing is yet checked against a Word-saved document (see
-> [Open inputs](#open-inputs)). Phase 2 (summaries, search, an MCP server) is specified in
-> `docs/design/phase2-build-spec.md`; its Turn 0 helpers (read-only store, chunk text and
-> revision-markup rendering, document catalog) Turn 1 (per-chunk summaries cached on the
-> rendered input, `python -m wordextract summarize`) Turn 2 (`pending_changes`: the
-> revisions each chunk carries, derived from the parse and never from model text) and Turn 3
-> (retrieval and ranking: term, text and summary tiers in a fixed order) Turn 4 (section and
-> document roll-ups built from child summaries, non-authoritative) and Turn 5 (the query API:
-> eight read-only functions that return cited results) and Turn 6 (the MCP server:
-> `python -m wordextract serve` — those functions as read-only tools on stdio) are built.
-> Nothing in Phase 1 calls an LLM.
+> **Status.** Phase 1 (the deterministic parse, structure, term matching, store and evals) and
+> Phase 2 (per-chunk summaries cached on the rendered input, `pending_changes`, ranked
+> retrieval, section and document roll-ups, a read-only query API, an MCP server and the
+> eval tooling) are built and validated. Both closed **conditionally**: the term matcher and
+> ranking are tested only against a synthetic registry, no real summarizer model has been
+> wired or graded, retrieval has no human-labelled query set, and nothing is yet checked
+> against a Word-saved document (see [Open inputs](#open-inputs) and
+> `docs/design/phase2-gaps.md`). Phase 1 calls no LLM; the summarizer takes any client you
+> name on the command line.
 
 ## What it does
 

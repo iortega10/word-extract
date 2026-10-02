@@ -1,0 +1,42 @@
+{
+  "_comment": [
+    "FORMAT DOCUMENTATION ONLY -- this file is never scored.",
+    "l3.iter_grades skips every '*.example.json': L3 grades are written by a human reading a",
+    "summary next to its chunk (a model grading a model is the circularity L3 exists to see",
+    "through; docs/design/open-inputs.md section 3). Copy this file to",
+    "fixtures/evals/<your-grades>.json and replace every placeholder.",
+    "prompt_hash and model must be the values the store's summary record carries for that",
+    "chunk: a grade under another prompt or model is reported stale and must be regraded.",
+    "A grade for a chunk the sample did not select is reported unmatched and waits.",
+    "L3 is reported, never gated (docs/design/phase2-build-spec.md Turn 7)."
+  ],
+  "gradeset": "l3_grades.example",
+  "labels_provenance": "human",
+  "rubric": {
+    "criteria": [
+      {
+        "id": "faithful",
+        "question": "Is every claim in the summary supported by its chunk's text?",
+        "grades": ["yes", "partial", "no"]
+      },
+      {
+        "id": "complete",
+        "question": "Does the summary keep what a reader of the chunk would need?",
+        "grades": ["yes", "no"]
+      }
+    ]
+  },
+  "grades": [
+    {
+      "document": "the-top-level-fixture-you-summarised.docx",
+      "chunk_id": "the chunk id the store's summary record carries, e.g. c0",
+      "prompt_hash": "the summary record's prompt_hash, e.g. sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "model": "the summary record's model id, e.g. canned",
+      "criteria": {
+        "faithful": "yes",
+        "complete": "yes"
+      },
+      "note": "what you checked to decide, so a reader can follow the grade"
+    }
+  ]
+}

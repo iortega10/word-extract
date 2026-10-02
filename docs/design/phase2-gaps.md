@@ -91,6 +91,24 @@ those still apply and are not repeated here.
 - **Retrieval and summary faithfulness are unscored** until the user supplies a real query
   set with expected citations and human grades (`open-inputs.md`, the "Blocked on the user"
   list in `phase2-build-spec.md`). L3 is reported, never gated.
+- **The example files document the formats and never score.** `queries.example.json` and
+  `l3_grades.example.json` are skipped by name (`*.example.json`, the rule
+  `must_find.example.json` set), and a non-human `labels_provenance` is refused outright;
+  with only the examples present, retrieval reports *not evaluated* and L3 *not graded*.
+- **The cost section reports calls, not dollars.** `cost_usd` is always None (no price
+  table; pricing is a number only the owner can supply), and `tokens` appears only when the
+  client reports them — the canned one does not, so a row's token count is None rather than
+  0. The v2/v3 cache row reports `matches_sidecar: None` on a warm store: what *would* have
+  re-summarized is not observable there, so the sidecar claim goes unevaluated rather than
+  half-proven.
+- **L3's sample is the pass that ran.** The pool is the fixture summaries in document order
+  (today, the canned client's), graded against that pass's `prompt_hash` and `model`;
+  wiring a real provider changes both, and every grade goes stale until it is regraded under
+  the new pass. A grade never transfers across that change.
+- **Retrieval citations are accepted-view addresses.** A citation's `chunk` is the 0-based
+  ordinal over the accepted view's chunk list; a query set written against another view
+  cannot address chunks (it can still cite a document with `chunk` omitted), mirroring
+  `get_chunk`'s one-view rule above.
 - **Nothing is verified against a Word-saved document** (carried from Phase 1).
 - **Real term lists are unavailable**, so ranking has been exercised only against the
   synthetic registry.
