@@ -21,7 +21,9 @@ a document to an LLM cleanly.
 > revisions each chunk carries, derived from the parse and never from model text) and Turn 3
 > (retrieval and ranking: term, text and summary tiers in a fixed order) Turn 4 (section and
 > document roll-ups built from child summaries, non-authoritative) and Turn 5 (the query API:
-> eight read-only functions that return cited results) are built. Nothing in Phase 1 calls an LLM.
+> eight read-only functions that return cited results) and Turn 6 (the MCP server:
+> `python -m wordextract serve` — those functions as read-only tools on stdio) are built.
+> Nothing in Phase 1 calls an LLM.
 
 ## What it does
 
@@ -122,6 +124,18 @@ hits = match_document(compile_registry(registry), parsed)          # term hits, 
 To run the whole stored pipeline from code, use `wordextract.pipeline.run(...)`, then
 `stored_parse(...)` and `stored_hits(...)` to read the artifacts back from the store.
 
+### 4. The MCP server
+
+```bash
+pip install -e ".[mcp]"                            # the optional extra
+python -m wordextract serve --store .wordextract   # or: python -m wordextract.mcp
+```
+
+The eight query functions as **read-only MCP tools** on stdio, for an MCP client to call.
+Every answer is JSON carrying its citations (document, address, union spans, view) and the
+views it read; nothing ingests or summarizes. The extra is optional: without it, or against
+a store that will not open read-only, the command exits `2` with the reason on stderr.
+
 ### Reading a result
 
 - A **`TermHit`** carries the group, `match_type`, the `present_in` views, `spans` (union
@@ -149,7 +163,8 @@ wordextract/
   stem.py       vendored Porter stemmer (pinned, tested against an independent one)
   store.py      content-addressed store, run record, idempotent ingest
   pipeline.py   one way into a run (the CLI and the evals use it)
-  cli.py        `python -m wordextract ingest|hits`
+  cli.py        `python -m wordextract ingest|hits|summarize|serve`
+  mcp/          the MCP server: eight read-only tools over the query API (optional extra)
   evals/        L1 exact oracle, L2 must-find scoring, the metrics table
   versions.py   every version constant a store key trusts
   model.py      the frozen record contracts

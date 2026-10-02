@@ -28,6 +28,9 @@ wordextract = "wordextract.cli:main"
 # python-docx authors the synthetic fixtures (tools/make_fixtures.py); the library itself
 # never imports it (design D1: python-docx drops tracked-change text).
 dev = ["pytest>=8", "python-docx>=1.2"]
+# The MCP framework behind `python -m wordextract serve` (Phase 2, Turn 6): optional so the
+# library, CLI and tests run without it -- only wordextract/mcp/ imports it.
+mcp = ["mcp>=1.10,<2"]
 
 [tool.setuptools.packages.find]
 include = ["wordextract*"]

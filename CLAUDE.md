@@ -69,7 +69,13 @@ Outside pytest the packages must be importable: either `pip install -e` as above
   function on the fixtures, the v2/v3 pair and the machine-local
   `local-private/review_sample.docx` (skips when absent), asserting the tri-state
   roll-ups, the comment/revision unknowns, read-only byte/mtime invariance and
-  determinism; full suite green, ledger check green). Turn 6 (MCP tools) is next.
+  determinism; full suite green, ledger check green). **Turn 6 is done and validated** (MCP
+  tools: the `wordextract.mcp` package — `Settings` (pure), `Backend` (read-only store),
+  the eight tools registered over `query.py` with descriptions naming views and citations,
+  `create_mcp`/`serve`, the `serve` CLI command and `python -m wordextract.mcp`, `mcp` as an
+  optional extra with the quarantine and exit-2 tests, and `tests/test_mcp.py` over the
+  v2/v3 pair including a raw-stdio protocol test against a spawned server; full suite green,
+  ledger check green). Turn 7 next per `docs/design/phase2-build-spec.md`.
   No real provider is wired: a client is named on the
   command line and configured outside the repo.
 

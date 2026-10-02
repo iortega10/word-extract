@@ -26,6 +26,11 @@ Stemmer test vectors
 Runtime dependencies (installed separately, not bundled)
   lxml (BSD-3-Clause), https://lxml.de/
 
+Optional dependencies (installed separately, not bundled)
+  mcp (MIT), https://github.com/modelcontextprotocol/python-sdk -- the MCP framework the
+  `wordextract.mcp` server registers its read-only tools with. Installed only when the
+  `mcp` extra is requested; no other module of this repository imports it.
+
 Development dependencies (installed separately, not bundled)
   pytest (MIT), python-docx (MIT)
 
