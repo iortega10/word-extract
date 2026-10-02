@@ -73,6 +73,7 @@ import platform
 import uuid
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from typing import Any, TypeVar
 
 from docextract_core import (
     CORE_VERSION,
@@ -95,6 +96,8 @@ from .model import (
     HitsArtifact,
     ParseArtifact,
     ParseResult,
+    RollupArtifact,
+    RollupRejection,
     RunRecord,
     SummaryArtifact,
     SummaryRejection,
@@ -113,6 +116,7 @@ from .versions import (
     HEADING_RULESET_VERSION,
     MATCHER_VERSION,
     OUTPUT_SCHEMA_VERSION,
+    ROLLUP_VERSION,
     SPEC_PARSER_VERSION,
     SUMMARIZER_VERSION,
     TEXTMODEL_VERSION,
@@ -133,7 +137,7 @@ _BODY_PREFIX = "officeDocument:"
 _RAW_INDEX = ("raw", "index.json")
 
 
-def _key(kind: str, inputs: dict[str, str]) -> str:
+def _key(kind: str, inputs: dict[str, Any]) -> str:
     """An artifact key: canonical JSON over its kind and the hashed inputs it reads.
 
     The kind is part of the hashed object so that two artifacts whose input subsets
@@ -233,6 +237,65 @@ def summary_key(
             "model_id": model_id,
             "model_params_hash": model_params_hash,
             "prompt_hash": prompt_hash,
+            "output_schema_version": output_schema_version,
+        },
+    )
+
+
+#: A roll-up's maximum fan-in: how many children's summaries one roll-up call reads, and the
+#: batch size the levels above a full group are grouped with. It is a key member
+#: (``rollup_key`` hashes it) because it decides both what one call reads and what keys the
+#: intermediate levels are stored under; raise it and every affected family re-synthesizes.
+ROLLUP_FAN_IN = 8
+
+_T = TypeVar("_T")
+
+
+def rollup_batches(items: list[_T]) -> list[list[_T]]:
+    """Split ``items`` into consecutive batches of at most ``ROLLUP_FAN_IN``, last one short.
+
+    Grouping lives next to the key rather than in the summarizer because grouping *is* part
+    of the key: a group's batches become the children of the intermediate roll-ups above it,
+    so the batch boundaries decide what keys exist. ``ROLLUP_FAN_IN`` is read from this
+    module's globals at call time (the same way ``summary_key`` reads
+    :data:`SUMMARY_VIEW_ID`), so changing it moves every affected roll-up key without a
+    signature change.
+    """
+    return [items[i : i + ROLLUP_FAN_IN] for i in range(0, len(items), ROLLUP_FAN_IN)]
+
+
+def rollup_key(
+    child_keys: list[str],
+    *,
+    model_id: str,
+    model_params_hash: str,
+    prompt_hash: str,
+    rollup_version: str = ROLLUP_VERSION,
+    fan_in: int | None = None,
+    output_schema_version: str = OUTPUT_SCHEMA_VERSION,
+) -> str:
+    """A roll-up's key: the children it rolls up, in order, plus the prompt and what read them.
+
+    **Canonical equivalence** (Phase 2, Turn 4): nothing about the *target* is a member -- no
+    section id, no heading text, no document hash. The key is the ordered list of the
+    children's summary keys, so a roll-up over the same children on a v2/v3 pair shares one
+    key and one stored record, while a rename, a re-cut or a re-ordered child changes the
+    list and the key follows. Re-summarizing one chunk re-keys it, which re-keys exactly the
+    roll-up family above it -- every other section's roll-up still hits.
+
+    ``fan_in`` is a member because it decides the grouping of every level above the first
+    (see :func:`rollup_batches`), and ``rollup_version`` is the derivation's own version:
+    anything that derives a roll-up differently must move the version, and every key with it.
+    """
+    return _key(
+        "rollup",
+        {
+            "child_keys": list(child_keys),
+            "rollup_version": rollup_version,
+            "model_id": model_id,
+            "model_params_hash": model_params_hash,
+            "prompt_hash": prompt_hash,
+            "fan_in": ROLLUP_FAN_IN if fan_in is None else fan_in,
             "output_schema_version": output_schema_version,
         },
     )
@@ -359,6 +422,8 @@ class Store:
         terms/    <term_list_hash>.json + index.json
         summaries/ <key>.json + index.json         one per chunk (Phase 2, Turn 1)
         rejections/ <key>.json + index.json        the summary key's failures (same key space)
+        rollups/   <key>.json + index.json         one per section/document target (Turn 4)
+        rollup_rejections/ <key>.json + index.json the roll-up key's failures (same key space)
         runs/     <run_id>.json                   the log; no index, no key
 
     The term lists sit inside the store rather than beside it because the offline
@@ -369,13 +434,17 @@ class Store:
     exists under a key, so "was this chunk summarized by this call?" is one lookup, and the
     rejection is what a reviewer reads when the answer is no. Which of the two is present is
     decided by :func:`~wordextract.summarize.summarize`, not enforced here -- a store holds
-    files, and the invariant lives where the files are written.
+    files, and the invariant lives where the files are written. ``rollups`` and
+    ``rollup_rejections`` pair the same way over the roll-up key space (Turn 4).
 
     ``read_only=True`` (Turn 0a) is the mode a query layer opens a store in: nothing is
     created and nothing is written -- every collection raises
-    :class:`~docextract_core.ReadOnlyError` when asked. Every directory therefore has to
-    exist already, so a typo in a store path fails at open rather than reading as an empty
-    store, and an open never creates a directory that merely opening asked for.
+    :class:`~docextract_core.ReadOnlyError` when asked. Every directory the store was
+    validated with therefore has to exist already, so a typo in a store path fails at open
+    rather than reading as an empty store, and an open never creates a directory that merely
+    opening asked for. The two Turn 4 collections are the one known exception: they are new,
+    a pre-rollup store does not have them, and "no roll-ups yet" is an empty read, not a
+    broken store -- so they are opened with ``allow_missing=True`` and nothing else is.
     """
 
     def __init__(self, root: str | Path, *, read_only: bool = False) -> None:
@@ -404,6 +473,22 @@ class Store:
             id_of=_keyed,
             key_of=_keyed,
             read_only=read_only,
+        )
+        self.rollups = Collection(
+            self.root / "rollups",
+            RollupArtifact,
+            id_of=_keyed,
+            key_of=_keyed,
+            read_only=read_only,
+            allow_missing=True,
+        )
+        self.rollup_rejections = Collection(
+            self.root / "rollup_rejections",
+            RollupRejection,
+            id_of=_keyed,
+            key_of=_keyed,
+            read_only=read_only,
+            allow_missing=True,
         )
         self.runs = Collection(
             self.root / "runs", RunRecord, id_of=_run_id, read_only=read_only
@@ -520,6 +605,7 @@ def ingest(
 
 __all__ = [
     "ARTIFACT_KINDS",
+    "ROLLUP_FAN_IN",
     "SUMMARY_VIEW_ID",
     "Store",
     "artifact_keys",
@@ -531,5 +617,7 @@ __all__ = [
     "ingest",
     "parse_key",
     "recorded_inputs",
+    "rollup_batches",
+    "rollup_key",
     "summary_key",
 ]

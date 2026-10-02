@@ -7,7 +7,8 @@
   },
   "contracts": {
     "5": "71b8844454af7b5b03b165aa12e88798124470f0fa91a30c2d87afc19f9ca436",
-    "6": "044f153f0adf280d17ebbda273116de9fafba968e333e286d2b1acb0c7ed4dc6"
+    "6": "044f153f0adf280d17ebbda273116de9fafba968e333e286d2b1acb0c7ed4dc6",
+    "7": "6d81904a9ffdcb11fda9f6542dac968e5e26cd43d452e2d02a4ea28adeb8944f"
   },
   "matcher": {
     "5+porter-2|corpus:1": "541e81d99fd4381aa73d2c11f7ac01936c80818ebd92a77f1cde48a1210115ab",
@@ -36,6 +37,11 @@
     "2|corpus:1": "54caac6e416fffd527dcbf41250bcda3babd50ca2e3c9be687a06f6c6672b5ef",
     "2|corpus:2": "3fab58f085364b40bdfdd105c3d716e7e4f6cb3d7bd826fa26683543a3e92fd7",
     "2|corpus:3": "66f288e46fffed47cf4944120a5d82ba6784e9d5ee8c64efa924da0ccd06b661"
+  },
+  "rollup": {
+    "1|corpus:1": "4a3067d857f18bd42990ea41eb33b79fab1005271cd5c70d32b91a099955eed8",
+    "1|corpus:2": "9eff42fe6aa33b7013817c81f26023bae247ba09b9ad307f85fc9d8c0591fb86",
+    "1|corpus:3": "9d9c27bc92d85609f2f4513a8637bf5d3588dbc13f7174d13ff4eb71b73630c7"
   },
   "summary_key": {
     "1|corpus:1": "eb4f53f5776c30ed57bdb98e9739255a20ecff7ae6e9cbed0209a90ace48fc1a",

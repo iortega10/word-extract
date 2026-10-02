@@ -12,6 +12,7 @@ The state snapshot is ``tests/test_store.py``'s -- ``(bytes, mtime_ns)`` per fil
 """
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -121,3 +122,29 @@ def test_a_read_only_open_sees_every_document_and_run_the_store_has(tmp_path):
     assert read.load_run("second") == store.load_run("second")
     assert len(read.parse.list()) == len(store.parse.list()) == 2
     assert read.terms.list() == store.terms.list()
+
+
+def test_a_read_only_store_without_the_turn_4_directories_reads_empty_and_still_refuses_to_write(
+    tmp_path,
+):
+    """``rollups/`` and ``rollup_rejections/`` are new with Turn 4: a pre-rollup store does
+    not have them, and "no roll-ups yet" is an empty read, not a broken store -- so they are
+    the one known exception to the eager check (``allow_missing=True``). Everything else is
+    unchanged: the store still opens only because every collection it always had is there,
+    and the missing pair still refuses to be written through."""
+    store = _populated(tmp_path)
+    shutil.rmtree(store.root / "rollups")
+    shutil.rmtree(store.root / "rollup_rejections")
+
+    read = Store(store.root, read_only=True)
+    assert read.rollups.list() == [] and read.rollup_rejections.list() == []
+    assert read.run_ids() == store.run_ids()
+    assert read.parse.list() == store.parse.list()
+
+    with pytest.raises(ReadOnlyError, match="read-only"):
+        read.rollups.save(object())
+    with pytest.raises(ReadOnlyError, match="read-only"):
+        read.rollup_rejections.evict("a-key")
+    # the refused writes did not quietly create what was missing
+    assert not (store.root / "rollups").exists()
+    assert not (store.root / "rollup_rejections").exists()

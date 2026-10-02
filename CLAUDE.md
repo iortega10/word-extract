@@ -55,7 +55,14 @@ Outside pytest the packages must be importable: either `pip install -e` as above
   `rank.py`'s registry-resolved term tier, token containment over text and summaries, the fixed
   tiering with comment and move dedupe; D12 amended with the rule; `RANK_VERSION` plus the
   ledger's `rank` component over a fixed query set; the six spec tests in `tests/test_rank.py`).
-  Turn 4 (roll-up) is next. No real provider is wired: a client is named on the
+  **Turn 4 is done and validated** (roll-ups: `summarize.rollup_tree`/`_roll_tree` executed
+  bottom-up over the children's summary keys — one roll-up per section with content and one
+  for the document, fan-in grouping with stored intermediates, `RollupArtifact` /
+  `RollupRejection` behind the store's `rollups`/`rollup_rejections` pair (`allow_missing` on
+  read-only opens), schema 6→7, `ROLLUP_VERSION` plus the ledger's `rollup` component over
+  canned executions, the versioned `prompts/rollup.v1.md`, and `tests/test_rollups.py` plus
+  the ledger-sensitivity and read-only additions; full suite green). Turn 5 (search) is
+  next. No real provider is wired: a client is named on the
   command line and configured outside the repo.
 
 ## Rules that are easy to break (each was a real defect once)

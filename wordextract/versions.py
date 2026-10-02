@@ -41,6 +41,13 @@ PENDING_VERSION = "1"
 #: member: nothing is stored under it, and a summary's key is taken over the rendered
 #: bytes, which ranking never touches.
 RANK_VERSION = "1"
+#: The roll-up derivation's version and its **key** membership (Phase 2, Turn 4): the fan-in,
+#: the grouping, the rendering of a parent's input from its children, and the tri-state union
+#: that becomes ``has_pending``. Unlike ``PENDING_VERSION``/``RANK_VERSION`` this one is a
+#: key member -- ``store.rollup_key`` hashes it -- because a roll-up is stored under a key
+#: this derivation computes, so changing the derivation must change every roll-up key above
+#: the change. Bump it whenever a roll-up's inputs, grouping or flags are derived differently.
+ROLLUP_VERSION = "1"
 
 
 @dataclass(frozen=True)

@@ -39,6 +39,13 @@ committed ``.docx`` under ``fixtures/``, the synthetic registry, default chunker
   query set run through ``wordextract.rank.rank`` with the synthetic registry and canned
   (literal, never modeled) summaries, so resolution, tiering, dedupe and ordering are all
   under one fingerprint.
+* **rollup**, ``ROLLUP_VERSION``: Turn 4's roll-up machinery over each fixture -- the
+  section tree from ``wordextract.summarize.rollup_tree``, every canned roll-up executed
+  bottom-up through ``_roll_tree`` (fan-in grouping included: ``ROLLUP_FAN_IN`` is also a
+  key member), each record's real ``rollup_key`` over probe literals and the three
+  derivations ``_rollup_fields`` computes. No call, no provider, no prompt file read --
+  the children are the canned summaries, whose ``has_pending`` probe cycles True/None/False
+  so the tri-state union's branches are all under the fingerprint.
 
 :func:`check` is the test's half (it reports every disagreement) and :func:`record` is
 :mod:`update_behavior_ledger`'s (it appends, and refuses to overwrite). The ledger starts
@@ -81,7 +88,7 @@ from wordextract.rank import (  # noqa: E402
     SummaryRef,
     rank as rank_results,
 )
-from wordextract.store import body_part_id, summary_key  # noqa: E402
+from wordextract.store import body_part_id, rollup_key, summary_key  # noqa: E402
 from wordextract.chunker import ChunkParams  # noqa: E402
 from wordextract.model import TermGroup  # noqa: E402
 from wordextract.terms import (  # noqa: E402
@@ -106,6 +113,7 @@ COMPONENTS = (
     "summary_key",
     "pending",
     "rank",
+    "rollup",
 )
 
 #: Which constant a component's version string is built from -- what to bump. The
@@ -121,6 +129,7 @@ VERSION_CONSTANTS = {
     "summary_key": "SUMMARIZER_VERSION (or OUTPUT_SCHEMA_VERSION)",
     "pending": "PENDING_VERSION",
     "rank": "RANK_VERSION",
+    "rollup": "ROLLUP_VERSION",
 }
 
 #: The corpus. ``fixtures/real`` is machine-local (see the module docstring), so it is
@@ -174,7 +183,7 @@ CORPUS_PATH = _ROOT / "tests" / "ledger" / "corpus.json"
 
 #: The components whose fingerprint is over the corpus. ``contracts`` is over the record
 #: definitions alone, so it is keyed by the schema version and nothing else.
-CORPUS_DEPENDENT = ("parse", "views", "chunks", "matcher", "render", "summary_key", "pending", "rank")
+CORPUS_DEPENDENT = ("parse", "views", "chunks", "matcher", "render", "summary_key", "pending", "rank", "rollup")
 
 _CORPUS_HEADER = (
     "The ledger's fixture corpora, oldest first: each version lists the fixtures (paths "
@@ -244,6 +253,7 @@ def version_strings() -> dict[str, str]:
         "summary_key": versions.SUMMARIZER_VERSION,
         "pending": versions.PENDING_VERSION,
         "rank": versions.RANK_VERSION,
+        "rollup": versions.ROLLUP_VERSION,
     }
 
 
@@ -359,6 +369,90 @@ def _canned_summary(built) -> SummaryRef:
     )
 
 
+def _canned_rollup(name: str, parsed, chunks) -> dict[str, Any]:
+    """One fixture's roll-up fingerprint: its tree plus every canned roll-up over it.
+
+    No call, no provider, no prompt file: each execution derives a real
+    :class:`wordextract.model.RollupArtifact` under a real :func:`wordextract.store.rollup_key`
+    over probe literals -- ``PROBE_SUMMARY_INPUTS``'s three names are rollup_key's three, so
+    the key's construction is measured while the committed fingerprint stays independent of
+    the working tree's prompt content, exactly as ``summary_key``'s is. What moves this
+    fingerprint is the machinery: ``summarize.rollup_tree``'s structure, the bottom-up walk
+    and fan-in grouping of ``summarize._roll_tree`` (``ROLLUP_FAN_IN`` is itself a key
+    member, so a changed fan-in re-keys every roll-up even where no fixture exceeds one
+    batch), and ``summarize._rollup_fields``' three derivations, recorded per execution.
+
+    The children are the canned summaries, and their ``has_pending`` probe cycles
+    True/None/False by chunk position so the tri-state union's three branches are all
+    exercised across the corpus. ``document_id`` is the fixture's own name: the canned
+    document unit's id appears in no key (by design), only in provenance.
+    """
+    built_by_id = {built.id: built for built in chunks}
+    canned = {chunk_id: _canned_summary(built) for chunk_id, built in built_by_id.items()}
+    pending_probe = (True, None, False)
+
+    def child_of_chunk(chunk_id: str):
+        built = built_by_id[chunk_id]
+        summary = canned[chunk_id]
+        return summarize._Child(
+            key=summary_key(
+                summarize.input_hash(rendering.render_union_markup(parsed, built)),
+                **PROBE_SUMMARY_INPUTS,
+            ),
+            label=f"chunk:{chunk_id}",
+            text=summary.text,
+            has_pending=pending_probe[list(built_by_id).index(chunk_id) % 3],
+            chunk_ids=(chunk_id,),
+        )
+
+    executions: list[dict[str, Any]] = []
+
+    def execute(children, target_kind: str, target_id: str):
+        fields = summarize._rollup_fields(children)
+        key = rollup_key([child.key for child in children], **PROBE_SUMMARY_INPUTS)
+        record = model.RollupArtifact(
+            key=key,
+            summary=f"Canned ledger roll-up of {target_kind}:{target_id}",
+            topics=["ledger", target_kind],
+            open_questions=[],
+            child_keys=fields["child_keys"],
+            child_chunk_ids=fields["child_chunk_ids"],
+            has_pending=fields["has_pending"],
+            target_kind=target_kind,
+            target_id=target_id,
+            document_id=name,
+            model_id=PROBE_SUMMARY_INPUTS["model_id"],
+            prompt_hash=PROBE_SUMMARY_INPUTS["prompt_hash"],
+            params_hash=PROBE_SUMMARY_INPUTS["model_params_hash"],
+            prompt_ref="",
+            response_ref="",
+        )
+        executions.append(
+            {
+                "target": f"{target_kind}:{target_id}",
+                "labels": [child.label for child in children],
+                "key": key,
+                **fields,
+            }
+        )
+        outcome = summarize.RollupOutcome(
+            target_kind=target_kind,
+            target_id=target_id,
+            key=key,
+            called=True,
+            rollup=record,
+            rejection=None,
+        )
+        return summarize._Rolled(
+            child=summarize._child_of(record), record=record, outcome=outcome
+        )
+
+    tree = summarize.rollup_tree(parsed, chunks, document_id=name)
+    if tree.children:
+        summarize._roll_tree(tree, child_of_chunk=child_of_chunk, execute=execute)
+    return {"document_id": name, "executions": executions}
+
+
 def _document_pieces(root: Path, name: str) -> dict[str, Any]:
     """Everything one fixture contributes to the corpus fingerprints, parsed once."""
     registry = _registry(root)
@@ -436,6 +530,7 @@ def _document_pieces(root: Path, name: str) -> dict[str, Any]:
                 for query in RANK_QUERIES
             ]
         ),
+        "rollup": _canned_rollup(name, parsed, default),
     }
 
 
@@ -466,6 +561,7 @@ def _assemble(pieces: Mapping[str, dict[str, Any]], names: list[str], root: Path
         "summary_key": sha256_json({n: pieces[n]["summary_key"] for n in names}),
         "pending": sha256_json({n: pieces[n]["pending"] for n in names}),
         "rank": sha256_json({n: pieces[n]["rank"] for n in names}),
+        "rollup": sha256_json({n: pieces[n]["rollup"] for n in names}),
     }
 
 

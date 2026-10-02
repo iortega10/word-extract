@@ -411,6 +411,66 @@ class SummaryRejection(Artifact):
 
 
 @dataclass(frozen=True)
+class RollupArtifact(Artifact):
+    """A section's or the document's roll-up of its children's summaries (Phase 2, Turn 4).
+
+    The roll-up is derived, never authoritative: it repeats what the chunk summaries it was
+    built from already say, so a reader can decide to read those instead. It is the one
+    artifact whose input *includes other summaries*, which is why ``child_keys`` repeats the
+    children's summary keys -- the roll-up key is computed over them, and the record carries
+    them so the family is checkable without recomputing the key.
+
+    ``child_chunk_ids`` is the flat list of every chunk rolled up (whole subtree, in document
+    order) and ``has_pending`` is the tri-state union of the children's flags -- computed
+    when this record is written, never model-written (Turn 2's tri-state rule, propagated).
+
+    Provenance is deliberately thin: no titles and no heading names. Feeding a heading the
+    model wrote prose about would make the summary depend on wording that is not in the
+    record, and a renamed heading renames no key; ``target_id`` is the heading's node id or
+    the document's content hash, which is what the render walks.
+    """
+
+    target_kind: str
+    target_id: str
+    document_id: str
+    summary: str
+    topics: list[str]
+    open_questions: list[str]
+    child_keys: list[str]
+    child_chunk_ids: list[str]
+    has_pending: bool | None
+    model_id: str
+    prompt_hash: str
+    params_hash: str
+    prompt_ref: str
+    response_ref: str
+    non_authoritative: bool = True
+    tokens: int | None = None
+
+
+@dataclass(frozen=True)
+class RollupRejection(Artifact):
+    """A roll-up answer that failed output validation: kept, never decoded into a summary.
+
+    Mirrors :class:`SummaryRejection` -- stored under the roll-up key it would have taken, so
+    a later valid answer supersedes it, and the run's report shows the rejection instead of a
+    silence. ``child_chunk_ids`` is kept even on the failure: the parent roll-up above this
+    one still has to list every chunk it rolled up, and a rejected child loses none of them.
+    """
+
+    target_kind: str
+    target_id: str
+    document_id: str
+    error: str
+    model_id: str
+    prompt_hash: str
+    params_hash: str
+    prompt_ref: str
+    response_ref: str
+    child_chunk_ids: list[str]
+
+
+@dataclass(frozen=True)
 class SummaryOutput:
     """What the summary prompt asks for, and what the strict codec validates the answer against.
 

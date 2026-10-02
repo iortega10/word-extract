@@ -10,6 +10,13 @@ accident: a query layer opens a store it did not build, so opening it must not
 create or touch anything. A read-only collection's directory has to be there
 already (that is what "this is a store" means) and every mutating method raises
 :class:`ReadOnlyError` instead of writing.
+
+``allow_missing`` relaxes exactly that one check, for a *known-new* collection
+inside a store that predates it: the store is real, this directory just does not
+exist yet, and an empty read is the honest answer (Phase 2, Turn 4 -- ``rollups/``
+in a pre-rollup store). It is consulted only when ``read_only`` is set, and never
+widened to the collections the store was originally validated by: a store opened
+read-only still refuses to open when a collection it always had is missing.
 """
 from __future__ import annotations
 
@@ -37,6 +44,7 @@ class Collection(Generic[T]):
         id_of: Callable[[T], str],
         key_of: Callable[[T], str] | None = None,
         read_only: bool = False,
+        allow_missing: bool = False,
     ) -> None:
         self.root = Path(root)
         self.cls = cls
@@ -44,7 +52,7 @@ class Collection(Generic[T]):
         self._key_of = key_of
         self.read_only = read_only
         if read_only:
-            if not self.root.is_dir():
+            if not self.root.is_dir() and not allow_missing:
                 raise ReadOnlyError(
                     f"read-only collection has no directory: {self.root} -- a read-only "
                     f"open never creates one"

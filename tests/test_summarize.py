@@ -114,14 +114,18 @@ def test_a_pass_summarizes_every_accepted_view_chunk_and_records_a_miss_for_each
 
 
 def test_the_pass_run_record_names_one_summary_artifact_per_chunk(tmp_path):
-    """``ARTIFACT_KINDS`` stays the five Phase 1 kinds; a summary is one entry per chunk."""
+    """``ARTIFACT_KINDS`` stays the five Phase 1 kinds; the pass adds one summary entry per
+    chunk and one ``rollup:`` entry per target -- the sections with content, then the
+    document (no fixture reaches the fan-in threshold, so here every roll-up is a target)."""
     root = tmp_path / "store"
     record = run(DOCUMENT, EXAMPLE_REGISTRY, store_root=root)
     result = _pass(root, record)
 
-    assert [a.artifact_id for a in result.record.artifact_cache] == [
-        f"summary:{outcome.chunk_id}" for outcome in result.outcomes
+    ids = [a.artifact_id for a in result.record.artifact_cache]
+    assert ids == [f"summary:{outcome.chunk_id}" for outcome in result.outcomes] + [
+        f"rollup:{outcome.target_id}" for outcome in result.rollups
     ]
+    assert result.rollups[-1].target_kind == "document"
     assert {a.status.value for a in result.record.artifact_cache} == {"miss"}
     # the pass's own hashed inputs name the call that produced the summaries
     assert result.record.hashed_inputs.model_id == MODEL
@@ -237,14 +241,21 @@ def test_flipping_a_key_member_changes_the_key(flip):
 
 
 def test_a_changed_parameter_re_summarizes_the_chunk(tmp_path):
-    """``model_params_hash`` reaches the key through the call's own parameters."""
+    """``model_params_hash`` reaches the key through the call's own parameters.
+
+    The roll-ups re-key too: their children's summary keys are members of theirs, so the
+    second pass pays for the chunks **and** for every roll-up over them.
+    """
     root = tmp_path / "store"
     record = run(DOCUMENT, EXAMPLE_REGISTRY, store_root=root)
     _pass(root, record, params={"temperature": 0, "max_tokens": 700})
 
     again = _client()
     result = _pass(root, record, client=again, params={"temperature": 0, "max_tokens": 400})
-    assert result.called == FIXTURE_CHUNKS and len(again.calls) == FIXTURE_CHUNKS
+    assert result.called == FIXTURE_CHUNKS
+    rollup_calls = [call for call in again.calls if call.prompt.startswith("# Roll up")]
+    assert len(rollup_calls) == len(result.rollups)
+    assert len(again.calls) == FIXTURE_CHUNKS + len(result.rollups)
 
 
 def test_the_view_id_is_the_rendering_its_own_and_not_a_documents_view(tmp_path):
@@ -537,8 +548,11 @@ def test_summarize_ingests_then_prints_the_pass_run_record(tmp_path, capsys):
     printed = capsys.readouterr()
     assert printed.err == ""
     record = from_json(RunRecord, printed.out)
-    assert [a.artifact_id.split(":")[0] for a in record.artifact_cache] == ["summary"] * FIXTURE_CHUNKS
+    prefixes = [a.artifact_id.split(":")[0] for a in record.artifact_cache]
+    assert prefixes == ["summary"] * FIXTURE_CHUNKS + ["rollup"] * (len(prefixes) - FIXTURE_CHUNKS)
+    assert len(prefixes) > FIXTURE_CHUNKS  # the roll-up targets are named too
     assert len(Store(store).summaries.list()) == FIXTURE_CHUNKS
+    assert len(Store(store).rollups.list()) == len(prefixes) - FIXTURE_CHUNKS
 
 
 def test_the_summarize_client_is_required_and_an_unknown_one_exits_two(tmp_path, capsys):

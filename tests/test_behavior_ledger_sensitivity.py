@@ -89,6 +89,23 @@ def test_a_key_member_change_without_a_bump_is_caught(monkeypatch):
     assert "summary_key" in _components(ledger.check())
 
 
+def test_a_rollup_fan_in_change_without_a_bump_is_caught(monkeypatch):
+    """``ROLLUP_FAN_IN`` is read at call time -- from ``store.rollup_batches`` and from
+    ``rollup_key`` alike -- and it is a key member: lowering it re-groups and re-keys the
+    canned roll-ups, so only the ledger's ``rollup`` fingerprint may move."""
+    monkeypatch.setattr(store, "ROLLUP_FAN_IN", 2)
+    assert "rollup" in _components(ledger.check())
+
+
+def test_a_rollup_derivation_change_without_a_bump_is_caught(monkeypatch):
+    """The three derivations are recorded per execution: a tri-state union that answers
+    ``False`` for everything the canned probe asked must disagree with the record."""
+    from wordextract import summarize as summarize_module
+
+    monkeypatch.setattr(summarize_module, "_union", lambda flags: False)
+    assert "rollup" in _components(ledger.check())
+
+
 def test_a_rank_text_tier_change_without_a_bump_is_caught(monkeypatch):
     """The text tier's own reading of a chunk -- patched at the rank module's lookup, so
     only the rank fingerprint can move."""
