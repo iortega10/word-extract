@@ -370,7 +370,9 @@ no directory created); the server constructs without network.
   sources and name their views.
 - Cost per document and revised-document cache hit rate are reported.
 - L3 reported, not gated; retrieval checks reported, gated only with human labels.
-- The behavior ledger covers the Phase 2 components and is green; `SCHEMA_VERSION` is 6.
+- The behavior ledger covers the Phase 2 components and is green; `SCHEMA_VERSION` is the
+  current value in `docextract_core/codec.py` (it was 6 after Turn 1 and 7 after Turn 4; each
+  bump was recorded in the ledger in its own commit).
 - `docs/design/phase2-gaps.md` lists every known gap (including the unattributed-revision
   case); D12 is amended in the design doc.
 - Final report: files created, full pytest output, each ambiguity resolved and how, each

@@ -24,6 +24,11 @@ dependencies = ["docextract-core>=0.1,<0.2", "lxml>=5"]
 [project.scripts]
 wordextract = "wordextract.cli:main"
 
+[project.urls]
+Homepage = "https://github.com/iortega10/word-extract"
+Source = "https://github.com/iortega10/word-extract"
+Issues = "https://github.com/iortega10/word-extract/issues"
+
 [project.optional-dependencies]
 # python-docx authors the synthetic fixtures (tools/make_fixtures.py); the library itself
 # never imports it (design D1: python-docx drops tracked-change text).
