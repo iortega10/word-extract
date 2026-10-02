@@ -35,6 +35,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
+      - name: Tag must match both package versions
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          for f in pyproject.toml docextract-core/pyproject.toml; do
+            v=$(python -c "import tomllib,sys;print(tomllib.load(open('$f','rb'))['project']['version'])")
+            if [ "$v" != "$tag" ]; then echo "::error::$f version $v does not match tag $tag"; exit 1; fi
+          done
       - run: python -m pip install build twine
       - run: python -m build --outdir dist-core docextract-core
       - run: python -m build --outdir dist-main .

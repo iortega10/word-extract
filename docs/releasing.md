@@ -20,9 +20,11 @@ device. A PyPI release is permanent and public; a version number can never be re
 
 ## Each release
 
-1. Bump `version` in **both** `pyproject.toml` files (and the core pin if the minor changes).
+1. Set `version` in **both** `pyproject.toml` files to the exact version you will tag
+   (`0.1.0rc1` for the dry run, `0.1.0` for the real one); the workflow refuses a tag that
+   does not match both. Bump the core pin if the minor changes.
 2. Run `python -m pytest -q` and `python tools/update_behavior_ledger.py --check` locally.
-3. Dry run: tag `v0.1.0rc1`. The workflow publishes to **TestPyPI**. In a clean virtualenv:
+3. Dry run: set the versions to `0.1.0rc1`, commit, tag `v0.1.0rc1`. The workflow publishes to **TestPyPI**. In a clean virtualenv:
    `pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ word-extract`
    and run `wordextract ingest ...` on a fixture.
 4. Real release: tag `v0.1.0`. The workflow tests, builds, runs `twine check`, then publishes

@@ -32,7 +32,7 @@ import json
 import os
 import subprocess
 import sys
-import time
+import threading
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
@@ -425,18 +425,39 @@ def test_the_real_entrypoint_speaks_the_protocol_over_stdio(store_root: Path) ->
         env=env,
         cwd=ROOT,
     )
+    lines: list[str] = []
+    answered = threading.Event()
+
+    def read_answers() -> None:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            lines.append(line)
+            try:
+                ids = {m["id"] for m in map(json.loads, lines) if "id" in m}
+            except ValueError:
+                continue
+            if {1, 2, 3} <= ids:
+                answered.set()
+
+    reader = threading.Thread(target=read_answers, daemon=True)
+    reader.start()
     try:
         assert proc.stdin is not None
         proc.stdin.write(messages)
         proc.stdin.flush()
-        # Answer first, EOF second: closing stdin immediately drops the queued calls.
-        time.sleep(3)
+        # Answer first, EOF second: closing stdin immediately drops the queued calls, so
+        # wait until every request has been answered (not a fixed sleep: CI is slow) and
+        # only then close stdin. proc.communicate() is avoided on purpose: before 3.13 it
+        # flushes the stdin we closed and raises "I/O operation on closed file".
+        assert answered.wait(timeout=60), "".join(lines)
         proc.stdin.close()
-        out, _ = proc.communicate(timeout=60)
+        proc.wait(timeout=60)
+        reader.join(timeout=10)
     finally:
         if proc.poll() is None:
             proc.kill()
             proc.wait(timeout=10)
+    out = "".join(lines)
     assert proc.returncode == 0, out
 
     answers = {
