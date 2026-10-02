@@ -7,7 +7,7 @@ scalar anywhere. What is not deterministic is not a hit.
 
 **What a hit is.** A group occurs where its normalized **token sequence** occurs: whole
 tokens, in order, and never across a paragraph boundary. Occurrence is never tested on
-characters, so a substring is never a hit -- ``subrogation`` inside ``subrogations`` is
+characters, so a substring is never a hit -- ``renewal`` inside ``renewals`` is
 reached by 6b's stemmer, and reported as ``stem``, never as a character substring.
 
 **Normalization** (:func:`tokenize`) is identical for registry entries and corpus, which
@@ -16,15 +16,15 @@ Case is folded (``str.casefold``) and each token is NFC, so a precomposed and a
 decomposed spelling of one word are one token. A token is a maximal run of letters,
 digits and combining marks; everything else separates tokens -- punctuation, whitespace,
 symbols. The hyphen family is the one character with two honest readings, and real
-wording uses both (``non-compliance`` / ``noncompliance``, but ``hold-harmless`` /
-``hold harmless``), so a term matches under **either**: read with hyphens *deleted* (they
+wording uses both (``non-compliance`` / ``noncompliance``, but ``follow-up`` /
+``follow up``), so a term matches under **either**: read with hyphens *deleted* (they
 join: ``non-compliance`` is the token ``noncompliance``) or with hyphens as *separators*
-(``hold-harmless`` is the two tokens ``hold``, ``harmless``). A form and a text match
+(``follow-up`` is the two tokens ``follow``, ``up``). A form and a text match
 when their tokens are equal under one reading or the other, so the two spellings of a
 compound are one term whichever way the registry or the document writes it. Nothing
 fuzzy is involved: each reading is exact, and a hit is a hit under at least one of them.
-A space is still a real separator everywhere else, so ``right ofsubrogation`` never
-matches ``right of subrogation`` (no hyphen is involved), and a space in a registry
+A space is still a real separator everywhere else, so ``right ofrenewal`` never
+matches ``right of renewal`` (no hyphen is involved), and a space in a registry
 entry and a ``w:tab`` or ``w:br`` in the corpus match each other.
 
 **Overlap precedence** is resolved **per group**, which is how "distinct groups report
@@ -141,7 +141,7 @@ def tokenize(text: str, *, split_hyphens: bool = False) -> tuple[str, ...]:
     """``text``'s normalized tokens, in order (the corpus/registry-equal form).
 
     By default hyphens are deleted and so *join* (``non-compliance`` -> ``noncompliance``);
-    with ``split_hyphens`` they are separators (``hold-harmless`` -> ``hold``, ``harmless``).
+    with ``split_hyphens`` they are separators (``follow-up`` -> ``follow``, ``up``).
     The matcher tries both readings. A paragraph boundary is just another separator here:
     this is the lexical view of a string, and :func:`match_text` -- which never matches
     across a ``"\\n"`` -- owns the boundary.
@@ -653,8 +653,8 @@ def _comment_matches(
 
     A comment body is union text like any part's: a tracked change inside it holds the
     deleted *and* the inserted words, which read together are an adjacency no reading of the
-    comment asserts (``right of recovery`` deleted, ``subrogation`` inserted: the union is
-    ``recoverysubrogation``). So when the comment's part streamed, its range is matched
+    comment asserts (``right of refusal`` deleted, ``renewal`` inserted: the union is
+    ``refusalrenewal``). So when the comment's part streamed, its range is matched
     through each view's text -- gap-closed, and the hit's spans one per retained run, never
     the elided text between them -- and a hit found in both readings is one hit. The hit stays
     view-less (``present_in`` empty), as a comment's words are in no view of the document.

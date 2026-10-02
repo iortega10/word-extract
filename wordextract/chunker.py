@@ -62,7 +62,7 @@ a heading the section's ``heading_id`` and not one of its members, and ``section
 says where the chunk sits -- which also means retitling such a heading re-ids no chunk
 beneath it. A section that **merges up** has no chunk of its own and no path entry left,
 so its heading text becomes the leading line of what it merged into: a short clause
-heading ("Waiver of Subrogation") is exactly what a reader searches for and must never
+heading ("Termination for Convenience") is exactly what a reader searches for and must never
 vanish from every chunk. A heading is never the last line of a chunk it does not end.
 """
 from __future__ import annotations

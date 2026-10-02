@@ -30,7 +30,7 @@ a document to an LLM cleanly.
 - **Keeps the whole document.** Text is one *union stream* per part holding inserted **and**
   deleted text, with each span's stack of enclosing revisions. A **view** is a mask over it:
   `accepted` (changes applied), `original` (changes rejected) and `superseded` (inserted then
-  deleted). Nothing is thrown away, so "was this exclusion deleted?" is answerable.
+  deleted). Nothing is thrown away, so "was this clause deleted?" is answerable.
 - **Structures it**: nodes (paragraph, heading, list item, table, row, cell, header, footer,
   footnote) with stable ids, numbering labels, a section tree, and **chunks** (heading tree
   plus a size cap; list runs and tables kept whole).
@@ -38,8 +38,8 @@ a document to an LLM cleanly.
   thread (`commentsExtended`), and each revision's kind, author, date and move group.
 - **Flags your terms.** A term registry of groups (a canonical phrase, curated synonyms,
   optional stemming) is matched deterministically over every part in each view. A phrase
-  matches whole tokens only, under either reading of a hyphen (`hold-harmless` =
-  `hold harmless`, `non-compliance` = `noncompliance`), never across a paragraph, and hits
+  matches whole tokens only, under either reading of a hyphen (`follow-up` =
+  `follow up`, `non-compliance` = `noncompliance`), never across a paragraph, and hits
   are labelled `exact`, `synonym` or `stem`. Moves are two hits that fold at query time.
 - **Stores everything content-addressed** and reproducibly: re-ingesting the same bytes is a
   no-op, two stores from the same document are byte-identical, and a hit can be reproduced with
@@ -76,9 +76,9 @@ from wordextract.model import TermGroup
 from wordextract.terms import TermRegistry, dump_registry
 
 registry = TermRegistry(groups=[
-    TermGroup(canonical="waiver of subrogation",
-              synonyms=["right of recovery", "waive subrogation"]),
-    TermGroup(canonical="exclusion", stemming="porter"),   # opt in to stemming per group
+    TermGroup(canonical="termination for convenience",
+              synonyms=["right to terminate", "terminate without cause"]),
+    TermGroup(canonical="renewal", stemming="porter"),   # opt in to stemming per group
 ])
 open("terms.json", "w").write(dump_registry(registry) + "\n")
 ```

@@ -117,8 +117,8 @@ class Projection:
         Where :meth:`union_range` returns the one span that *covers* the range --
         elided text included -- this returns the text the range is actually made of: one
         span for each retained run it overlaps, in order, adjacent runs that are
-        contiguous in the union merged. A hit on ``right of subrogation`` in the
-        accepted view is the spans of ``right of `` and ``subrogation``, never the
+        contiguous in the union merged. A hit on ``right of renewal`` in the
+        accepted view is the spans of ``right of `` and ``renewal``, never the
         deleted ``recovery`` between them. This is the ``spans`` a term hit carries
         (design D6); a citation built on it never highlights text the view removed.
         """

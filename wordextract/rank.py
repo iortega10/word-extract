@@ -150,7 +150,7 @@ def resolve_group(query: str, registry: TermRegistry) -> TermGroup | None:
     """The group whose canonical or synonym form the query *equals*, or None.
 
     Both sides go through :func:`~wordextract.terms.normalize` (the matcher's own), so
-    ``Subrogation`` resolves like ``subrogation`` -- and nothing else does: no stem, no
+    ``Renewal`` resolves like ``renewal`` -- and nothing else does: no stem, no
     fuzzy guess, no substring. No match means no term tier (the text and summary tiers
     still run). A query equal to forms of two *different* groups is an error naming all
     of them: the registry validates one entry per canonical form, but a synonym of one
