@@ -1,0 +1,80 @@
+name: Release
+
+# Publishes docextract-core and then word-extract to PyPI with Trusted Publishing (no tokens).
+# Tag vX.Y.Z to release. A tag containing "rc", "a" or "b" (e.g. v0.1.0rc1) goes to TestPyPI
+# instead; use that first. PyPI releases are permanent: check the TestPyPI install before
+# tagging a real one.
+#
+# One-time setup (see docs/releasing.md): a pending publisher for each project on PyPI and
+# TestPyPI naming this repository, this workflow file and the matching environment.
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install -e docextract-core -e ".[dev,mcp]"
+      - run: python -m pytest -q
+      - run: python tools/update_behavior_ledger.py --check
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: python -m pip install build twine
+      - run: python -m build --outdir dist-core docextract-core
+      - run: python -m build --outdir dist-main .
+      - run: python -m twine check dist-core/* dist-main/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-core
+          path: dist-core/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-main
+          path: dist-main/
+
+  publish-core:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: ${{ contains(github.ref_name, 'rc') && 'testpypi' || 'pypi' }}
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-core
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: ${{ contains(github.ref_name, 'rc') && 'https://test.pypi.org/legacy/' || '' }}
+
+  publish-main:
+    # word-extract pins docextract-core, so the core must be on the index first.
+    needs: publish-core
+    runs-on: ubuntu-latest
+    environment: ${{ contains(github.ref_name, 'rc') && 'testpypi' || 'pypi' }}
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-main
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: ${{ contains(github.ref_name, 'rc') && 'https://test.pypi.org/legacy/' || '' }}

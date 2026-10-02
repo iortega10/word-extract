@@ -5,7 +5,7 @@ lists, headings, **comments** (with threads), **tracked changes**, headers, foot
 footnotes, parsed into an addressable, stored tree, with **reproducible term flagging** and
 (in progress) per-section summaries so an LLM can find what it needs.
 
-It is a sibling of [`form-extract`](../form-extract), built for the case where someone sends a
+It is a sibling of [`form-extract`](https://github.com/iortega10/form-extract), built for the case where someone sends a
 Word document full of comments and tracked changes and you need to find, cite and compare
 what it says, in any setting with messy documents where a missed clause or a wrong attribution
 is a real failure (contracts, policies, reviews, audits, regulated work) or where you need to get
@@ -247,8 +247,8 @@ fixture run `python tools/update_behavior_ledger.py --new-corpus`.
 
 ## License
 
-Licensed under the **Apache License, Version 2.0**; see [`LICENSE`](LICENSE) and
-[`NOTICE`](NOTICE). Copyright 2026 Ivan Ortega.
+Licensed under the **Apache License, Version 2.0**; see [`LICENSE`](https://github.com/iortega10/word-extract/blob/master/LICENSE) and
+[`NOTICE`](https://github.com/iortega10/word-extract/blob/master/NOTICE). Copyright 2026 Ivan Ortega.
 
 The test fixtures are synthetic. Do not commit any employer's or client's real documents, term
 lists or labels to this repository; keep them outside it (see `docs/design/open-inputs.md`).
